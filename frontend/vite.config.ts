@@ -31,5 +31,5 @@ export default defineConfig({
     port: 5173,
     proxy: { "/api": { target: "http://localhost:8000", changeOrigin: true } },
   },
-  build: { target: "es2020", chunkSizeWarningLimit: 1500, rollupOptions: { input: { main: "index.html", preview: "preview.html" } } },
+  build: { target: "es2020", chunkSizeWarningLimit: 1500, rollupOptions: { input: { main: "index.html" } } },
 });
