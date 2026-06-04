@@ -1,0 +1,55 @@
+# Sutra — production-ish compose: Postgres+pgvector + FastAPI backend (serves the built PWA).
+# Usage: cp .env.example .env  (fill OPENAI_API_KEY + SMTP) ; docker compose up --build
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: sutra
+      POSTGRES_PASSWORD: sutra
+      POSTGRES_DB: sutra
+    ports:
+      - "5433:5432"            # host 5433 -> avoids clashing with a local Postgres
+    volumes:
+      - sutra_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sutra -d sutra"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: app
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://sutra:sutra@db:5432/sutra
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    shm_size: "512mb"
+    volumes:
+      - sutra_models:/models   # cache ECAPA / HF model downloads across restarts
+    restart: unless-stopped
+
+  proxy:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: base
+    container_name: sutra-proxy
+    command: ["uvicorn", "app.proxy:app", "--host", "0.0.0.0", "--port", "8787"]
+    env_file: .env
+    ports:
+      - "8787:8787"
+    shm_size: "512mb"           # RAM tmpfs for in-flight audio decode (server-side voiceprints)
+    volumes:
+      - sutra_models:/models    # cache the ECAPA model across restarts (speaker-ID)
+    restart: unless-stopped
+
+volumes:
+  sutra_pgdata:
+  sutra_models:

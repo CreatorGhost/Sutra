@@ -1,0 +1,156 @@
+{
+  "provider": "openai",
+  "model_extract": "gpt-5.4-mini",
+  "model_transcribe": "gpt-4o-transcribe-diarize",
+  "prompt_version": "extract-v1",
+  "n_samples": 6,
+  "overall": {
+    "n": 6,
+    "entity_f1": 0.6908,
+    "action_f1": 0.9762,
+    "action_precision": 0.9583,
+    "action_recall": 1.0,
+    "cer": null,
+    "wer": null
+  },
+  "hinglish_hi_en": {
+    "n": 5,
+    "entity_f1": 0.709,
+    "action_f1": 0.9714,
+    "action_precision": 0.95,
+    "action_recall": 1.0,
+    "cer": null,
+    "wer": null
+  },
+  "english_en": {
+    "n": 1,
+    "entity_f1": 0.6,
+    "action_f1": 1.0,
+    "action_precision": 1.0,
+    "action_recall": 1.0,
+    "cer": null,
+    "wer": null
+  },
+  "per_sample": [
+    {
+      "id": "college-hien",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.857,
+        "recall": 1.0,
+        "f1": 0.923,
+        "tp": 6,
+        "pred": 7,
+        "gold": 6
+      },
+      "action": {
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1": 0.857,
+        "tp": 3,
+        "pred": 4,
+        "gold": 3
+      }
+    },
+    {
+      "id": "standup-hien",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.833,
+        "f1": 0.909,
+        "tp": 5,
+        "pred": 5,
+        "gold": 6
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      }
+    },
+    {
+      "id": "trek-hien",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.4,
+        "recall": 1.0,
+        "f1": 0.571,
+        "tp": 2,
+        "pred": 5,
+        "gold": 2
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      }
+    },
+    {
+      "id": "rent-hien",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.5,
+        "recall": 0.667,
+        "f1": 0.571,
+        "tp": 2,
+        "pred": 4,
+        "gold": 3
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      }
+    },
+    {
+      "id": "standup-en",
+      "lang": "en",
+      "entity_f1": {
+        "precision": 0.429,
+        "recall": 1.0,
+        "f1": 0.6,
+        "tp": 3,
+        "pred": 7,
+        "gold": 3
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 3,
+        "pred": 3,
+        "gold": 3
+      }
+    },
+    {
+      "id": "doctor-hien",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.4,
+        "recall": 1.0,
+        "f1": 0.571,
+        "tp": 2,
+        "pred": 5,
+        "gold": 2
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      }
+    }
+  ]
+}

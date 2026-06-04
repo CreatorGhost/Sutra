@@ -1,0 +1,334 @@
+/* ============================================================================
+   SUTRA — design tokens (theme the whole app from this one file). Dark-first; light supported.
+   Identity: INDIGO/VIOLET primary (AI/memory) + WARM AMBER secondary (scheduled/reminders).
+   ============================================================================ */
+:root {
+  --bg: #0a0912;
+  --bg-glow: radial-gradient(1200px 600px at 50% -12%, rgba(139,123,255,0.18), rgba(139,123,255,0.04) 38%, transparent 66%);
+  --surface: #14121e;
+  --surface-2: #1b1830;
+  --surface-3: #241f3a;
+  --border: #272340;
+  --border-strong: #353050;
+  --text: #f1eff8;
+  /* helper/secondary text lifted to clear WCAG AA (4.5:1) on every dark surface incl. surface-3;
+     hue preserved (same violet-gray), only lightness raised. */
+  --text-2: #cdc8dc;
+  --muted: #a39db5;
+  --faint: #9790aa;
+  --accent: #8b7bff;
+  --accent-2: #a99bff;
+  --accent-deep: #6f5cf0;
+  --accent-soft: rgba(139,123,255,0.13);
+  --accent-line: rgba(139,123,255,0.55);
+  --accent-glow: rgba(139,123,255,0.35);
+  --amber: #ffb23e;
+  --amber-2: #ffc873;
+  --amber-deep: #e0921f;
+  --amber-soft: rgba(255,178,62,0.13);
+  --amber-line: rgba(255,178,62,0.5);
+  --ok: #3ddc97;
+  --danger: #ff5d73;
+  --on-accent: #0a0912;
+  --r-card: 16px; --r-sm: 11px; --r-pill: 999px; --r-sheet: 26px;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px; --s8: 32px;
+  --shadow-card: 0 10px 34px -16px rgba(0,0,0,0.72);
+  --shadow-pop: 0 24px 70px -22px rgba(0,0,0,0.78);
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --spring: cubic-bezier(0.34, 1.3, 0.5, 1);
+  --dur: 0.22s;
+  --f-sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  --radius: var(--r-card); --warn: var(--amber);
+  --sat: max(env(safe-area-inset-top), 8px); --sab: env(safe-area-inset-bottom);
+  --nav-h: 66px; --content: 760px;
+}
+:root[data-theme="light"] {
+  --bg: #f5f4fb;
+  --bg-glow: radial-gradient(1200px 600px at 50% -12%, rgba(111,92,240,0.14), rgba(111,92,240,0.03) 40%, transparent 66%);
+  --surface: #ffffff; --surface-2: #f4f2fb; --surface-3: #ebe9f6;
+  --border: #e6e3f1; --border-strong: #d7d3e8;
+  --text: #161427; --text-2: #514c66; --muted: #756f88; --faint: #8c87a0;
+  --accent: #6f5cf0; --accent-2: #8b7bff; --accent-deep: #5a47d8;
+  --accent-soft: rgba(111,92,240,0.10); --accent-line: rgba(111,92,240,0.4); --accent-glow: rgba(111,92,240,0.22);
+  --amber: #d9871a; --amber-2: #f0a73a; --amber-deep: #b06f10; --amber-soft: rgba(217,135,26,0.12); --amber-line: rgba(217,135,26,0.4);
+  --on-accent: #ffffff;
+  --shadow-card: 0 10px 30px -18px rgba(40,30,80,0.28); --shadow-pop: 0 24px 60px -20px rgba(40,30,80,0.3);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body, #root { height: 100%; }
+body { margin: 0; color: var(--text); font-family: var(--f-sans); font-size: 15px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  background: var(--bg); background-image: var(--bg-glow); background-attachment: fixed; background-repeat: no-repeat;
+  overscroll-behavior-y: none; overflow: hidden; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+a { color: inherit; text-decoration: none; }
+h1, h2, h3 { margin: 0; letter-spacing: -0.02em; font-weight: 650; }
+::selection { background: var(--accent-soft); }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; border-radius: var(--r-sm); }
+::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 8px; }
+
+/* The whole app is a fixed-height flex column; the routed .page is the single scroll container,
+   so the brand bar + bottom nav stay put and per-page .page-head can stick to the top. */
+.app { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* native feel: no text selection on UI chrome — re-enable only where copying real content matters */
+.bubble, .cdesc, .input, input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
+.app-header, .topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 12px;
+  padding: calc(var(--sat) + 14px) 18px 13px;
+  background: var(--bg); border-bottom: 1px solid var(--border); }
+.app-header .brand { font-weight: 700; font-size: 18px; letter-spacing: -0.03em; display: flex; align-items: center; gap: 9px; }
+.app-header .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 14px 2px var(--accent-glow); }
+.app-header .spacer, .topbar .spacer { flex: 1; }
+.page { flex: 1; min-height: 0; width: 100%; max-width: var(--content); margin: 0 auto;
+  overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
+  padding: 18px 18px calc(var(--nav-h) + var(--sab) + 30px); }
+.page-title { font-size: 26px; font-weight: 700; margin-bottom: 3px; }
+.page-sub { color: var(--muted); font-size: 13.5px; margin-bottom: 20px; }
+/* sticky per-page header: pins the screen title/sub (and any tab row) under the brand bar while content scrolls. */
+.page-head { position: sticky; top: 0; z-index: 20; margin: -18px -18px 16px; padding: 12px 18px 12px;
+  background: var(--bg); border-bottom: 1px solid var(--border); }
+.page-head .page-title { margin-bottom: 2px; }
+.page-head .page-sub { margin-bottom: 0; }
+.greet { font-size: 27px; font-weight: 700; letter-spacing: -0.03em; }
+.greet .accent { color: var(--accent); }
+
+.icon-btn { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); position: relative;
+  -webkit-tap-highlight-color: transparent; appearance: none; -webkit-appearance: none; outline: none; touch-action: manipulation;
+  transition: transform var(--dur) var(--ease), border-color var(--dur), color var(--dur); }
+.icon-btn:active { transform: scale(0.92); }
+.icon-btn:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-line); }
+.icon-btn .badge { position: absolute; top: -1px; right: -1px; width: 9px; height: 9px; border-radius: 50%; background: var(--amber); border: 2px solid var(--bg); }
+
+.card { background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-card);
+  padding: 16px 17px; box-shadow: var(--shadow-card); position: relative; }
+.card.tap { transition: transform 0.16s var(--ease), border-color 0.18s; cursor: pointer; }
+.card.tap:active { transform: scale(0.985); border-color: var(--accent-line); }
+.card .meta { font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); letter-spacing: 0.01em; }
+.card .ctitle { font-size: 17px; font-weight: 650; margin: 7px 0 0; line-height: 1.3; padding-right: 22px; }
+.card .cdesc { color: var(--text-2); font-size: 14px; line-height: 1.55; margin-top: 8px; }
+.card .chev { position: absolute; top: 16px; right: 15px; color: var(--accent); opacity: 0.85; }
+.stack { display: flex; flex-direction: column; gap: 13px; }
+.row { display: flex; align-items: center; gap: 10px; }
+.between { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.muted { color: var(--muted); } .faint { color: var(--faint); } .t2 { color: var(--text-2); }
+.trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.section-h { font-size: 18px; font-weight: 650; margin: 22px 2px 12px; }
+.divider { height: 1px; background: var(--border); margin: 14px 0; }
+
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: var(--r-pill);
+  font-size: 12px; font-weight: 600; background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border); }
+.chip.accent { background: var(--accent-soft); color: var(--accent-2); border-color: transparent; }
+.chip.amber { background: var(--amber-soft); color: var(--amber-2); border-color: transparent; }
+.chip.warn { background: var(--amber-soft); color: var(--amber-2); border-color: transparent; }
+.chip.ok { background: rgba(61,220,151,0.12); color: var(--ok); border-color: transparent; }
+.chip.me { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.lang-tag { font-family: var(--f-mono); font-size: 10px; font-weight: 600; text-transform: lowercase; padding: 2px 6px; border-radius: 6px;
+  background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border); }
+
+.pill-toggle { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-pill); padding: 3px; gap: 2px; }
+.pill-toggle button { border: none; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600;
+  padding: 7px 14px; border-radius: var(--r-pill); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: color var(--dur), background var(--dur); }
+.pill-toggle button.on { background: var(--accent); color: var(--on-accent); box-shadow: 0 4px 14px -4px var(--accent-glow); }
+.pill-toggle.amber button.on { background: var(--amber); color: var(--on-accent); box-shadow: 0 4px 14px -4px var(--amber-line); }
+
+.btn { appearance: none; font: inherit; font-weight: 600; cursor: pointer; border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 11px 18px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  transition: transform 0.14s var(--ease), border-color var(--dur), background var(--dur); -webkit-tap-highlight-color: transparent; }
+.btn:active { transform: scale(0.96); } .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.sm { min-height: 38px; padding: 8px 13px; font-size: 13px; }
+.btn.block { width: 100%; }
+.btn.primary { background: var(--accent); border-color: transparent; color: var(--on-accent); box-shadow: 0 6px 20px -8px var(--accent-glow); }
+.btn.primary:active { transform: scale(0.96); } .btn.primary:disabled { opacity: 0.5; box-shadow: none; }
+.cta { background: color-mix(in srgb, var(--surface-2) 88%, var(--accent) 12%); border: 1px solid var(--accent-line);
+  color: var(--accent-2); box-shadow: 0 8px 30px -12px var(--accent-glow); }
+.cta:hover { box-shadow: 0 0 0 1px var(--accent-line), 0 10px 34px -10px var(--accent-glow); }
+.cta.amber { background: color-mix(in srgb, var(--surface-2) 88%, var(--amber) 12%); border-color: var(--amber-line); color: var(--amber-2); box-shadow: 0 8px 30px -12px var(--amber-line); }
+.btn.danger { color: var(--danger); border-color: rgba(255,93,115,0.32); background: transparent; }
+.btn.ghost { background: transparent; }
+
+.input, textarea.input, select.input { width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--r-sm); padding: 12px 14px; font: inherit; font-size: 15px; outline: none; transition: border-color var(--dur); }
+.input:focus { border-color: var(--accent-line); } .input::placeholder { color: var(--faint); }
+label.field { display: block; margin-bottom: 14px; } label.field > span { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+
+.hero { position: relative; border-radius: var(--r-sheet); padding: 16px 16px 18px; overflow: hidden;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 9%, var(--surface)), var(--surface));
+  border: 1px solid var(--accent-line); box-shadow: 0 18px 60px -26px var(--accent-glow), var(--shadow-card); }
+.hero::before { content: ""; position: absolute; inset: 0; background: radial-gradient(520px 200px at 50% 120%, var(--accent-soft), transparent 70%); pointer-events: none; }
+.hero-top { display: flex; justify-content: center; position: relative; z-index: 1; }
+.wave-wrap { position: relative; height: 120px; margin: 6px 0 2px; z-index: 1; }
+.wave-wrap canvas { width: 100%; height: 100%; display: block; }
+.hero-timer { text-align: center; font-family: var(--f-mono); font-size: 22px; font-weight: 600; letter-spacing: 0.04em; z-index: 1; position: relative; }
+.hero-actions { display: flex; justify-content: center; margin-top: 12px; z-index: 1; position: relative; }
+.privacy-badge { display: inline-flex; align-items: center; gap: 8px; margin: 12px auto 0; z-index: 1; position: relative;
+  padding: 8px 13px; border-radius: var(--r-pill); font-size: 12.5px; font-weight: 600;
+  background: var(--accent-soft); color: var(--accent-2); border: 1px solid var(--accent-line); }
+.privacy-badge.amber { background: var(--amber-soft); color: var(--amber-2); border-color: var(--amber-line); }
+
+.coming-card { position: relative; border-radius: var(--r-card); padding: 16px 17px 16px 21px; overflow: hidden;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--amber) 12%, var(--surface)), var(--surface)); border: 1px solid var(--amber-line); }
+.coming-card::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 3px; background: var(--amber); }
+.coming-card .meta { color: var(--amber-2); }
+
+.turn { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+.turn .who { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.turn .who .ts { color: var(--faint); font-weight: 400; font-size: 11px; }
+.turn .bubble { background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px 14px 14px 14px; padding: 10px 13px; font-size: 14.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.turn.me .bubble { background: var(--accent-soft); border-color: transparent; }
+.turn.redacted .bubble { color: var(--faint); font-style: italic; }
+.speaker-chip { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.speaker-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+.nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(var(--nav-h) + var(--sab)); padding-bottom: var(--sab);
+  display: flex; background: color-mix(in srgb, var(--bg) 84%, transparent); backdrop-filter: blur(18px); border-top: 1px solid var(--border); }
+.nav a { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--faint); font-size: 10.5px; font-weight: 600; transition: color var(--dur), transform 0.12s var(--ease); -webkit-tap-highlight-color: transparent; }
+.nav a.active { color: var(--text); } .nav a.active svg { color: var(--accent); filter: drop-shadow(0 0 8px var(--accent-glow)); }
+.nav a:active { transform: scale(0.93); }
+
+.sheet-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(5,4,10,0.55); backdrop-filter: blur(3px); animation: fade var(--dur) var(--ease); }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 61; max-width: var(--content); margin: 0 auto;
+  background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(24px) saturate(1.2);
+  border: 1px solid var(--border-strong); border-bottom: none; border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  padding: 12px 20px calc(20px + var(--sab)); box-shadow: var(--shadow-pop); animation: sheet-in 0.34s var(--spring); }
+.grabber { width: 40px; height: 4px; border-radius: 4px; background: var(--border-strong); margin: 0 auto 14px; }
+@keyframes sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes fade { from { opacity: 0; } }
+
+.empty { text-align: center; color: var(--faint); padding: 46px 16px; } .empty svg { opacity: 0.4; margin-bottom: 12px; }
+.skeleton { background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%); background-size: 200% 100%; animation: sh 1.3s infinite; border-radius: 12px; }
+@keyframes sh { to { background-position: -200% 0; } }
+.spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.8s linear infinite; }
+.fade-in { animation: rise 0.34s var(--ease) both; } @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+.cite { color: var(--accent-2); font-size: 12px; background: var(--accent-soft); padding: 2px 8px; border-radius: 6px; }
+.score-bar { height: 4px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.score-bar > i { display: block; height: 100%; background: var(--accent); transition: width 0.3s ease; }
+.status-line { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--text-2); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.status-dot.idle { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+.status-dot.live { background: var(--danger); animation: blink 1.2s infinite; } .status-dot.proc { background: var(--amber); } @keyframes blink { 50% { opacity: 0.3; } }
+
+@media (min-width: 720px) {
+  .page.wide { max-width: 1100px; }
+  .two-pane { display: grid; grid-template-columns: minmax(320px, 0.9fr) 1.1fr; gap: 20px; align-items: start; }
+  .nav { max-width: 1100px; left: 50%; transform: translateX(-50%); border-radius: var(--r-card) var(--r-card) 0 0; }
+}
+@media (max-height: 560px) {
+  .wave-wrap { height: 72px; }
+  .mic-btn { width: 80px; height: 80px; }
+  .page-title { font-size: 21px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Blanket: neutralize all non-essential CSS motion. */
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important; scroll-behavior: auto !important;
+  }
+  /* Explicitly drop the decorative entrances/loops so nothing rises, fades or pulses. */
+  .fade-in, .capture-page .turn, .turn { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .mic-btn.recording, .mic-btn.speaking { animation: none !important; }
+  .mic-btn.recording::before, .mic-btn.recording::after { animation: none !important; }
+}
+
+/* ============================================================================
+   Capture mic button — clean circle (no square tap-highlight/focus), with an
+   ENGAGING recording animation: an ambient ripple ring + a VOICE-REACTIVE glow
+   ring that grows/brightens with the live input level (--level 0..1), plus a
+   subtle breathe. All motion is transform/opacity (GPU-composited) so it's smooth.
+   ============================================================================ */
+.mic-wrap { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 22px 0 8px; }
+.mic-btn {
+  position: relative; isolation: isolate; width: 104px; height: 104px; border-radius: 50%;
+  border: none; padding: 0; cursor: pointer; display: grid; place-items: center; color: var(--on-accent);
+  background: radial-gradient(circle at 50% 35%, var(--accent-2), var(--accent));
+  box-shadow: 0 10px 36px -10px var(--accent-glow);
+  transition: transform 0.18s var(--spring), background 0.25s var(--ease);
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+  appearance: none; -webkit-appearance: none; user-select: none; -webkit-user-select: none;
+  touch-action: manipulation; outline: none; will-change: transform;
+}
+.mic-btn > svg { position: relative; z-index: 2; }
+.mic-btn:active { transform: scale(0.94); }
+.mic-btn:focus-visible { box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--accent-line), 0 10px 36px -10px var(--accent-glow); }
+/* ambient ripple ring — a gentle "alive" pulse while recording */
+.mic-btn::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--accent-line); pointer-events: none; opacity: 0; z-index: 0; }
+.mic-btn.recording::before { animation: mic-ripple 2.4s var(--ease) infinite; }
+@keyframes mic-ripple { 0% { transform: scale(1); opacity: 0.5; } 70% { opacity: 0; } 100% { transform: scale(2.3); opacity: 0; } }
+/* voice-reactive glow ring — scales + brightens with the live mic level (--level, set from JS) */
+.mic-btn::after { content: ""; position: absolute; inset: -8px; border-radius: 50%; pointer-events: none; z-index: 0; opacity: 0;
+  background: radial-gradient(circle, var(--accent-glow), transparent 68%);
+  transform: scale(1); transition: transform 0.1s var(--ease), opacity 0.1s var(--ease); }
+.mic-btn.recording::after { opacity: calc(0.28 + var(--level, 0) * 0.72); transform: scale(calc(1 + var(--level, 0) * 0.85)); }
+.mic-btn.recording { animation: mic-breathe 2.8s var(--ease) infinite; }
+.mic-btn.speaking { animation: mic-breathe 1.2s var(--ease) infinite; }
+@keyframes mic-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+.mic-btn.paused { background: var(--surface-3); color: var(--muted); box-shadow: 0 8px 24px -14px rgba(0,0,0,0.6); animation: none; }
+.mic-btn.paused::before, .mic-btn.paused::after { animation: none; opacity: 0; }
+
+/* Ask Sutra: messages scroll, composer pinned to the bottom (above the nav) — real chat layout. */
+.chat-page { display: flex; flex-direction: column; padding-bottom: 0; }
+.chat-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+.chat-composer { display: flex; gap: 10px; align-items: center; padding: 10px 0 12px;
+  margin-bottom: calc(var(--nav-h) + var(--sab)); background: var(--bg); border-top: 1px solid var(--border); }
+
+/* First-run onboarding — full-screen, professional, indigo identity. */
+.onboard { height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
+  padding: calc(var(--sat) + 18px) 22px calc(var(--sab) + 16px);
+  background: var(--bg); background-image: var(--bg-glow); background-repeat: no-repeat; }
+.onboard-progress { display: flex; gap: 6px; justify-content: center; margin-bottom: 10px; }
+.onboard-progress span { width: 24px; height: 4px; border-radius: 4px; background: var(--surface-3); transition: background var(--dur) var(--ease); }
+.onboard-progress span.on { background: var(--accent); }
+/* body scrolls if a step is tall; the footer (Back / Continue / Start) stays pinned + always reachable.
+   Anchored to a consistent optical center (slightly above true center) with an 8-pt gap rhythm so the
+   top void above the art is tightened and short/tall steps feel aligned. */
+.onboard-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+  display: flex; flex-direction: column; justify-content: safe center; gap: 16px; padding: 8px 0 16px; animation: rise 0.4s var(--ease) both; }
+.onboard-body h1 { font-size: 27px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.22; }
+.onboard-body > p { color: var(--text-2); font-size: 15px; line-height: 1.62; }
+.onboard-sub { color: var(--muted); font-size: 13.5px; margin-top: -8px; }
+.onboard-art { margin-bottom: 0; }
+.onboard-art .wave-wrap { height: 104px; }
+.onboard-icon { width: 74px; height: 74px; border-radius: 22px; display: grid; place-items: center; color: var(--accent-2);
+  background: var(--accent-soft); border: 1px solid var(--accent-line); box-shadow: 0 12px 36px -18px var(--accent-glow); }
+.onboard-opts { display: flex; flex-direction: column; gap: 11px; margin-top: 6px; }
+.onboard-opt { text-align: left; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-card);
+  padding: 15px 16px; cursor: pointer; color: var(--text); transition: border-color var(--dur), background var(--dur), transform 0.12s var(--ease); }
+.onboard-opt:active { transform: scale(0.99); }
+.onboard-opt.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); box-shadow: 0 6px 22px -12px var(--accent-glow); }
+.onboard-opt .oo-top { display: flex; align-items: center; gap: 9px; font-size: 15.5px; }
+.onboard-opt .oo-check { margin-left: auto; color: var(--accent); }
+.onboard-opt .oo-desc { color: var(--text-2); font-size: 13.5px; margin-top: 5px; line-height: 1.5; }
+.onboard-opt .oo-ex { color: var(--muted); font-size: 12.5px; margin-top: 6px; font-family: var(--f-mono); }
+.onboard-foot { flex-shrink: 0; padding-top: 14px; }
+.mic-btn::after { inset: -14px; }
+
+/* Capture: the mic is the single lit hero (no sticky title); reuse the .hero treatment for depth. */
+.capture-page { padding-top: 10px; }
+.capture-intro { text-align: center; max-width: 34ch; margin: 16px auto 0; font-size: 13px; color: var(--muted); }
+/* tighter hero — bottom padding pulled in so the card hugs its content (no dead lower band). 8-pt rhythm. */
+.mic-card { overflow: visible; padding: 24px 16px 16px; }
+/* idle lower area: purposeful, calm fillers instead of void (continue-where-you-left-off + privacy). */
+.capture-idle { display: flex; flex-direction: column; gap: 16px; margin-top: 24px; }
+.capture-last .meta { color: var(--muted); }
+.capture-reassure { gap: 10px; align-items: flex-start; max-width: 42ch; margin: 0 auto; padding: 0 4px;
+  font-size: 12.5px; line-height: 1.5; color: var(--muted); text-align: left; }
+/* native checkbox -> on-brand */
+input[type="checkbox"] { accent-color: var(--accent); width: 18px; height: 18px; }
+/* each LIVE transcript turn rises in once as it arrives — scoped to the capture page so
+   ConversationDetail's already-loaded turns don't waterfall-animate all at once on open. */
+.capture-page .turn { animation: rise 0.38s var(--ease) both; }
+
+/* Recording stage: the mic dissolves out and a live amplitude-reactive waveform fades in. */
+.mic-stage { position: relative; width: 100%; min-height: 156px; display: grid; place-items: center; }
+.mic-stage > .mic-btn { grid-area: 1 / 1; transition: opacity 0.4s var(--ease), transform 0.5s var(--spring); }
+.mic-stage > .wave-stage { grid-area: 1 / 1; width: 100%; opacity: 0; transform: scale(0.92); pointer-events: none;
+  transition: opacity 0.5s var(--ease), transform 0.5s var(--ease); }
+.mic-stage.rec > .mic-btn { opacity: 0; transform: scale(0.4); pointer-events: none; }
+.mic-stage.rec > .wave-stage { opacity: 1; transform: scale(1); }
+.wave-stage .wave-wrap { height: 118px; margin: 0; }
+.rec-timer { text-align: center; font-family: var(--f-mono); font-size: 23px; font-weight: 600; letter-spacing: 0.05em; color: var(--text); margin-top: 4px; }

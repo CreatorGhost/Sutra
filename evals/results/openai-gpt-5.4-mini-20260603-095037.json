@@ -1,0 +1,1558 @@
+{
+  "provider": "openai",
+  "model_extract": "gpt-5.4-mini",
+  "model_transcribe": "gpt-4o-transcribe-diarize",
+  "prompt_version": "extract-v3",
+  "strategy": "combined",
+  "n_samples": 54,
+  "overall": {
+    "n": 54,
+    "entity_f1": 0.714,
+    "action_f1": 0.8849,
+    "action_precision": 0.8488,
+    "action_recall": 0.9815,
+    "cer": null,
+    "wer": null,
+    "known_recall": 0.8631,
+    "new_precision": 0.4886,
+    "new_recall": 0.9535
+  },
+  "hinglish_hi_en": {
+    "n": 50,
+    "entity_f1": 0.7153,
+    "action_f1": 0.8852,
+    "action_precision": 0.8417,
+    "action_recall": 0.99,
+    "cer": null,
+    "wer": null,
+    "known_recall": 0.8587,
+    "new_precision": 0.5044,
+    "new_recall": 0.95
+  },
+  "english_en": {
+    "n": 4,
+    "entity_f1": 0.6987,
+    "action_f1": 0.881,
+    "action_precision": 0.9375,
+    "action_recall": 0.875,
+    "cer": null,
+    "wer": null,
+    "known_recall": 0.9167,
+    "new_precision": 0.2915,
+    "new_recall": 1.0
+  },
+  "per_sample": [
+    {
+      "id": "college-hien",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.778,
+        "recall": 0.875,
+        "f1": 0.824,
+        "tp": 7,
+        "pred": 9,
+        "gold": 8
+      },
+      "action": {
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1": 0.857,
+        "tp": 3,
+        "pred": 4,
+        "gold": 3
+      },
+      "discovery": {
+        "known_recall": 0.857,
+        "new_precision": 0.0,
+        "new_recall": null,
+        "gold_known": 7,
+        "gold_novel": 0,
+        "pred_new": 8
+      }
+    },
+    {
+      "id": "standup-hien",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 7,
+        "pred": 7,
+        "gold": 7
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.0,
+        "new_recall": null,
+        "gold_known": 6,
+        "gold_novel": 0,
+        "pred_new": 6
+      }
+    },
+    {
+      "id": "trek-hien",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.667,
+        "recall": 1.0,
+        "f1": 0.8,
+        "tp": 4,
+        "pred": 6,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.0,
+        "new_recall": null,
+        "gold_known": 3,
+        "gold_novel": 0,
+        "pred_new": 5
+      }
+    },
+    {
+      "id": "rent-hien",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.6,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 3,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 0.75,
+        "new_precision": 0.0,
+        "new_recall": null,
+        "gold_known": 4,
+        "gold_novel": 0,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "standup-en",
+      "lang": "en",
+      "entity_f1": {
+        "precision": 0.6,
+        "recall": 0.75,
+        "f1": 0.667,
+        "tp": 3,
+        "pred": 5,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 3,
+        "pred": 3,
+        "gold": 3
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.0,
+        "new_recall": null,
+        "gold_known": 3,
+        "gold_novel": 0,
+        "pred_new": 5
+      }
+    },
+    {
+      "id": "doctor-hien",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.8,
+        "recall": 0.667,
+        "f1": 0.727,
+        "tp": 4,
+        "pred": 5,
+        "gold": 6
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 0.8,
+        "new_precision": 0.0,
+        "new_recall": null,
+        "gold_known": 5,
+        "gold_novel": 0,
+        "pred_new": 5
+      }
+    },
+    {
+      "id": "pf-standup-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.833,
+        "f1": 0.909,
+        "tp": 5,
+        "pred": 5,
+        "gold": 6
+      },
+      "action": {
+        "precision": 0.667,
+        "recall": 1.0,
+        "f1": 0.8,
+        "tp": 2,
+        "pred": 3,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 1.0,
+        "new_recall": 1.0,
+        "gold_known": 4,
+        "gold_novel": 1,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-standup-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.8,
+        "f1": 0.889,
+        "tp": 4,
+        "pred": 4,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 1.0,
+        "new_recall": 1.0,
+        "gold_known": 3,
+        "gold_novel": 1,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-alias-raj-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.5,
+        "recall": 0.5,
+        "f1": 0.5,
+        "tp": 2,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 0.5,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-deva-raj-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.0,
+        "new_recall": null,
+        "gold_known": 3,
+        "gold_novel": 0,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-college-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.833,
+        "f1": 0.909,
+        "tp": 5,
+        "pred": 5,
+        "gold": 6
+      },
+      "action": {
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.667,
+        "tp": 1,
+        "pred": 2,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 4,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-family-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.8,
+        "recall": 0.667,
+        "f1": 0.727,
+        "tp": 4,
+        "pred": 5,
+        "gold": 6
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 0.75,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 4,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-rent-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.667,
+        "f1": 0.8,
+        "tp": 4,
+        "pred": 4,
+        "gold": 6
+      },
+      "action": {
+        "precision": 0.667,
+        "recall": 1.0,
+        "f1": 0.8,
+        "tp": 2,
+        "pred": 3,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 0.75,
+        "new_precision": 1.0,
+        "new_recall": 1.0,
+        "gold_known": 4,
+        "gold_novel": 1,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-trek-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.6,
+        "recall": 0.6,
+        "f1": 0.6,
+        "tp": 3,
+        "pred": 5,
+        "gold": 5
+      },
+      "action": {
+        "precision": 0.333,
+        "recall": 1.0,
+        "f1": 0.5,
+        "tp": 1,
+        "pred": 3,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 3,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-alias-adi-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-vendor-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.6,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 3,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 0.667,
+        "new_precision": 1.0,
+        "new_recall": 1.0,
+        "gold_known": 3,
+        "gold_novel": 1,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-en-control-1",
+      "lang": "en",
+      "entity_f1": {
+        "precision": 0.714,
+        "recall": 1.0,
+        "f1": 0.833,
+        "tp": 5,
+        "pred": 7,
+        "gold": 5
+      },
+      "action": {
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1": 0.857,
+        "tp": 3,
+        "pred": 4,
+        "gold": 3
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.333,
+        "new_recall": 1.0,
+        "gold_known": 3,
+        "gold_novel": 1,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "pf-deva-farha-3",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.667,
+        "recall": 0.5,
+        "f1": 0.571,
+        "tp": 2,
+        "pred": 3,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.0,
+        "new_recall": 0.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-newperson-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.429,
+        "recall": 0.6,
+        "f1": 0.5,
+        "tp": 3,
+        "pred": 7,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 0.5,
+        "new_precision": 0.4,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 2,
+        "pred_new": 5
+      }
+    },
+    {
+      "id": "pf-doctor-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.833,
+        "f1": 0.909,
+        "tp": 5,
+        "pred": 5,
+        "gold": 6
+      },
+      "action": {
+        "precision": 0.667,
+        "recall": 1.0,
+        "f1": 0.8,
+        "tp": 2,
+        "pred": 3,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 0.75,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 4,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-travel-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.667,
+        "tp": 1,
+        "pred": 2,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-1on1-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.5,
+        "recall": 0.5,
+        "f1": 0.5,
+        "tp": 2,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 0.667,
+        "new_precision": 0.0,
+        "new_recall": null,
+        "gold_known": 3,
+        "gold_novel": 0,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-newproject-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.667,
+        "recall": 1.0,
+        "f1": 0.8,
+        "tp": 4,
+        "pred": 6,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.333,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "pf-staleness-job-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.8,
+        "f1": 0.889,
+        "tp": 4,
+        "pred": 4,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 1.0,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 2,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-contradiction-mgr-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.667,
+        "recall": 0.5,
+        "f1": 0.571,
+        "tp": 2,
+        "pred": 3,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.5,
+        "new_recall": 0.5,
+        "gold_known": 1,
+        "gold_novel": 2,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-alias-pri-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.4,
+        "recall": 0.4,
+        "f1": 0.4,
+        "tp": 2,
+        "pred": 5,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 0.5,
+        "new_precision": 0.333,
+        "new_recall": 0.5,
+        "gold_known": 2,
+        "gold_novel": 2,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "pf-deva-mummy-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-college-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.75,
+        "f1": 0.857,
+        "tp": 3,
+        "pred": 3,
+        "gold": 4
+      },
+      "action": {
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.667,
+        "tp": 1,
+        "pred": 2,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 1.0,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-en-control-2",
+      "lang": "en",
+      "entity_f1": {
+        "precision": 0.5,
+        "recall": 0.6,
+        "f1": 0.545,
+        "tp": 3,
+        "pred": 6,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 0.667,
+        "new_precision": 0.333,
+        "new_recall": 1.0,
+        "gold_known": 3,
+        "gold_novel": 1,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "pf-vendor-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.667,
+        "new_recall": 1.0,
+        "gold_known": 1,
+        "gold_novel": 2,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "pf-trek-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.6,
+        "recall": 0.6,
+        "f1": 0.6,
+        "tp": 3,
+        "pred": 5,
+        "gold": 5
+      },
+      "action": {
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.667,
+        "tp": 1,
+        "pred": 2,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 0.667,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 3,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-payments-3",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.6,
+        "recall": 0.6,
+        "f1": 0.6,
+        "tp": 3,
+        "pred": 5,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 0.667,
+        "new_precision": 0.333,
+        "new_recall": 1.0,
+        "gold_known": 3,
+        "gold_novel": 1,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "pf-1on1-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.4,
+        "recall": 0.667,
+        "f1": 0.5,
+        "tp": 2,
+        "pred": 5,
+        "gold": 3
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.25,
+        "new_recall": 1.0,
+        "gold_known": 1,
+        "gold_novel": 1,
+        "pred_new": 4
+      }
+    },
+    {
+      "id": "pf-family-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.6,
+        "recall": 1.0,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 5,
+        "gold": 3
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.333,
+        "new_recall": 1.0,
+        "gold_known": 1,
+        "gold_novel": 1,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "pf-rent-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.8,
+        "f1": 0.889,
+        "tp": 4,
+        "pred": 4,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 1.0,
+        "new_recall": 1.0,
+        "gold_known": 3,
+        "gold_novel": 1,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-alias-kk-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.667,
+        "tp": 1,
+        "pred": 2,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-social-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.5,
+        "recall": 0.667,
+        "f1": 0.571,
+        "tp": 2,
+        "pred": 4,
+        "gold": 3
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.333,
+        "new_recall": 1.0,
+        "gold_known": 1,
+        "gold_novel": 1,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "pf-deva-amar-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.667,
+        "f1": 0.8,
+        "tp": 2,
+        "pred": 2,
+        "gold": 3
+      },
+      "action": {
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.667,
+        "tp": 1,
+        "pred": 2,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 1.0,
+        "new_recall": null,
+        "gold_known": 2,
+        "gold_novel": 0,
+        "pred_new": 0
+      }
+    },
+    {
+      "id": "pf-priorsilent-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.333,
+        "recall": 0.333,
+        "f1": 0.333,
+        "tp": 1,
+        "pred": 3,
+        "gold": 3
+      },
+      "action": {
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.667,
+        "tp": 1,
+        "pred": 2,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 0.5,
+        "new_precision": 0.0,
+        "new_recall": null,
+        "gold_known": 2,
+        "gold_novel": 0,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-noprofilematch-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.571,
+        "recall": 0.8,
+        "f1": 0.667,
+        "tp": 4,
+        "pred": 7,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": null,
+        "new_precision": 0.571,
+        "new_recall": 1.0,
+        "gold_known": 0,
+        "gold_novel": 4,
+        "pred_new": 7
+      }
+    },
+    {
+      "id": "pf-staleness-project-1",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.6,
+        "recall": 0.75,
+        "f1": 0.667,
+        "tp": 3,
+        "pred": 5,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.0,
+        "new_recall": null,
+        "gold_known": 3,
+        "gold_novel": 0,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-en-control-3",
+      "lang": "en",
+      "entity_f1": {
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.667,
+        "tp": 1,
+        "pred": 1,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-deva-raj-3",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.6,
+        "recall": 0.6,
+        "f1": 0.6,
+        "tp": 3,
+        "pred": 5,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 0.5,
+        "new_precision": 0.667,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 2,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "pf-college-3",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 0.0,
+        "recall": 1.0,
+        "f1": 0.0,
+        "tp": 0,
+        "pred": 1,
+        "gold": 0
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-family-3",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 4,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 1.0,
+        "new_recall": 1.0,
+        "gold_known": 1,
+        "gold_novel": 2,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-newperson-3",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.6,
+        "recall": 0.75,
+        "f1": 0.667,
+        "tp": 3,
+        "pred": 5,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.333,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "pf-travel-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 1.0,
+        "recall": 0.8,
+        "f1": 0.889,
+        "tp": 4,
+        "pred": 4,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "pred": 2,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 1.0,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 2,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-payments-4",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.8,
+        "recall": 0.667,
+        "f1": 0.727,
+        "tp": 4,
+        "pred": 5,
+        "gold": 6
+      },
+      "action": {
+        "precision": 0.5,
+        "recall": 0.5,
+        "f1": 0.5,
+        "tp": 1,
+        "pred": 2,
+        "gold": 2
+      },
+      "discovery": {
+        "known_recall": 0.75,
+        "new_precision": 1.0,
+        "new_recall": 1.0,
+        "gold_known": 4,
+        "gold_novel": 1,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-alias-adp-3",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 1.0,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 1
+      }
+    },
+    {
+      "id": "pf-1on1-3",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.5,
+        "recall": 0.667,
+        "f1": 0.571,
+        "tp": 2,
+        "pred": 4,
+        "gold": 3
+      },
+      "action": {
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.667,
+        "tp": 1,
+        "pred": 2,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.333,
+        "new_recall": 1.0,
+        "gold_known": 1,
+        "gold_novel": 1,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "pf-social-2",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.4,
+        "recall": 0.5,
+        "f1": 0.444,
+        "tp": 2,
+        "pred": 5,
+        "gold": 4
+      },
+      "action": {
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.667,
+        "tp": 1,
+        "pred": 2,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 0.5,
+        "new_precision": 0.333,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 3
+      }
+    },
+    {
+      "id": "pf-rent-3",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.8,
+        "recall": 1.0,
+        "f1": 0.889,
+        "tp": 4,
+        "pred": 5,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 1.0,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-newproject-3",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.75,
+        "recall": 0.6,
+        "f1": 0.667,
+        "tp": 3,
+        "pred": 4,
+        "gold": 5
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 0.5,
+        "new_precision": 1.0,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 2,
+        "pred_new": 2
+      }
+    },
+    {
+      "id": "pf-deva-mummy-3",
+      "lang": "hi-en",
+      "entity_f1": {
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75,
+        "tp": 3,
+        "pred": 4,
+        "gold": 4
+      },
+      "action": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1,
+        "pred": 1,
+        "gold": 1
+      },
+      "discovery": {
+        "known_recall": 0.5,
+        "new_precision": 0.5,
+        "new_recall": 1.0,
+        "gold_known": 2,
+        "gold_novel": 1,
+        "pred_new": 2
+      }
+    }
+  ]
+}

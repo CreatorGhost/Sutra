@@ -1,0 +1,16 @@
+# Dev override: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Mounts backend source and runs uvicorn --reload. Frontend runs on host (npm run dev).
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: base
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./backend/app:/app/app
+      - ./frontend/dist:/app/static
+      - ./evals:/app/evals
+      - ./backend/tests:/app/tests
+      - ./backend/pytest.ini:/app/pytest.ini
+      - sutra_models:/models

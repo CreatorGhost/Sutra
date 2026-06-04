@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Models / caches (downloaded at runtime)
+backend/.cache/
+pretrained_models/
+
+# OS
+.DS_Store
+
+# Test artifacts
+/test-results/
+/playwright-report/
+artifacts/
+*.log
+
+# Audio must never be committed (and is never persisted anyway)
+*.wav
+*.m4a
+*.webm
+*.mp3
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Tool caches / benchmarks
+.benchmarks/
+
+# Editor
+.vscode/
+
+# Claude Code local settings
+.claude/settings.local.json
