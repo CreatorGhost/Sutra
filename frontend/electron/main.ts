@@ -35,14 +35,19 @@ function createWindow(): void {
   });
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
-  // TODO(F2): system-audio loopback for meeting capture. Registered now so the desktop path is wired.
-  // setDisplayMediaRequestHandler grants a loopback audio source without a screen-picker dialog.
+  // System-audio loopback for meeting capture (ticket F2). When the renderer calls getDisplayMedia,
+  // this handler fulfils the request with a whole-system LOOPBACK audio source (Core Audio tap /
+  // WASAPI / PipeWire) and NO screen-picker dialog (useSystemPicker:false). The renderer's
+  // ElectronCapture then merges that system track with the mic into two channels. video:false would
+  // be ideal but Electron requires a video constraint for display-media; the renderer drops the
+  // video track and keeps audio only (audio is never persisted).
   const ses = win.webContents.session;
   if (typeof ses.setDisplayMediaRequestHandler === "function") {
     ses.setDisplayMediaRequestHandler(
       (_request, callback) => {
-        // F1 stub: deny by default (no capture yet). F2 supplies a loopback audio source here.
-        callback({});
+        // 'loopback' = capture the system audio output stream directly (pre-output-device, so
+        // headphones/speakers are irrelevant — see spec §3).
+        callback({ audio: "loopback" });
       },
       { useSystemPicker: false },
     );
