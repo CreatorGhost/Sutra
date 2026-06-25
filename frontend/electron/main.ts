@@ -1,0 +1,75 @@
+// Electron main process for the Sutra desktop shell (ticket F1 — scaffold only).
+// Loads the EXISTING frontend/src renderer verbatim (same index.html / #root / App) so the UI is
+// shared, not forked. Security: contextIsolation ON, nodeIntegration OFF — the renderer talks to the
+// main process only through the minimal preload bridge (electron/preload.ts).
+//
+// The system-audio loopback handler (setDisplayMediaRequestHandler) is registered here as the F2
+// landing point; for F1 it just resolves the request so the wiring compiles and is testable.
+import { app, BrowserWindow, session } from "electron";
+import { join } from "node:path";
+
+function createWindow(): void {
+  const win = new BrowserWindow({
+    width: 1100,
+    height: 760,
+    minWidth: 720,
+    minHeight: 540,
+    backgroundColor: "#0a0912",
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, "../preload/preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  win.once("ready-to-show", () => win.show());
+
+  // Harden: keep the app on its own renderer. Block in-window navigation to external origins and
+  // open any window.open()/external link in the OS browser instead of a node-less child window.
+  win.webContents.on("will-navigate", (e, url) => {
+    const devUrl = process.env["ELECTRON_RENDERER_URL"];
+    const allowed = devUrl ? url.startsWith(devUrl) : url.startsWith("file://");
+    if (!allowed) e.preventDefault();
+  });
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+
+  // TODO(F2): system-audio loopback for meeting capture. Registered now so the desktop path is wired.
+  // setDisplayMediaRequestHandler grants a loopback audio source without a screen-picker dialog.
+  const ses = win.webContents.session;
+  if (typeof ses.setDisplayMediaRequestHandler === "function") {
+    ses.setDisplayMediaRequestHandler(
+      (_request, callback) => {
+        // F1 stub: deny by default (no capture yet). F2 supplies a loopback audio source here.
+        callback({});
+      },
+      { useSystemPicker: false },
+    );
+  }
+
+  // electron-vite exposes the renderer dev-server URL here in `dev`; it's unset in a packaged build.
+  const devUrl = process.env["ELECTRON_RENDERER_URL"];
+  if (devUrl) {
+    void win.loadURL(devUrl);
+  } else {
+    void win.loadFile(join(__dirname, "../renderer/index.html"));
+  }
+}
+
+app.whenReady().then(() => {
+  // Harden: refuse permission requests the desktop app doesn't need (geolocation, etc.).
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
+    cb(permission === "media");
+  });
+
+  createWindow();
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
+});

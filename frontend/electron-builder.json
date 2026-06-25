@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "app.sutra.desktop",
+  "productName": "Sutra",
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "files": [
+    "out/**/*"
+  ],
+  "win": {
+    "target": "nsis"
+  },
+  "mac": {
+    "target": "dmg",
+    "category": "public.app-category.productivity"
+  },
+  "linux": {
+    "target": "AppImage",
+    "category": "Utility"
+  }
+}
