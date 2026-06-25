@@ -13,6 +13,7 @@ Audio is handled in-flight ONLY and never persisted — the same invariant as th
 from __future__ import annotations
 
 import asyncio
+import functools
 import glob
 import json
 import logging
@@ -24,7 +25,7 @@ from typing import Protocol
 import httpx
 
 from ..config import get_runtime_settings
-from .audio_chunk import _ext, transcribe_chunked
+from .audio_chunk import _ext, split_stereo_channels, transcribe_chunked
 from .mock_provider import MockProvider
 from .openai_provider import OpenAIProvider
 
@@ -33,10 +34,40 @@ log = logging.getLogger("sutra.stt")
 
 class SttProvider(Protocol):
     async def transcribe_diarize(
-        self, audio: bytes, filename: str, content_type: str, prompt: str | None = None
+        self, audio: bytes, filename: str, content_type: str, prompt: str | None = None,
+        multichannel: bool = False,
     ) -> dict:
-        """Return {"text", "duration", "segments":[{speaker,start,end,text}]}. Never persist audio."""
+        """Return {"text", "duration", "segments":[{speaker,start,end,text}]}. Never persist audio.
+
+        ``multichannel=True`` (online-meeting capture) tags each segment with ``channel`` (0=mic/Me,
+        1=remotes) and ``is_me``; channel-0 carries the single owner label "Me"."""
         ...
+
+
+def _group_words_by_speaker(words: list[dict], owner_label: str | None = None) -> list[dict]:
+    """Collapse a Deepgram ``words[]`` list into per-turn segments by consecutive speaker.
+
+    ``owner_label`` (e.g. "Me") forces every emitted segment onto that single speaker, ignoring the
+    per-word diarization — used for the mic channel where the owner is known. Pure helper, shared by
+    the words-fallback and the per-channel multichannel path."""
+    segs: list[dict] = []
+    cur: dict | None = None
+    for w in words or []:
+        spk = owner_label if owner_label is not None else str(w.get("speaker", 0))
+        tok = (w.get("punctuated_word") or w.get("word") or "").strip()
+        if not tok:
+            continue
+        if cur is None or cur["speaker"] != spk:
+            if cur:
+                segs.append(cur)
+            cur = {"speaker": spk, "start": float(w.get("start", 0.0) or 0.0),
+                   "end": float(w.get("end", 0.0) or 0.0), "text": tok}
+        else:
+            cur["end"] = float(w.get("end", cur["end"]) or cur["end"])
+            cur["text"] = (cur["text"] + " " + tok).strip()
+    if cur:
+        segs.append(cur)
+    return segs
 
 
 # ── OpenAI ─────────────────────────────────────────────────────────────────────────
@@ -56,7 +87,8 @@ class OpenAiStt:
     async def _transcribe_one(self, audio, filename, content_type, prompt=None) -> dict:
         return await self._p.transcribe_diarize(audio, filename, content_type, prompt=prompt)
 
-    async def transcribe_diarize(self, audio, filename, content_type, prompt=None) -> dict:
+    async def transcribe_diarize(self, audio, filename, content_type, prompt=None, multichannel=False) -> dict:
+        # OpenAI has no stereo/multichannel STT, so the flag is accepted (uniform signature) but ignored.
         return await transcribe_chunked(self._transcribe_one, audio, filename, content_type, prompt,
                                         max_seconds=self.MAX_SECONDS, concurrency=self.CONCURRENCY,
                                         label="openai")
@@ -82,14 +114,15 @@ class DeepgramStt:
         if not self._key:
             log.warning("DEEPGRAM_API_KEY missing — Deepgram STT calls will 401.")
 
-    async def transcribe_diarize(self, audio, filename, content_type, prompt=None) -> dict:
-        return await transcribe_chunked(self._transcribe_one, audio, filename, content_type, prompt,
+    async def transcribe_diarize(self, audio, filename, content_type, prompt=None, multichannel=False) -> dict:
+        # Bind the multichannel flag so it survives auto-chunking (transcribe_chunked only passes
+        # audio/filename/content_type/prompt to the callable).
+        one = functools.partial(self._transcribe_one, multichannel=multichannel)
+        return await transcribe_chunked(one, audio, filename, content_type, prompt,
                                         max_seconds=self.MAX_SECONDS, concurrency=self.CONCURRENCY,
                                         label="deepgram")
 
-    async def _transcribe_one(self, audio, filename, content_type, prompt=None) -> dict:
-        # `prompt` is OpenAI-style free-text steering; Deepgram has no equivalent, so it is ignored
-        # here — language is chosen via the `language` param instead (`multi` = code-switching).
+    def _build_params(self, multichannel: bool = False) -> dict:
         params = {
             "model": self._model,
             "language": self._language,
@@ -99,6 +132,16 @@ class DeepgramStt:
         }
         if self._diarize:
             params["diarize"] = "true"
+        if multichannel:
+            # Online-meeting stereo: ch0=mic/Me, ch1=remotes. `channels=2` is required for raw stereo.
+            params["multichannel"] = "true"
+            params["channels"] = "2"
+        return params
+
+    async def _transcribe_one(self, audio, filename, content_type, prompt=None, multichannel=False) -> dict:
+        # `prompt` is OpenAI-style free-text steering; Deepgram has no equivalent, so it is ignored
+        # here — language is chosen via the `language` param instead (`multi` = code-switching).
+        params = self._build_params(multichannel)
         headers = {
             "Authorization": f"Token {self._key}",
             "Content-Type": content_type or "application/octet-stream",
@@ -109,16 +152,19 @@ class DeepgramStt:
             resp = await c.post("/v1/listen", params=params, content=audio)
             resp.raise_for_status()
             body = resp.json()
-        return self._normalize(body)
+        return self._normalize(body, multichannel=multichannel)
 
     @staticmethod
-    def _normalize(body: dict) -> dict:
+    def _normalize(body: dict, multichannel: bool = False) -> dict:
         results = body.get("results") or {}
         channels = results.get("channels") or []
         alt0 = ((channels[0].get("alternatives") or [{}])[0]) if channels else {}
-        text = (alt0.get("transcript") or "").strip()
         duration = float((body.get("metadata") or {}).get("duration", 0.0) or 0.0)
 
+        if multichannel:
+            return DeepgramStt._normalize_multichannel(channels, duration)
+
+        text = (alt0.get("transcript") or "").strip()
         segs: list[dict] = []
         # Primary source: utterances[] (present with utterances=true) — one turn each, with speaker.
         for u in results.get("utterances") or []:
@@ -135,25 +181,32 @@ class DeepgramStt:
             )
         # Fallback: group words[] by consecutive speaker (diarize on, utterances off).
         if not segs:
-            cur: dict | None = None
-            for w in alt0.get("words") or []:
-                spk = str(w.get("speaker", 0))
-                tok = (w.get("punctuated_word") or w.get("word") or "").strip()
-                if not tok:
-                    continue
-                if cur is None or cur["speaker"] != spk:
-                    if cur:
-                        segs.append(cur)
-                    cur = {"speaker": spk, "start": float(w.get("start", 0.0) or 0.0),
-                           "end": float(w.get("end", 0.0) or 0.0), "text": tok}
-                else:
-                    cur["end"] = float(w.get("end", cur["end"]) or cur["end"])
-                    cur["text"] = (cur["text"] + " " + tok).strip()
-            if cur:
-                segs.append(cur)
+            segs = _group_words_by_speaker(alt0.get("words") or [])
         # Last resort: a single segment from the full transcript.
         if not segs and text:
             segs = [{"speaker": "0", "start": 0.0, "end": duration, "text": text}]
+        return {"text": text, "duration": duration, "segments": segs}
+
+    @staticmethod
+    def _normalize_multichannel(channels: list[dict], duration: float) -> dict:
+        """Online-meeting stereo: results.channels[0]=mic (owner → "Me", its diarization ignored),
+        channels[1]=remotes (distinct diarized speakers preserved). Each segment is tagged with
+        ``channel`` (0/1) and ``is_me``."""
+        segs: list[dict] = []
+        text_parts: list[str] = []
+        for ch_idx, ch in enumerate(channels):
+            is_me = ch_idx == 0
+            alt = (ch.get("alternatives") or [{}])[0]
+            text_parts.append((alt.get("transcript") or "").strip())
+            # ch0 = the owner: force every word onto the single "Me" label (ignore its diarization).
+            # ch1+ = remotes: keep distinct diarized speakers (one turn per speaker run).
+            ch_segs = _group_words_by_speaker(alt.get("words") or [], owner_label="Me" if is_me else None)
+            for s in ch_segs:
+                s["channel"] = ch_idx
+                s["is_me"] = is_me
+            segs.extend(ch_segs)
+        segs.sort(key=lambda s: (s["start"], s["channel"]))
+        text = " ".join(t for t in text_parts if t).strip()
         return {"text": text, "duration": duration, "segments": segs}
 
 
@@ -182,14 +235,42 @@ class SarvamStt:
         if not self._key:
             log.warning("SARVAM_API_KEY missing — Sarvam STT calls will 403.")
 
-    async def transcribe_diarize(self, audio, filename, content_type, prompt=None) -> dict:
+    async def transcribe_diarize(self, audio, filename, content_type, prompt=None, multichannel=False) -> dict:
+        if multichannel:
+            return await self._transcribe_multichannel(audio, filename, content_type, prompt)
         # Sarvam sync caps at 30s, so the chunker windows EVERYTHING (even a normal ~90s Sutra
         # window becomes ~4 sub-windows) — this is what makes Sarvam usable in the live path.
         return await transcribe_chunked(self._transcribe_one, audio, filename, content_type, prompt,
                                         max_seconds=self.MAX_SECONDS, concurrency=self.CONCURRENCY,
                                         label="sarvam")
 
-    async def _transcribe_one(self, audio, filename, content_type, prompt=None) -> dict:
+    async def _transcribe_multichannel(self, audio, filename, content_type, prompt=None) -> dict:
+        # Sarvam merges channels to mono, so we never send stereo. Split client-side into 2 mono
+        # passes: L=mic→"Me" (channel 0), R=system→remotes (channel 1). Splitting is in-flight only.
+        left, right = await asyncio.to_thread(split_stereo_channels, audio, content_type)
+        passes = [(0, True, "Me", left), (1, False, None, right)]
+        outs = await asyncio.gather(*[
+            transcribe_chunked(self._transcribe_one, ch_audio, f"{filename}.c{idx}.wav", "audio/wav",
+                               prompt, max_seconds=self.MAX_SECONDS, concurrency=self.CONCURRENCY,
+                               label=f"sarvam-c{idx}")
+            for idx, _is_me, _owner, ch_audio in passes
+        ])
+        segs: list[dict] = []
+        text_parts: list[str] = []
+        for (idx, is_me, owner, _ch_audio), out in zip(passes, outs):
+            text_parts.append((out.get("text") or "").strip())
+            for s in out.get("segments") or []:
+                s = dict(s)
+                s["speaker"] = owner if owner is not None else str(s.get("speaker", "A"))
+                s["channel"] = idx
+                s["is_me"] = is_me
+                segs.append(s)
+        segs.sort(key=lambda s: (s["start"], s["channel"]))
+        dur = max((s["end"] for s in segs), default=0.0)
+        return {"text": " ".join(t for t in text_parts if t).strip(),
+                "duration": float(dur), "segments": segs}
+
+    async def _transcribe_one(self, audio, filename, content_type, prompt=None, multichannel=False) -> dict:
         data = {"model": self._model, "language_code": self._language}
         # `mode` is a saaras:v3-only knob (transcribe|translate|codemix|...). Older saarika models
         # reject it, so only send it for saaras.
@@ -235,7 +316,8 @@ class SarvamBatchStt:
         if not self._key:
             log.warning("SARVAM_API_KEY missing — Sarvam Batch calls will 403.")
 
-    async def transcribe_diarize(self, audio, filename, content_type, prompt=None) -> dict:
+    async def transcribe_diarize(self, audio, filename, content_type, prompt=None, multichannel=False) -> dict:
+        # Batch already diarizes; the multichannel flag is accepted (uniform signature) but a no-op.
         # The SDK job flow (upload/poll/download) is blocking, so run it off the event loop.
         return await asyncio.to_thread(self._run_job, audio, content_type)
 
@@ -302,7 +384,7 @@ class MockStt:
     def __init__(self) -> None:
         self._p = MockProvider()
 
-    async def transcribe_diarize(self, audio, filename, content_type, prompt=None) -> dict:
+    async def transcribe_diarize(self, audio, filename, content_type, prompt=None, multichannel=False) -> dict:
         return await self._p.transcribe_diarize(audio, filename, content_type)
 
 

@@ -80,6 +80,57 @@ def test_deepgram_empty_is_safe():
     assert out["segments"] == []
 
 
+def test_deepgram_single_channel_has_no_channel_or_is_me_keys():
+    # Default (multichannel=False) output must NOT leak the new multichannel keys.
+    for body in (DG_UTTERANCES, DG_WORDS_ONLY, {}):
+        out = DeepgramStt._normalize(body)
+        for s in out["segments"]:
+            assert "channel" not in s and "is_me" not in s
+
+
+# ── Deepgram multichannel (online-meeting stereo) ────────────────────────────────────
+# results.channels[]: ch0 = Me (mic, words speaker 0), ch1 = remotes (words speakers 0 and 1).
+DG_MULTICHANNEL = {
+    "metadata": {"duration": 6.0, "channels": 2},
+    "results": {
+        "channels": [
+            {"alternatives": [{
+                "transcript": "Hello team",
+                "words": [
+                    {"word": "hello", "punctuated_word": "Hello", "start": 0.0, "end": 0.4, "speaker": 0},
+                    {"word": "team", "punctuated_word": "team", "start": 0.4, "end": 0.9, "speaker": 0},
+                ],
+            }]},
+            {"alternatives": [{
+                "transcript": "Hi there sounds good",
+                "words": [
+                    {"word": "hi", "punctuated_word": "Hi", "start": 1.0, "end": 1.3, "speaker": 0},
+                    {"word": "there", "punctuated_word": "there", "start": 1.3, "end": 1.7, "speaker": 0},
+                    {"word": "sounds", "punctuated_word": "sounds", "start": 2.0, "end": 2.4, "speaker": 1},
+                    {"word": "good", "punctuated_word": "good", "start": 2.4, "end": 2.8, "speaker": 1},
+                ],
+            }]},
+        ],
+    },
+}
+
+
+def test_deepgram_multichannel_tags_channel_and_is_me():
+    out = DeepgramStt._normalize(DG_MULTICHANNEL, multichannel=True)
+    _assert_contract(out)
+    ch0 = [s for s in out["segments"] if s["channel"] == 0]
+    ch1 = [s for s in out["segments"] if s["channel"] == 1]
+    # Every channel-0 segment is the owner ("Me"), every channel-1 segment is a remote.
+    assert ch0 and all(s["is_me"] is True and s["speaker"] == "Me" for s in ch0)
+    assert ch1 and all(s["is_me"] is False and s["speaker"] != "Me" for s in ch1)
+    # ch0's own diarization is collapsed to a single "Me" turn.
+    assert len(ch0) == 1 and ch0[0]["text"] == "Hello team"
+    # ch1 keeps its two distinct diarized remote speakers → two turns.
+    assert len(ch1) == 2
+    assert {s["speaker"] for s in ch1} == {"0", "1"}
+    assert [s["text"] for s in ch1] == ["Hi there", "sounds good"]
+
+
 # ── Sarvam normalizer ────────────────────────────────────────────────────────────────
 def test_sarvam_single_segment():
     body = {"request_id": "x", "transcript": "let's work tomorrow",
@@ -187,3 +238,133 @@ def test_stitch_offsets_and_concatenates():
     # second window's segment is offset by its 25s start
     assert out["segments"][0] == {"speaker": "0", "start": 1.0, "end": 2.0, "text": "hello"}
     assert out["segments"][1] == {"speaker": "1", "start": 25.0, "end": 28.0, "text": "world"}
+
+
+# ── Deepgram request params: multichannel flag drives the params dict ─────────────────
+def test_deepgram_params_single_channel_omits_multichannel():
+    set_runtime_overrides({"stt_provider": "deepgram"})
+    try:
+        params = DeepgramStt()._build_params(multichannel=False)
+        assert "multichannel" not in params and "channels" not in params
+    finally:
+        set_runtime_overrides({})
+
+
+def test_deepgram_params_multichannel_sets_channels_two():
+    set_runtime_overrides({"stt_provider": "deepgram", "deepgram_diarize": True})
+    try:
+        params = DeepgramStt()._build_params(multichannel=True)
+        assert params["multichannel"] == "true" and params["channels"] == "2"
+        assert params["diarize"] == "true"  # diarize still on when configured
+    finally:
+        set_runtime_overrides({})
+
+
+# ── multichannel survives auto-chunking (flag forwarded per window) ───────────────────
+async def test_transcribe_chunked_forwards_multichannel_flag(monkeypatch):
+    # The chunker only ever passes (audio, filename, content_type, prompt) to its callable; the
+    # multichannel flag must be bound (functools.partial) so it survives. Force the >1-window path
+    # by making the prep step return two slices, and assert every window saw multichannel=True.
+    import app.providers.audio_chunk as ac
+
+    seen: list[bool] = []
+    dg = DeepgramStt()
+
+    async def fake_listen(self, audio, filename, content_type, prompt=None, multichannel=False):
+        seen.append(multichannel)
+        return {"text": "x", "duration": 1.0,
+                "segments": [{"speaker": "Me", "start": 0.0, "end": 1.0, "text": "x",
+                              "channel": 0, "is_me": True}]}
+
+    # Stub the network single-call; keep the real transcribe_chunked + partial binding.
+    monkeypatch.setattr(DeepgramStt, "_transcribe_one", fake_listen)
+    monkeypatch.setattr(ac, "_HAVE_FFMPEG", True)
+    monkeypatch.setattr(ac.asyncio, "to_thread",
+                        lambda fn, *a, **k: _immediate((100.0, [(0.0, b"w0"), (50.0, b"w1")])))
+
+    out = await dg.transcribe_diarize(b"stereo", "m.wav", "audio/wav", multichannel=True)
+    assert seen == [True, True]  # both windows received the flag
+    assert all(s.get("is_me") is True for s in out["segments"])
+
+    seen.clear()
+    await dg.transcribe_diarize(b"stereo", "m.wav", "audio/wav", multichannel=False)
+    assert seen == [False, False]  # single-channel chunked path unchanged
+
+
+async def _immediate(value):
+    return value
+
+
+# ── Sarvam multichannel: two passes (mic/L=Me, system/R=remotes) ──────────────────────
+async def test_sarvam_multichannel_two_passes(monkeypatch):
+    import app.providers.stt as stt
+
+    monkeypatch.setattr(stt, "split_stereo_channels", lambda audio, ct: (b"LEFT", b"RIGHT"))
+
+    calls: list[bytes] = []
+
+    async def fake_one(self, audio, filename, content_type, prompt=None, multichannel=False):
+        calls.append(audio)
+        # mic pass and system pass each yield one Sarvam-style single segment.
+        label = "me side" if audio == b"LEFT" else "remote side"
+        return {"text": label, "duration": 2.0,
+                "segments": [{"speaker": "A", "start": 0.0, "end": 2.0, "text": label}]}
+
+    monkeypatch.setattr(SarvamStt, "_transcribe_one", fake_one)
+    set_runtime_overrides({"stt_provider": "sarvam"})
+    try:
+        out = SarvamStt()
+        res = await out.transcribe_diarize(b"stereo", "m.wav", "audio/wav", multichannel=True)
+    finally:
+        set_runtime_overrides({})
+
+    assert set(calls) == {b"LEFT", b"RIGHT"}  # exactly two passes, one per channel
+    ch0 = [s for s in res["segments"] if s["channel"] == 0]
+    ch1 = [s for s in res["segments"] if s["channel"] == 1]
+    assert ch0 and all(s["is_me"] is True and s["speaker"] == "Me" for s in ch0)
+    assert ch1 and all(s["is_me"] is False for s in ch1)
+
+
+async def test_sarvam_single_channel_unchanged(monkeypatch):
+    # multichannel=False → one request, today's single-segment-per-window output (no channel/is_me).
+    async def fake_one(self, audio, filename, content_type, prompt=None, multichannel=False):
+        return {"text": "hi", "duration": 2.0,
+                "segments": [{"speaker": "A", "start": 0.0, "end": 2.0, "text": "hi"}]}
+
+    monkeypatch.setattr(SarvamStt, "_transcribe_one", fake_one)
+    set_runtime_overrides({"stt_provider": "sarvam"})
+    try:
+        res = await SarvamStt().transcribe_diarize(b"mono", "m.wav", "audio/wav")
+    finally:
+        set_runtime_overrides({})
+    assert len(res["segments"]) == 1
+    assert "channel" not in res["segments"][0] and "is_me" not in res["segments"][0]
+
+
+# ── Every provider's transcribe_diarize accepts a multichannel kwarg without TypeError ─
+async def test_all_providers_accept_multichannel_kwarg(monkeypatch):
+    import app.providers.stt as stt
+
+    # Stub each provider's underlying network/SDK call so we only test the signature plumbing.
+    async def dg_one(self, audio, filename, content_type, prompt=None, multichannel=False):
+        return {"text": "", "duration": 0.0, "segments": []}
+
+    async def sv_one(self, audio, filename, content_type, prompt=None, multichannel=False):
+        return {"text": "", "duration": 0.0, "segments": []}
+
+    monkeypatch.setattr(DeepgramStt, "_transcribe_one", dg_one)
+    monkeypatch.setattr(SarvamStt, "_transcribe_one", sv_one)
+    monkeypatch.setattr(stt, "split_stereo_channels", lambda a, ct: (b"L", b"R"))
+    monkeypatch.setattr(stt.OpenAIProvider, "transcribe_diarize",
+                        lambda self, *a, **k: _immediate({"text": "", "duration": 0.0, "segments": []}))
+    monkeypatch.setattr(SarvamBatchStt, "_run_job",
+                        lambda self, audio, content_type: {"text": "", "duration": 0.0, "segments": []})
+
+    for name in ("openai", "deepgram", "sarvam", "sarvam_batch", "mock"):
+        set_runtime_overrides({"stt_provider": name})
+        try:
+            prov = get_stt_provider()
+            # Must not raise TypeError on the multichannel kwarg.
+            await prov.transcribe_diarize(b"a", "f.wav", "audio/wav", multichannel=True)
+        finally:
+            set_runtime_overrides({})

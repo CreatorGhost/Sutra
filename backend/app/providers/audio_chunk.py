@@ -86,6 +86,32 @@ def _slice_wav(path: str, start: float, length: float) -> bytes:
     return out if rc == 0 else b""
 
 
+def split_stereo_channels(audio: bytes, content_type: str | None) -> tuple[bytes, bytes]:
+    """Split stereo audio into (left, right) mono 16 kHz WAV bytes — for providers that merge
+    channels (Sarvam) and so need the mic (L) and system (R) channels as two separate requests.
+
+    In-flight ONLY: the audio is written to a temp file that is removed in ``finally``; no on-disk
+    audio path is introduced. If ffmpeg is unavailable the original bytes are returned for both
+    channels (graceful no-op — provider still transcribes, just without the L/R separation)."""
+    if not _HAVE_FFMPEG:
+        return audio, audio
+    tf = tempfile.NamedTemporaryFile(suffix=_ext(content_type), delete=False)
+    try:
+        tf.write(audio)
+        tf.flush()
+        tf.close()
+
+        def _chan(map_expr: str) -> bytes:
+            rc, out, _ = _run(["ffmpeg", "-v", "error", "-i", tf.name, "-af", map_expr,
+                               "-ac", "1", "-ar", "16000", "-f", "wav", "pipe:1"])
+            return out if rc == 0 else b""
+
+        # pan filters extract one source channel each → mono 16k. FL=left=mic, FR=right=system.
+        return _chan("pan=mono|c0=FL"), _chan("pan=mono|c0=FR")
+    finally:
+        os.path.exists(tf.name) and os.unlink(tf.name)
+
+
 def stitch(results: list[tuple[int, float, dict | None, str | None]], total_duration: float) -> dict:
     """Merge per-window results (idx, start_offset, normalized_out|None, err|None) into one
     timeline, offsetting every segment by its window start. Pure function — unit-tested.
@@ -101,12 +127,19 @@ def stitch(results: list[tuple[int, float, dict | None, str | None]], total_dura
         if out.get("text"):
             text_parts.append(out["text"].strip())
         for s in out.get("segments", []) or []:
-            segs.append({
+            seg = {
                 "speaker": str(s.get("speaker", "A")),
                 "start": float(s.get("start", 0.0) or 0.0) + start,
                 "end": float(s.get("end", 0.0) or 0.0) + start,
                 "text": (s.get("text") or "").strip(),
-            })
+            }
+            # Carry through multichannel tags (online-meeting stereo) when the provider set them,
+            # so channel/is_me survive auto-chunking. Single-channel segments stay untagged.
+            if "channel" in s:
+                seg["channel"] = s["channel"]
+            if "is_me" in s:
+                seg["is_me"] = s["is_me"]
+            segs.append(seg)
     return {"text": " ".join(t for t in text_parts if t).strip(),
             "duration": float(total_duration),
             "segments": segs,

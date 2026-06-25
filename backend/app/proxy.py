@@ -74,6 +74,7 @@ async def health() -> dict:
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...), prompt: str | None = Form(None),
                      voiceprints: bool = Form(False),
+                     multichannel: bool = Form(False),
                      content_length: int | None = Header(None),
                      principal: Principal = Depends(require_user),
                      x_openai_key: str | None = Header(None)) -> dict:
@@ -94,8 +95,11 @@ async def transcribe(file: UploadFile = File(...), prompt: str | None = Form(Non
     try:
         # STT is pluggable (settings.stt_provider: openai | deepgram | sarvam | mock); the text
         # channels below stay on OpenAI. BYO key only applies to the openai STT path.
+        # `multichannel=true` (online-meeting stereo): ch0=mic→"Me", ch1=remotes; segments tagged
+        # channel/is_me. Default false → identical to today's single-channel behavior.
         result = await get_stt_provider(x_openai_key).transcribe_diarize(
-            audio, file.filename or "audio", file.content_type or "audio/webm", prompt=prompt)
+            audio, file.filename or "audio", file.content_type or "audio/webm", prompt=prompt,
+            multichannel=multichannel)
         # Meter audio SECONDS from the provider's duration (fallback: last segment end).
         secs = float(result.get("duration") or 0.0)
         if not secs:
