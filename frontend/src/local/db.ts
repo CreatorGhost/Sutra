@@ -1,8 +1,27 @@
 import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from "@capacitor-community/sqlite";
 import { Capacitor } from "@capacitor/core";
 import { MIGRATIONS, SCHEMA_VERSION } from "./schema";
+import { createElectronStorageProvider } from "../storage/electronStorage";
+import type { StorageProvider } from "../storage/StorageProvider";
 
-const DB_NAME = "sutra";
+export const DB_NAME = "sutra";
+
+// ── Desktop (Electron) delegation (ticket F7) ───────────────────────────────────────────────────
+// When running inside the Electron renderer the preload bridge exposes globalThis.sutraDesktop, and
+// the real DB is better-sqlite3 (+ FTS5) in the MAIN process (electron/storage.ts). q/run/exec/persist
+// below forward to that StorageProvider so EVERY local/repo caller (Memory, graph, chat, Projects,
+// minutes, recap, settings, people, search) transparently runs against the desktop adapter with no
+// per-feature change. With no bridge present this is null and the Capacitor/sql.js path runs unchanged.
+// The provider is memoised so the IPC proxy is built once; importing electronStorage pulls in NO
+// native code (it only calls the preload bridge), so the shared renderer/PWA bundle stays clean.
+let desktopProvider: StorageProvider | null | undefined;
+function desktop(): StorageProvider | null {
+  if (desktopProvider !== undefined) return desktopProvider;
+  const hasBridge = typeof globalThis !== "undefined" && (globalThis as any).sutraDesktop != null;
+  desktopProvider = hasBridge ? createElectronStorageProvider() : null;
+  return desktopProvider;
+}
+
 let sqlite: SQLiteConnection | null = null;
 let db: SQLiteDBConnection | null = null;
 let opening: Promise<SQLiteDBConnection> | null = null;
@@ -71,6 +90,14 @@ export async function openDb(): Promise<SQLiteDBConnection> {
   return opening;
 }
 
+/** Forget the cached connection so the next openDb() re-establishes one. Used after a restore closes
+ *  the underlying handle out from under us (the plugin connection no longer exists, but `db`/`opening`
+ *  would still point at the stale closed handle). */
+export function resetConnectionCache(): void {
+  db = null;
+  opening = null;
+}
+
 async function migrate(c: SQLiteDBConnection): Promise<void> {
   const res = await c.query("PRAGMA user_version;");
   const cur = Number((res.values?.[0] as any)?.user_version ?? 0);
@@ -91,11 +118,15 @@ async function migrate(c: SQLiteDBConnection): Promise<void> {
 }
 
 export async function q<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  const d = desktop();
+  if (d) return d.q<T>(sql, params);
   const c = await openDb();
   return ((await c.query(sql, params)).values ?? []) as T[];
 }
 
 export async function run(sql: string, params: any[] = []): Promise<{ lastId: number; changes: number }> {
+  const d = desktop();
+  if (d) return d.run(sql, params);
   const c = await openDb();
   // Defensive: the native SQLite bridge rejects `undefined` params ("No value for type"). Coerce to null.
   const safe = params.map((p) => (p === undefined ? null : p));
@@ -104,11 +135,30 @@ export async function run(sql: string, params: any[] = []): Promise<{ lastId: nu
 }
 
 export async function exec(sql: string): Promise<void> {
+  const d = desktop();
+  if (d) return d.exec(sql);
   const c = await openDb();
   await c.execute(sql);
 }
 
-/** Persist the web store after writes (no-op on native). */
+/** Persist the web store after writes (no-op on native and on the desktop adapter — both durable). */
 export async function persist(): Promise<void> {
+  const d = desktop();
+  if (d) return d.persist();
   if (Capacitor.getPlatform() === "web" && sqlite) await sqlite.saveToStore(DB_NAME);
+}
+
+/** Ensure the DB is open (and migrated), then hand back the open DB connection.
+ *  Used by backup export — exportToJson lives on the DB connection. */
+export async function getConnection(): Promise<SQLiteDBConnection> {
+  return openDb();
+}
+
+/** The plugin-level SQLiteConnection (importFromJson / isJsonValid live here, not on the DB
+ *  connection). Forces an open first so the connection is provisioned and, on native, the
+ *  Keystore secret is seeded. */
+export async function getSqlite(): Promise<SQLiteConnection> {
+  await openDb();
+  if (!sqlite) throw new Error("sqlite connection not initialised");
+  return sqlite;
 }

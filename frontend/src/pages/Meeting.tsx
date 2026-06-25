@@ -109,8 +109,9 @@ export default function Meeting() {
             Meeting capture needs the desktop app or Chrome/Edge
           </div>
           <div style={{ fontSize: "var(--fs-s)" }}>{capability.reason}</div>
-          <div style={{ fontSize: "var(--fs-s)", marginTop: 12, opacity: 0.8 }}>
-            Your privacy is unchanged: meeting audio is processed live and never stored.
+          <div className="row capture-reassure" style={{ marginTop: 14, justifyContent: "center" }}>
+            <ShieldCheck size={15} color="var(--ok)" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: "var(--fs-s)" }}>Audio is processed live and never stored.</span>
           </div>
         </div>
       </div>

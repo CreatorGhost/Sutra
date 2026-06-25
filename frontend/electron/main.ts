@@ -9,6 +9,20 @@ import { app, BrowserWindow, session } from "electron";
 import { join } from "node:path";
 import { initDesktopStorage } from "./storage";
 
+// Auto-update (ticket F7). electron-updater pulls signed releases from the electron-builder `publish`
+// provider and prompts to install on next launch. Gated behind app.isPackaged so it is INERT in dev
+// (`npm run dev`) — checkForUpdatesAndNotify would otherwise throw on the missing app-update.yml — and
+// active only inside a packaged build. Loaded lazily so dev never touches the native updater.
+async function initAutoUpdate(): Promise<void> {
+  if (!app.isPackaged) return; // inert in dev
+  try {
+    const { autoUpdater } = await import("electron-updater");
+    await autoUpdater.checkForUpdatesAndNotify();
+  } catch {
+    // Best-effort: a missing update feed / offline launch must never block the app.
+  }
+}
+
 function createWindow(): void {
   const win = new BrowserWindow({
     width: 1100,
@@ -74,6 +88,9 @@ app.whenReady().then(() => {
   initDesktopStorage();
 
   createWindow();
+
+  // Check for updates after the window is up (inert in dev; active in a packaged build).
+  void initAutoUpdate();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

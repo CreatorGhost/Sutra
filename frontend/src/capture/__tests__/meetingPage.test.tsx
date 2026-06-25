@@ -23,8 +23,8 @@ describe("Meeting page", () => {
   it("renders the unsupported fallback (no DOM globals) without crashing", () => {
     const html = renderToStaticMarkup(createElement(Meeting));
     expect(html).toContain("Meeting capture needs the desktop app or Chrome/Edge");
-    // Privacy line is always present.
-    expect(html).toContain("never stored");
+    // The gate fallback ALSO carries the canonical audio-never-stored copy (ticket F7).
+    expect(html).toContain("Audio is processed live and never stored.");
   });
 
   it("renders the REAL capture UI (not the old stub) in a mocked Chromium context", () => {

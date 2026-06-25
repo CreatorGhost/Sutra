@@ -25,5 +25,10 @@
   "linux": {
     "target": "AppImage",
     "category": "Utility"
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "CreatorGhost",
+    "repo": "Sutra"
   }
 }
