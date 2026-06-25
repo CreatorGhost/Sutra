@@ -27,7 +27,7 @@ describe("Meeting page", () => {
     expect(html).toContain("never stored");
   });
 
-  it("renders the supported state in a mocked Chromium context without crashing", () => {
+  it("renders the REAL capture UI (not the old stub) in a mocked Chromium context", () => {
     setGlobal("navigator", {
       userAgent: CHROME_UA,
       mediaDevices: { getDisplayMedia: () => {}, getUserMedia: () => {} },
@@ -36,5 +36,14 @@ describe("Meeting page", () => {
     expect(html).toContain("Meeting capture");
     // Provider was resolved and its kind rendered (browser path here).
     expect(html).toContain("browser");
+    // The real capture surface — NOT the old "lands next" stub.
+    expect(html).not.toContain("Two-channel capture lands next");
+    // A Start control + a live-status region + source/mic indicators.
+    expect(html).toContain("Start");
+    expect(html).toContain("status-line");
+    expect(html).toContain("system → remotes");
+    expect(html).toContain("mic → me");
+    // The privacy line is always present here too.
+    expect(html).toContain("never stored");
   });
 });

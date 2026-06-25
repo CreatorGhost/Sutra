@@ -7,7 +7,7 @@ import { attributeSegments } from "./channelAttribution";
 /** Diarize a window and persist turns. The audio Blob is used in-flight only and never stored.
  *  P2: speaker identity = the per-call diarization label; cross-session identity comes from manual
  *  "this is me" labeling (auto ECAPA voiceprint is Phase 3). */
-export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: number, provider: Provider, filename?: string, windowStartMs?: number) {
+export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: number, provider: Provider, filename?: string, windowStartMs?: number, requestMultichannel?: boolean) {
   const sess = await repo.getSession(sessionId);
   if (!sess) throw new Error("session not found");
   // Honor the user's transcription-language choice (onboarding/Settings → transcript_lang setting).
@@ -22,8 +22,11 @@ export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: n
   // an ogg container, or webm/mp4 where ogg isn't supported). Fall back only if none was provided;
   // match the fallback to the blob's own type so the extension stays consistent with the content.
   const fallbackExt = blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm";
+  // Online-meeting capture sends two-channel WAV windows and asks for per-channel diarization so the
+  // owner (mic, ch0) and remotes (system, ch1) are tagged at the source (F4 attribution then applies).
+  // Ambient capture leaves multichannel undefined → the opt is omitted and the request is unchanged.
   const tr = await provider.transcribeDiarize(blob, filename ?? `window-${windowIndex}.${fallbackExt}`,
-    { prompt: langCfg.prompt, voiceprints: wantVoiceprints });
+    { prompt: langCfg.prompt, voiceprints: wantVoiceprints, multichannel: requestMultichannel || undefined });
   const started: string | null = sess.started_at ?? null;
   // English mode (degrade-safe): when the user picked "english" we translate segment texts to English
   // in ONE batched call (cloud only — on-device has no translate endpoint). On ANY failure we keep the

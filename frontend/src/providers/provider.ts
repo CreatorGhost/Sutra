@@ -11,7 +11,7 @@ export interface Transcription { text: string; duration: number; segments: Diari
  *  primes the ASR for the chosen script/language; `""` means "no prompt" (Verbatim, no normalization).
  *  `translate` selects English mode, which runs a real text→text translation pass (Provider.translate)
  *  after transcription. `voiceprints` asks the proxy for per-turn ECAPA embeddings (hybrid-only speaker-ID). */
-export interface TranscribeOpts { prompt?: string; translate?: boolean; voiceprints?: boolean }
+export interface TranscribeOpts { prompt?: string; translate?: boolean; voiceprints?: boolean; multichannel?: boolean }
 
 /** Cleanup options. `mode` picks English-translate vs keep-script. The optional project-context fields are
  *  user-authored grounding: `glossary` is a canonical-spelling line (spelling correction ONLY) and `brief`/

@@ -83,6 +83,10 @@ export class CloudProvider implements Provider {
     // Hybrid speaker-ID: ask the proxy to also compute per-turn ECAPA voiceprints from the same
     // in-flight audio (vectors only; audio is never stored). Off unless the caller opts in.
     if (opts?.voiceprints) fd.append("voiceprints", "true");
+    // Online-meeting (two-channel) capture: ask the proxy to diarize per-channel — channel 0 = "Me"
+    // (mic), channel 1 = remotes. ONLY set when the caller opts in; the ambient (single-channel) path
+    // never sends this field, so its request is byte-for-byte unchanged.
+    if (opts?.multichannel) fd.append("multichannel", "true");
     // Generous timeout: transcription + diarization + per-turn ECAPA can take a while (incl. first-call
     // model load), but not forever — a dead proxy must surface as an error, not a permanent hang.
     const r = await this.fetchT("/transcribe", { method: "POST", body: fd }, 180000);
