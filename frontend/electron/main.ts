@@ -7,6 +7,7 @@
 // landing point; for F1 it just resolves the request so the wiring compiles and is testable.
 import { app, BrowserWindow, session } from "electron";
 import { join } from "node:path";
+import { initDesktopStorage } from "./storage";
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -67,6 +68,10 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
     cb(permission === "media");
   });
+
+  // Open the encrypted desktop DB (better-sqlite3 + safeStorage key) and register the `sutra:db` IPC
+  // handler the renderer's StorageProvider proxy forwards q/run/exec/persist to (ticket F5).
+  initDesktopStorage();
 
   createWindow();
 
