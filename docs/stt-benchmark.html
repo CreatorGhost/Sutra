@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sutra · STT Benchmark</title>
+<style>
+  :root{
+    --bg:#0a0a0e; --card:#14141b; --card2:#1a1a23; --ink:#edeef4; --mut:#9596a4;
+    --line:#26262f; --dg:#34d399; --sv:#a78bfa; --oa:#f87171; --amber:#fbbf24;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 50% -10%,#16161f,var(--bg));
+    color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:44px 24px 80px;max-width:1080px;margin:0 auto}
+  h1{font-size:32px;margin:0 0 4px;letter-spacing:-.02em}
+  h2{font-size:15px;margin:46px 0 16px;color:var(--mut);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+  .sub{color:var(--mut);margin-bottom:6px}
+  .meta{color:var(--mut);font-size:13px;margin-bottom:30px}
+  code{background:#22222c;padding:1px 6px;border-radius:5px;font-size:13px}
+
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px}
+  .card.win{border-color:rgba(52,211,153,.45);background:linear-gradient(180deg,rgba(52,211,153,.06),var(--card))}
+  .rank{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.07em}
+  .nm{font-size:22px;font-weight:750;margin:2px 0 1px}
+  .eng{font-size:12px;color:var(--mut)}
+  .score{font-size:42px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+  .score small{font-size:15px;color:var(--mut);font-weight:600}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;vertical-align:middle}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 24px}
+  .radar-wrap{display:grid;grid-template-columns:380px 1fr;gap:24px;align-items:center}
+  .legend{display:flex;flex-direction:column;gap:14px}
+  .legend .li{display:flex;align-items:baseline;gap:10px}
+  .legend .li b{font-size:16px}
+  .legend .li span{color:var(--mut);font-size:13px}
+
+  .chart{margin:6px 0}
+  .row{display:grid;grid-template-columns:96px 1fr;align-items:center;gap:14px;margin:11px 0}
+  .row .lab{color:var(--mut);font-size:13.5px;text-align:right;font-weight:600}
+  .track{background:#21212a;border-radius:8px;height:26px;overflow:hidden;position:relative}
+  .fill{height:100%;border-radius:8px;display:flex;align-items:center;justify-content:flex-end;
+    padding-right:10px;font-size:12.5px;font-weight:800;color:#0a0a0e;min-width:40px;white-space:nowrap}
+  .f-dg{background:linear-gradient(90deg,#0f9d6e,#34d399)}
+  .f-sv{background:linear-gradient(90deg,#7c5cf0,#a78bfa)}
+  .f-oa{background:linear-gradient(90deg,#dc2626,#f87171)}
+  .cap{color:var(--mut);font-size:12.5px;margin-top:8px}
+
+  table{width:100%;border-collapse:collapse;margin:4px 0}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top}
+  th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  td.metric{color:var(--mut)}
+  .best{color:var(--dg);font-weight:700}
+  .mid{color:var(--amber)}
+  .worst{color:var(--oa);font-weight:600}
+
+  .tx{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:12px 0}
+  .tx .lbl{font-weight:750;font-size:15px;margin-bottom:8px;display:flex;align-items:center}
+  .pill{display:inline-block;font-size:11px;padding:3px 10px;border-radius:20px;margin-left:auto;font-weight:700}
+  .p-g{background:rgba(52,211,153,.16);color:var(--dg)}
+  .p-a{background:rgba(251,191,36,.16);color:var(--amber)}
+  .p-r{background:rgba(248,113,113,.16);color:var(--oa)}
+  .quote{font-size:14.5px;color:#dcdce6}
+  .deva{color:#fca5a5}
+  .garble{color:#fca5a5;font-weight:700}
+  .note{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin:14px 0;font-size:14px;color:#cfcfda}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .flag{color:var(--amber);font-weight:700}
+  .foot{color:var(--mut);font-size:13px;margin-top:48px;border-top:1px solid var(--line);padding-top:16px}
+  @media(max-width:780px){.cards,.grid2,.radar-wrap{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<h1>Speech-to-Text: which engine wins for Sutra</h1>
+<div class="sub">OpenAI <code>gpt-4o-transcribe-diarize</code> · Deepgram <code>nova-3</code> · Sarvam <code>saaras:v3</code></div>
+<div class="meta">25 Jun 2026 · 3 real recordings (1 English-leaning, 2 heavy-Hindi) · run through the live <code>app/providers/stt.py</code> · scored on a weighted rubric tuned for Sutra</div>
+
+<!-- VERDICT -->
+<div class="cards">
+  <div class="card win">
+    <div class="rank">🥇 winner · today</div>
+    <div class="nm"><span class="dot" style="background:var(--dg)"></span>Deepgram</div>
+    <div class="eng">nova-3 · multi</div>
+    <div class="score" style="color:var(--dg)">4.30<small> / 5</small></div>
+    <div class="eng" style="margin-top:8px">Best all-round system: diarization, speed, long-form, $200 runway.</div>
+  </div>
+  <div class="card">
+    <div class="rank">🥈 best text quality</div>
+    <div class="nm"><span class="dot" style="background:var(--sv)"></span>Sarvam</div>
+    <div class="eng">saaras:v3 · translate</div>
+    <div class="score" style="color:var(--sv)">3.30<small> / 5</small></div>
+    <div class="eng" style="margin-top:8px">Cleanest English (0 leak). Jumps to 4.25 once Batch API adds diarization.</div>
+  </div>
+  <div class="card">
+    <div class="rank">🥉 retire</div>
+    <div class="nm"><span class="dot" style="background:var(--oa)"></span>OpenAI</div>
+    <div class="eng">gpt-4o-transcribe-diarize</div>
+    <div class="score" style="color:var(--oa)">2.00<small> / 5</small></div>
+    <div class="eng" style="margin-top:8px">Garbles acronyms, slowest, raw-rejects long files.</div>
+  </div>
+</div>
+
+<!-- RADAR -->
+<h2>Capability profile (0 to 5 on each axis)</h2>
+<div class="panel">
+ <div class="radar-wrap">
+  <svg viewBox="0 0 370 330" width="380" height="338" role="img" aria-label="Radar chart">
+    <!-- grid hexagons -->
+    <g fill="none" stroke="#2c2c38" stroke-width="1">
+      <polygon points="180,40 283.9,100 283.9,220 180,280 76.1,220 76.1,100"/>
+      <polygon points="180,64 263.1,112 263.1,208 180,256 96.9,208 96.9,112"/>
+      <polygon points="180,88 242.4,124 242.4,196 180,232 117.6,196 117.6,124"/>
+      <polygon points="180,112 221.6,136 221.6,184 180,208 138.4,184 138.4,136"/>
+      <polygon points="180,136 200.8,148 200.8,172 180,184 159.2,172 159.2,148"/>
+    </g>
+    <g stroke="#2c2c38" stroke-width="1">
+      <line x1="180" y1="160" x2="180" y2="40"/><line x1="180" y1="160" x2="283.9" y2="100"/>
+      <line x1="180" y1="160" x2="283.9" y2="220"/><line x1="180" y1="160" x2="180" y2="280"/>
+      <line x1="180" y1="160" x2="76.1" y2="220"/><line x1="180" y1="160" x2="76.1" y2="100"/>
+    </g>
+    <!-- OpenAI -->
+    <polygon points="180,136 242.4,124 242.4,196 180,184 138.4,184 117.6,124"
+      fill="#f87171" fill-opacity="0.14" stroke="#f87171" stroke-width="2"/>
+    <!-- Sarvam -->
+    <polygon points="180,40 200.8,148 242.4,196 180,256 117.6,196 117.6,124"
+      fill="#a78bfa" fill-opacity="0.16" stroke="#a78bfa" stroke-width="2"/>
+    <!-- Deepgram -->
+    <polygon points="180,88 283.9,100 283.9,220 180,280 76.1,220 76.1,100"
+      fill="#34d399" fill-opacity="0.16" stroke="#34d399" stroke-width="2.5"/>
+    <!-- axis labels -->
+    <g fill="#c7c7d2" font-size="12.5" font-family="sans-serif">
+      <text x="180" y="30" text-anchor="middle">Text quality</text>
+      <text x="300" y="92" text-anchor="start">Diarize</text>
+      <text x="300" y="232" text-anchor="start">Long-form</text>
+      <text x="180" y="305" text-anchor="middle">Speed</text>
+      <text x="60" y="232" text-anchor="end">Cost</text>
+      <text x="60" y="92" text-anchor="end">Ops fit</text>
+    </g>
+  </svg>
+  <div class="legend">
+    <div class="li"><span class="dot" style="background:var(--dg)"></span><div><b style="color:var(--dg)">Deepgram</b><br><span>Big, balanced area: strong on diarize, long-form, speed, cost. Dips only on raw text (Devanagari).</span></div></div>
+    <div class="li"><span class="dot" style="background:var(--sv)"></span><div><b style="color:var(--sv)">Sarvam</b><br><span>Spikes to the top on text quality, collapses on diarization (sync has none).</span></div></div>
+    <div class="li"><span class="dot" style="background:var(--oa)"></span><div><b style="color:var(--oa)">OpenAI</b><br><span>Smallest area overall: weak text on heavy Hindi, slow, length-limited.</span></div></div>
+  </div>
+ </div>
+</div>
+
+<!-- WEIGHTED TOTAL -->
+<h2>Overall weighted score (out of 5)</h2>
+<div class="chart">
+  <div class="row"><div class="lab">Deepgram</div><div class="track"><div class="fill f-dg" style="width:86%">4.30</div></div></div>
+  <div class="row"><div class="lab">Sarvam</div><div class="track"><div class="fill f-sv" style="width:66%">3.30</div></div></div>
+  <div class="row"><div class="lab">OpenAI</div><div class="track"><div class="fill f-oa" style="width:40%">2.00</div></div></div>
+  <div class="cap">6 dimensions, each 0 to 5 × its weight (see scorecard below), summed.</div>
+</div>
+
+<!-- SPEED -->
+<h2>Processing speed (× realtime, full file · higher is faster)</h2>
+<div class="chart">
+  <div class="row"><div class="lab">Deepgram</div><div class="track"><div class="fill f-dg" style="width:100%">~64×</div></div></div>
+  <div class="row"><div class="lab">Sarvam</div><div class="track"><div class="fill f-sv" style="width:28%">~18×</div></div></div>
+  <div class="row"><div class="lab">OpenAI</div><div class="track"><div class="fill f-oa" style="width:5%">~2.4×</div></div></div>
+  <div class="cap">Deepgram did a full 24-min recording in ~22s. OpenAI took 3.5 min for 8 min of audio.</div>
+</div>
+
+<!-- HINDI LEAK -->
+<h2>Hindi script left in raw output (lower = more English-ready)</h2>
+<div class="chart">
+  <div class="row"><div class="lab">Sarvam</div><div class="track"><div class="fill f-sv" style="width:2%;color:var(--ink);background:#2a2a35">0 (translates)</div></div></div>
+  <div class="row"><div class="lab">OpenAI</div><div class="track"><div class="fill f-oa" style="width:46%">~2,439</div></div></div>
+  <div class="row"><div class="lab">Deepgram</div><div class="track"><div class="fill f-dg" style="width:100%">~5,265</div></div></div>
+  <div class="cap">Devanagari chars in a 24-min heavy-Hindi transcript. Sarvam outputs English directly. Deepgram's high count is faithful in-language transcription (handled by Sutra's existing translate step), not errors. OpenAI's is inconsistent leakage.</div>
+</div>
+
+<!-- FREE CREDIT -->
+<h2>Free testing runway (hours of audio on signup credit)</h2>
+<div class="chart">
+  <div class="row"><div class="lab">Deepgram</div><div class="track"><div class="fill f-dg" style="width:100%">~298 h ($200)</div></div></div>
+  <div class="row"><div class="lab">Sarvam</div><div class="track"><div class="fill f-sv" style="width:3%;color:var(--ink);background:#2a2a35">~2.2 h (₹100, spent)</div></div></div>
+  <div class="row"><div class="lab">OpenAI</div><div class="track"><div class="fill f-oa" style="width:1%;color:var(--ink);background:#2a2a35">none</div></div></div>
+</div>
+
+<!-- PRICING -->
+<h2>Pricing (cost per hour of audio, with diarization where supported)</h2>
+<div class="chart">
+  <div class="row"><div class="lab">OpenAI</div><div class="track"><div class="fill f-oa" style="width:54%">~$0.36 / hr *est</div></div></div>
+  <div class="row"><div class="lab">Sarvam</div><div class="track"><div class="fill f-sv" style="width:81%">₹45 (~$0.54) / hr · Batch</div></div></div>
+  <div class="row"><div class="lab">Deepgram</div><div class="track"><div class="fill f-dg" style="width:100%">$0.67 / hr</div></div></div>
+  <div class="cap">Longer bar = more expensive. Deepgram (multilingual + diarization add-ons stack) is priciest per hour; OpenAI is cheapest but worst on heavy Hindi.</div>
+</div>
+<table>
+  <tr><th>Pricing</th><th>OpenAI</th><th>Deepgram</th><th>Sarvam</th></tr>
+  <tr><td class="metric">Per minute (transcribe)</td><td>~$0.006 *est</td><td>$0.0092 (multi)</td><td class="best">₹0.50 (~$0.006)</td></tr>
+  <tr><td class="metric">Per minute (+ diarization)</td><td>~$0.006 (bundled)</td><td class="worst">$0.0112</td><td>₹0.75 (Batch)</td></tr>
+  <tr><td class="metric">Per hour (+ diarization)</td><td class="best">~$0.36</td><td class="worst">$0.67</td><td>₹45 (~$0.54)</td></tr>
+  <tr><td class="metric">One 1-hour meeting</td><td>~$0.36</td><td>$0.67</td><td>₹45 (~$0.54)</td></tr>
+  <tr><td class="metric">8 h/day × 30 days (240 h)</td><td class="best">~$86</td><td class="worst">~$161</td><td>₹10,800 (~$130)</td></tr>
+  <tr><td class="metric">Free signup credit</td><td class="worst">none</td><td class="best">$200 (~300 h)</td><td>₹100 (~2–3 h)</td></tr>
+  <tr><td class="metric">Billing currency</td><td>USD</td><td>USD</td><td class="best">INR (India)</td></tr>
+</table>
+<div class="note">Billed per second on actual audio, so the auto-chunker adds no cost (same total duration). Deepgram runs ~2× the per-hour cost of the others (multilingual + diarization add-ons), but its <b>$200 free credit covers ~300 hours</b>, more than a month of all-day testing at no cost. (*OpenAI’s diarization per-minute rate is not separately published; estimated from gpt-4o-transcribe.)</div>
+
+<!-- VALUE / PRICE-TO-PERFORMANCE -->
+<h2>Price-to-performance (value = performance ÷ cost per hour)</h2>
+<div class="chart">
+  <div class="row"><div class="lab">Sarvam</div><div class="track"><div class="fill f-sv" style="width:100%">9.2 · best value</div></div></div>
+  <div class="row"><div class="lab">Deepgram</div><div class="track"><div class="fill f-dg" style="width:70%">6.4</div></div></div>
+  <div class="row"><div class="lab">OpenAI</div><div class="track"><div class="fill f-oa" style="width:61%">5.6</div></div></div>
+  <div class="cap">Performance score (out of 5) divided by cost per hour. Higher = more quality per rupee.</div>
+</div>
+<div class="grid2">
+  <div class="note"><b>Best value: Sarvam.</b> Cheapest per hour, bills in INR, delivers clean English in one call (no translate step). With Batch it adds diarization at ₹45/hr, still under Deepgram.</div>
+  <div class="note"><b>Two horizons:</b> for free testing now, Deepgram wins (its $200 ≈ 300 free hours). For production cost at scale, Sarvam wins.</div>
+</div>
+
+<!-- TRANSCRIPT PROOF -->
+<h2>Proof: same 28 seconds of heavy Hindi, three engines</h2>
+<div class="sub">Speaker: “take the <b>UAT DB</b> / <b>fraud DB</b>, move it, make a new DB for fraud… once the <b>demo</b>’s done the fraud DB becomes UAT, we’ll make a separate prod DB.”</div>
+<div class="tx">
+  <div class="lbl">Sarvam <span class="pill p-g">clean English · 0 leak</span></div>
+  <div class="quote">“Let's do this, the <b>UAT DB</b>, the <b>fraud DB</b>, let's pick it up and throw it into the UAT and create a new DB for fraud. Yes, the fraud will start from the beginning and the new DB will be connected to it. If the <b>demo</b> is done, then the fraud DB will become the UAT DB from today. And we will create a separate DB for fraud. They won't have to <b>scroll</b> or anything.”</div>
+</div>
+<div class="tx">
+  <div class="lbl">Deepgram <span class="pill p-a">accurate · Devanagari</span></div>
+  <div class="quote"><span class="deva">से करते हैं</span> <b>UAT</b> <span class="deva">वाला जो</span> <b>DB</b> <span class="deva">है ना जो आप</span> <b>fraud</b> <span class="deva">वाला DB उठाकर… यह fraud का नया DB बना देते हैं. हां, नया वाला DB उससे</span> <b>connect</b> <span class="deva">कर देते…</span></div>
+</div>
+<div class="tx">
+  <div class="lbl">OpenAI <span class="pill p-r">garbled acronyms</span></div>
+  <div class="quote">“But I can think <span class="garble">U_V_T_</span> wala jo <span class="garble">D_V_N_</span> just u Huh? The road wala <span class="garble">D_V_</span> utha ke U_V_T_ pada dete hain… code ka naya D_V_ bana dete hain… <span class="garble">raddam</span> zero se zero ho jayega…”</div>
+</div>
+
+<!-- SCORECARD -->
+<h2>The scorecard (how the weights add up)</h2>
+<table>
+  <tr><th>Dimension (weight)</th><th>OpenAI</th><th>Deepgram</th><th>Sarvam</th><th>why weighted this way</th></tr>
+  <tr><td class="metric">Text quality, Hinglish→English (0.35)</td><td class="worst">1</td><td class="mid">3</td><td class="best">5</td><td class="metric">the product is readable, searchable memory</td></tr>
+  <tr><td class="metric">Diarization (0.25)</td><td>3</td><td class="best">5</td><td class="worst">1</td><td class="metric">the “who said what” promise</td></tr>
+  <tr><td class="metric">Long-form reliability (0.15)</td><td>3</td><td class="best">5</td><td>3</td><td class="metric">all-day ambient capture</td></tr>
+  <tr><td class="metric">Speed (0.10)</td><td class="worst">1</td><td class="best">5</td><td>4</td><td class="metric">responsiveness</td></tr>
+  <tr><td class="metric">Cost &amp; free runway (0.10)</td><td>2</td><td class="best">5</td><td>3</td><td class="metric">unit economics</td></tr>
+  <tr><td class="metric">Operational fit (0.05)</td><td>3</td><td class="best">5</td><td>3</td><td class="metric">streaming, SDK, effort</td></tr>
+  <tr style="border-top:2px solid var(--line)"><td><b>WEIGHTED TOTAL</b></td><td class="worst"><b>2.00</b></td><td class="best"><b>4.30</b></td><td class="mid"><b>3.30</b></td><td></td></tr>
+</table>
+<div class="grid2">
+  <div class="note"><b>Today:</b> Deepgram 4.30 beats Sarvam 3.30 beats OpenAI 2.00.</div>
+  <div class="note"><b>After Sarvam Batch</b> (async diarization + long files): Sarvam rises to <b>4.25</b>, tying Deepgram, and overtakes if text quality is weighted higher.</div>
+</div>
+
+<!-- FULL METRICS -->
+<h2>Every measured parameter</h2>
+<table>
+  <tr><th>Metric</th><th>OpenAI</th><th>Deepgram</th><th>Sarvam</th></tr>
+  <tr><td class="metric">Speed, full file (× realtime)</td><td class="worst">~2.4×</td><td class="best">~47–80×</td><td>~18×</td></tr>
+  <tr><td class="metric">Speed, 28s clip</td><td class="worst">12–17 s</td><td>2.5–3.6 s</td><td class="best">1.2–2.7 s</td></tr>
+  <tr><td class="metric">Diarization (speakers, 24 min)</td><td>3</td><td class="best">4</td><td class="worst">0 (sync)</td></tr>
+  <tr><td class="metric">Hindi leak (heavy-Hindi, chars)</td><td class="worst">2,439–3,619</td><td class="mid">2,155–5,265</td><td class="best">0</td></tr>
+  <tr><td class="metric">English output</td><td class="worst">leaks, inconsistent</td><td class="mid">needs translate step</td><td class="best">native, one call</td></tr>
+  <tr><td class="metric">Tech terms (UAT/DB/nectar)</td><td class="worst">✗ U_V_T_, D_V_</td><td class="best">✓ (nectar→vector 1×)</td><td class="best">✓ all correct</td></tr>
+  <tr><td class="metric">Raw max length</td><td class="worst">23 min / 25 MB</td><td class="best">~unlimited (2 GB)</td><td class="worst">30 s (sync)</td></tr>
+  <tr><td class="metric">Cost / min</td><td>~$0.006 *est</td><td class="worst">$0.0112</td><td class="best">₹0.50 (~$0.006)</td></tr>
+  <tr><td class="metric">Free credit</td><td class="worst">none</td><td class="best">$200 (~298 h)</td><td class="mid">₹100 (~133 min)</td></tr>
+</table>
+<div class="note">Every engine now handles <b>any length</b> inside Sutra via the new auto-chunker (<code>audio_chunk.py</code>), so the “raw max length” limits no longer block it. Proof: OpenAI’s 24-min file that returned a hard 400 now self-chunks into 3 windows and produces a full <b>353-segment</b> timeline, 0 failed.</div>
+
+<!-- BUILD + FLAGS -->
+<h2>What was built &amp; validated</h2>
+<table>
+  <tr><th>Item</th><th>Status</th></tr>
+  <tr><td><b>Pluggable STT layer</b> (<code>stt.py</code>): one switch, <code>STT_PROVIDER=openai|deepgram|sarvam|mock</code></td><td class="best">✓ built + tested</td></tr>
+  <tr><td><b>Auto-chunking</b> (<code>audio_chunk.py</code>): silence-aware window planner, offset-stitcher, concurrent orchestrator, graceful per-window failure</td><td class="best">✓ built</td></tr>
+  <tr><td>Unit tests (window tiling, silence cuts, offset stitch, normalizers, factory)</td><td class="best">✓ 10 / 10</td></tr>
+  <tr><td>Real-API validation, OpenAI 24-min (was 400) self-chunks to 353 segs, 0 failed</td><td class="best">✓ confirmed</td></tr>
+  <tr><td>Real-API validation, Sarvam 8.2-min sliced into 21 windows, degraded cleanly on 402</td><td class="mid">✓ chunker OK, ⚠ credit spent</td></tr>
+</table>
+<div class="note"><span class="flag">⚠ Operational:</span> Sarvam ₹100 free credit is <b>exhausted</b> (402); top up to keep testing it live. Both API keys are in <code>backend/.env</code> (gitignored) and were pasted in chat, so <b>rotate them</b>. Running a non-OpenAI engine on the phone or live stack needs a backend image rebuild (code + keys are baked into the container).</div>
+
+<div class="foot">Sutra STT evaluation · data from live benchmark runs on real recordings · companion to <code>docs/STT-BENCHMARK.md</code></div>
+
+</body>
+</html>
