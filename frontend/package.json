@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "main": "out/main/main.js",
+  "main": "out/main/main.cjs",
   "scripts": {
     "dev": "electron-vite dev",
     "dev:web": "vite",

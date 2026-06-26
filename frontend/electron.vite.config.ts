@@ -15,7 +15,7 @@ export default defineConfig({
     build: {
       lib: { entry: resolve(__dirname, "electron/main.ts"), formats: ["cjs"] },
       rollupOptions: {
-        output: { dir: resolve(__dirname, "out/main"), entryFileNames: "main.js" },
+        output: { dir: resolve(__dirname, "out/main"), entryFileNames: "main.cjs" },
       },
     },
   },
@@ -25,7 +25,7 @@ export default defineConfig({
       // CJS .js (not .mjs) — a sandboxed preload must be CommonJS.
       lib: { entry: resolve(__dirname, "electron/preload.ts"), formats: ["cjs"] },
       rollupOptions: {
-        output: { dir: resolve(__dirname, "out/preload"), entryFileNames: "preload.js" },
+        output: { dir: resolve(__dirname, "out/preload"), entryFileNames: "preload.cjs" },
       },
     },
   },
