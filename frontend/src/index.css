@@ -537,3 +537,10 @@ input[type="checkbox"] { accent-color: var(--accent); width: 18px; height: 18px;
   .detail-page .detail-grid > .card:first-child { grid-column: 1 / -1; }
   .detail-page .turn { max-width: 760px; }
 }
+/* Focus/read pages (Home capture, Ask, Settings, sign-in): a deliberate centered column on desktop —
+   the right pattern for a single-action / chat / settings screen (not stretched, not a phone strip). */
+@media (min-width: 1024px) {
+  .page.focus-page { max-width: 860px; }
+  /* Graph (.wide-page): let the canvas use the desktop width AND height. */
+  .graph-page .graph-canvas, .graph-page canvas, .graph-page svg { min-height: calc(100dvh - var(--nav-h) - 180px); }
+}
