@@ -6,7 +6,7 @@ import logging
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 
-from .config import settings
+from .config import get_runtime_settings, refresh_runtime_settings, set_runtime_overrides, settings
 from .db import get_pool
 from .schemas import ChatRequest, RelabelRequest, SearchRequest, SessionCreate, SettingsUpdate
 from .services import chat as chat_svc
@@ -46,26 +46,37 @@ async def health() -> dict:
 
 @router.get("/settings")
 async def get_settings_ep() -> dict:
-    return {k: getattr(settings, k) for k in OVERRIDABLE}
+    await refresh_runtime_settings()
+    rt = get_runtime_settings()
+    return {k: getattr(rt, k) for k in OVERRIDABLE}
 
 
 @router.put("/settings")
 async def put_settings_ep(body: SettingsUpdate) -> dict:
     pool = await get_pool()
     data = body.data or {}
-    applied = {}
+    applied, rejected = {}, {}
     for k, v in data.items():
-        if k in OVERRIDABLE:
-            try:
-                cur = getattr(settings, k)
-                setattr(settings, k, type(cur)(v) if not isinstance(cur, bool) else bool(v))
-                applied[k] = getattr(settings, k)
-            except Exception as e:
-                log.warning("setting %s rejected: %s", k, e)
-    await pool.execute(
-        "UPDATE settings SET data = data || $1 WHERE id=1", applied
-    )
-    return {"applied": applied}
+        if k not in OVERRIDABLE:
+            rejected[k] = "unknown or non-overridable key"
+            continue
+        try:
+            # Coerce against the env-default type WITHOUT mutating the global Settings singleton.
+            default = getattr(settings, k)
+            applied[k] = bool(v) if isinstance(default, bool) else type(default)(v)
+        except Exception as e:
+            rejected[k] = str(e)
+            log.warning("setting %s rejected: %s", k, e)
+    if applied:
+        # Persist ONLY the DB row, then refresh the in-process cache so the change is visible
+        # to this and (via re-read) other workers — no global mutation, no cross-request bleed.
+        new_data = await pool.fetchval(
+            "UPDATE settings SET data = data || $1 WHERE id=1 RETURNING data", applied
+        )
+        set_runtime_overrides(dict(new_data or {}))
+    if data and not applied:
+        raise HTTPException(422, {"applied": {}, "rejected": rejected})
+    return {"applied": applied, "rejected": rejected}
 
 
 # ---------- sessions & capture ----------
@@ -154,6 +165,9 @@ async def relabel_ep(sid: int, label: str, body: RelabelRequest) -> dict:
 
 @router.delete("/people/{pid}")
 async def del_person_ep(pid: int) -> dict:
+    pool = await get_pool()
+    if not await pool.fetchval("SELECT 1 FROM people WHERE id=$1", pid):
+        raise HTTPException(404, "person not found")
     await people_svc.delete_person(pid)
     return {"deleted": pid}
 
@@ -294,7 +308,12 @@ async def run_recap_ep(body: dict = Body(default={})) -> dict:
         except (ValueError, TypeError):
             raise HTTPException(400, "invalid day; expected YYYY-MM-DD")
     else:
-        day = dt.datetime.now(dt.timezone.utc).date()
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(settings.app_timezone)
+        except Exception:
+            tz = dt.timezone.utc
+        day = dt.datetime.now(tz).date()
     emailed = await recap.send_recap_email(day)
     roll = await get_pool()
     r = await roll.fetchrow("SELECT * FROM daily_rollups WHERE day=$1", day)

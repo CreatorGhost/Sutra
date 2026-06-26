@@ -81,14 +81,15 @@ async def extract_conversation(conversation_id: int) -> dict | None:
 
     facts = data.get("facts", []) or []
     fact_blob = " ".join(facts)
-    importance = float(max(0.0, min(1.0, data.get("importance_score", 0.5))))
+    raw_importance = data.get("importance_score")
+    importance = float(max(0.0, min(1.0, raw_importance if isinstance(raw_importance, (int, float)) else 0.5)))
 
     mem_id = await pool.fetchval(
         """INSERT INTO memories
            (conversation_id, summary, facts, action_items, decisions, importance_score, type_tags,
             embedding, search_tsv)
            VALUES($1,$2,$3,$4,$5,$6,$7,$8, to_tsvector('simple', $9))
-           ON CONFLICT (conversation_id) DO UPDATE SET
+           ON CONFLICT (user_id, conversation_id) DO UPDATE SET
                summary=EXCLUDED.summary, facts=EXCLUDED.facts, action_items=EXCLUDED.action_items,
                decisions=EXCLUDED.decisions, importance_score=EXCLUDED.importance_score,
                type_tags=EXCLUDED.type_tags, embedding=EXCLUDED.embedding, search_tsv=EXCLUDED.search_tsv
@@ -137,11 +138,19 @@ async def process_session(session_id: int) -> dict:
     """Segment a session into conversations and extract intelligence for each."""
     conv_ids = await segment_session(session_id)
     results = []
+    last_error: str | None = None
     for cid in conv_ids:
         try:
             r = await extract_conversation(cid)
             if r:
                 results.append(r)
         except Exception as e:
+            last_error = str(e)
             log.exception("extraction failed for conversation %s: %s", cid, e)
-    return {"session_id": session_id, "conversations": conv_ids, "extracted": results}
+    return {
+        "session_id": session_id,
+        "conversations": conv_ids,
+        "extracted": results,
+        "failed": len(conv_ids) - len(results),
+        "last_error": last_error,
+    }
