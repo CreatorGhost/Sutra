@@ -15,6 +15,10 @@ dist-ssr/
 *.local
 .vite/
 
+# electron-builder buildResources (icons/entitlements) — keep tracked despite a global `build/` ignore.
+!frontend/build/
+!frontend/build/**
+
 # Env & secrets
 .env
 .env.*
@@ -44,9 +48,16 @@ artifacts/
 
 # Tool caches / benchmarks
 .benchmarks/
+.playwright-mcp/
 
 # Editor
 .vscode/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Local scratch screenshots / device photos (kept out of the repo root)
+screenshots/
+/*.png
+/*.jpeg
+/*.jpg

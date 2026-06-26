@@ -1,17 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Mic, Pause, Play, Square, Upload, Loader2, Check, ShieldCheck, ArrowRight } from "lucide-react";
+import { Mic, Pause, Play, Square, Upload, Loader2, Check, ShieldCheck, ArrowRight, CalendarClock } from "lucide-react";
 import { api } from "../local/sutra";
+import { coalesceTurns } from "../local/coalesce";
+import { buildSpeakerDisplay } from "../local/util";
 import { CaptureController, type CaptureState } from "../lib/capture";
-import { clock, timeAgo } from "../lib/format";
+import { clock, timeAgo, fmtDate } from "../lib/format";
 import { useWakeLock } from "../lib/useWakeLock";
+import { recordHaptic } from "../lib/nativeChrome";
+import { setCaptureGuard } from "../lib/captureGuard";
+import { setHeaderStatus } from "../lib/headerTitle";
 import { Chip, ErrorBar } from "../components/ui";
 import { Waveform } from "../components/Waveform";
-import { MODE_COPY } from "../providers";
+
+// Tolerant timestamp parser: accepts ISO ("…T…Z") or "YYYY-MM-DD HH:MM:SS".
+const _ms = (v: any) => { if (!v) return NaN; const s = String(v); return Date.parse(s.includes("T") ? s : s.replace(" ", "T") + "Z"); };
 
 interface Turn {
   id: number; person_name?: string | null; is_me?: boolean; session_speaker_label: string;
   text: string; start_ts: number; speaker_confidence?: number | null; lang?: string;
+  window_index?: number | null; end_ts?: number | null; abs_start?: string | null;
 }
 
 export default function Capture() {
@@ -26,16 +34,34 @@ export default function Capture() {
   const [elapsed, setElapsed] = useState(0);
   const ctrlRef = useRef<CaptureController | null>(null);
   const sidRef = useRef<number | null>(null);
+  const stopRef = useRef<() => Promise<void>>(async () => {}); // always points at the CURRENT stop()
+  const stoppingRef = useRef(false); // a stop() is in flight — unmount must NOT start a second one
   const fileRef = useRef<HTMLInputElement>(null);
   const nav = useNavigate();
-  const [privacy, setPrivacy] = useState(MODE_COPY.hybrid.audio);
   const [lastSession, setLastSession] = useState<{ id: number; title?: string; started_at?: string } | null>(null);
-  useEffect(() => { api.getMode().then((m: any) => setPrivacy(MODE_COPY[m as keyof typeof MODE_COPY].audio)).catch(() => {}); }, []);
+  const [openActions, setOpenActions] = useState<any[]>([]);
+  const [upcoming, setUpcoming] = useState<any[]>([]);
   // Quietly surface the most recent memory so the lower half of an idle Capture screen isn't dead
   // space. Best-effort: stays hidden if nothing exists or the read fails.
   useEffect(() => { api.listConversations().then((cs: any[]) => setLastSession(cs?.[0] ?? null)).catch(() => {}); }, []);
+  // "Today" snapshot: open action items + upcoming events. Best-effort (catch → empty, card hidden).
+  // Re-run when `done` flips true — a fresh memory may have added actions/events.
+  useEffect(() => {
+    api.actionItems("open").then((a: any[]) => setOpenActions(a ?? [])).catch(() => {});
+    api.upcomingEvents().then((e: any[]) => setUpcoming(e ?? [])).catch(() => {});
+  }, [done]);
   const recording = state !== "idle" && state !== "paused";
   const active = state !== "idle"; // recording or paused — keep the waveform stage up
+  // On unmount: if a recording is still live, run the FULL stop() flow (drain → close → process) as
+  // fire-and-forget — in an SPA the async keeps going after unmount and Memory shows "Processing…".
+  // setState-after-unmount is a safe no-op in React 19. Always also tear down the controller so the
+  // mic MediaStream, AudioContext, MediaRecorder, VAD interval, visibilitychange listener and Android
+  // ForegroundMic service can't be orphaned.
+  useEffect(() => () => {
+    if (sidRef.current && !stoppingRef.current) void stopRef.current();
+    else void ctrlRef.current?.stop();
+    ctrlRef.current = null;
+  }, []);
   useWakeLock(recording || processing); // hold the screen awake THROUGH processing so a lock can't kill it
   useEffect(() => {
     if (state === "idle") { setElapsed(0); return; }
@@ -45,6 +71,16 @@ export default function Capture() {
   }, [state]);
   const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
+  // Mirror the live recording state into the app bar so it's visible while scrolling. Cleared on
+  // unmount (StrictMode-safe: cleanup nulls it so a remount can't leave a stale status).
+  useEffect(() => {
+    if (processing) setHeaderStatus({ kind: "proc", text: "Processing…" });
+    else if (state === "paused") setHeaderStatus({ kind: "paused", text: fmt(elapsed) + " · Paused" });
+    else if (state !== "idle") setHeaderStatus({ kind: "rec", text: fmt(elapsed) + " · Recording" });
+    else setHeaderStatus(null);
+    return () => setHeaderStatus(null);
+  }, [state, processing, elapsed]);
+
   const ensureSession = useCallback(async () => {
     if (sidRef.current) return sidRef.current;
     const s = await api.createSession();
@@ -52,7 +88,7 @@ export default function Capture() {
   }, []);
 
   const uploadsRef = useRef<Promise<unknown>[]>([]);
-  const uploadWindow = useCallback((blob: Blob, index: number) => {
+  const uploadWindow = useCallback((blob: Blob, index: number, startedAtMs: number) => {
     setInflight((n) => n + 1);
     const p = (async () => {
       try {
@@ -60,7 +96,7 @@ export default function Capture() {
         // otherwise an early window's audio would be silently dropped (it's never stored).
         const sid = sidRef.current ?? (await ensureSession());
         const ext = blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm";
-        const res = await api.ingestWindow(sid, blob, index, `window-${index}.${ext}`);
+        const res = await api.ingestWindow(sid, blob, index, `window-${index}.${ext}`, startedAtMs);
         if (res?.turns?.length) setTurns((prev) => [...prev, ...res.turns]);
       } catch (e: any) { setError(e.message); }
       finally { setInflight((n) => n - 1); }
@@ -73,14 +109,15 @@ export default function Capture() {
     setError(null); setDone(false);
     try {
       const ctrl = new CaptureController({
-        maxSeconds: 150, silenceMs: 1200,
-        onWindow: (b, i) => void uploadWindow(b, i),
+        maxSeconds: 90, silenceMs: 1200,
+        onWindow: (b, i, t) => void uploadWindow(b, i, t),
         onState: setState,
         onLevel: (rms) => setLevel(Math.min(1, rms * 14)),
         onError: setError,
       });
       ctrlRef.current = ctrl;
       await ctrl.start();        // starts/ resumes AudioContext within the gesture (iOS-safe)
+      void recordHaptic(true);   // confirmed start — stronger Medium tap
       await ensureSession();     // session is ready well before the first window closes
     } catch (e: any) {
       console.error("[capture] start failed:", e?.name, "-", e?.message, e);
@@ -92,10 +129,13 @@ export default function Capture() {
 
   const togglePause = () => {
     const c = ctrlRef.current; if (!c) return;
+    void recordHaptic();
     if (state === "paused") c.resume(); else c.pause();
   };
 
   const stop = async () => {
+    stoppingRef.current = true; // set synchronously, BEFORE any await — the unmount cleanup keys on it
+    void recordHaptic();
     const c = ctrlRef.current; const sid = sidRef.current;
     await c?.stop(); ctrlRef.current = null;
     setState("idle");
@@ -110,19 +150,38 @@ export default function Capture() {
         if (r?.failed > 0) setError(`Processed with issues — ${r.failed} part(s) failed${r.lastError ? ": " + r.lastError : ""}. Reopen to retry.`);
         else setDone(true);
       } catch (e: any) { setError(e.message); }
-      finally { setProcessing(false); uploadsRef.current = []; sidRef.current = null; setSessionId(null); }
+      finally { setProcessing(false); uploadsRef.current = []; sidRef.current = null; setSessionId(null); stoppingRef.current = false; }
     }
+    else stoppingRef.current = false;
   };
+  stopRef.current = stop; // the guard/unmount must always run the CURRENT closure (latest state)
+
+  // Register the recording guard so Nav links and hardware-back can end+process a live recording
+  // before leaving Capture. Guard ONLY while recording/paused — once processing starts the recording
+  // is already over, leaving is harmless (the async finishes in the background; Memory shows
+  // "Processing…"), so no confirm sheet then. Cleared on unmount.
+  useEffect(() => {
+    setCaptureGuard(active, () => stopRef.current());
+    return () => setCaptureGuard(false, null);
+  }, [active]);
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]; if (!f) return;
+    const files = Array.from(e.target.files ?? []); if (!files.length) return;
     setError(null); setDone(false); setTurns([]);
     sidRef.current = null; setSessionId(null); // each upload is its own fresh session (don't reuse a closed one)
     try {
       const sid = await ensureSession();
       setProcessing(true);
-      const res = await api.ingestWindow(sid, f, 0, f.name);
-      if (res?.turns?.length) setTurns(res.turns);
+      // One or many: multiple files are treated as ordered ~2-min windows of ONE recording (pre-split
+      // import), ingested in sequence into a single session — the same multi-window pipeline live
+      // capture uses. A single file stays exactly as before (one window, no synthetic timeline).
+      const WINDOW_MS = 120000;
+      const base = Date.now();
+      const multi = files.length > 1;
+      for (let i = 0; i < files.length; i++) {
+        const res = await api.ingestWindow(sid, files[i], i, files[i].name, multi ? base + i * WINDOW_MS : undefined);
+        if (i === 0 && res?.turns?.length) setTurns(res.turns);
+      }
       await api.closeSession(sid);
       const r: any = await api.processSession(sid);
       if (r?.failed > 0) setError(`Couldn't fully process this audio — ${r.failed} part(s) failed${r.lastError ? ": " + r.lastError : ""}.`);
@@ -138,8 +197,16 @@ export default function Capture() {
     : state === "paused" ? "Paused" : inflight > 0 ? "Transcribing…" : "Ready";
   const dotClass = recording ? (state === "speaking" ? "live" : "idle") : inflight > 0 || processing ? "proc" : "idle";
 
+  // Clear, screen-reader-first recording-state line so TalkBack announces start/stop/pause distinctly
+  // (the engine-state status-line above is terse: "Listening for speech"/"Saving window…").
+  const liveStatus = processing ? "Processing recording"
+    : state === "paused" ? "Recording paused"
+    : recording ? "Recording in progress"
+    : done ? "Recording processed" : "";
+
   return (
-    <div className="page fade-in capture-page">
+    <div className="page fade-in capture-page focus-page">
+      <span className="sr-only" role="status" aria-live="assertive">{liveStatus}</span>
       <ErrorBar message={error} onDismiss={() => setError(null)} />
 
       <div className="hero mic-card">
@@ -176,12 +243,11 @@ export default function Capture() {
                 <Upload size={15} /> Upload audio
               </button>
             )}
-            <input ref={fileRef} type="file" accept="audio/*,.m4a,.mp3,.wav,.webm" hidden onChange={onFile} />
+            <input ref={fileRef} type="file" accept="audio/*,.m4a,.mp3,.wav,.webm" multiple hidden onChange={onFile} />
           </div>
           {done && <div className="chip ok"><Check size={13} /> Processed — view it in Memory</div>}
         </div>
       </div>
-      <p className="capture-intro">{privacy}</p>
 
       {turns.length > 0 && (
         <div style={{ marginTop: 28 }}>
@@ -189,29 +255,65 @@ export default function Capture() {
             <h3>Live transcript</h3>
             {sessionId && done && <button className="btn sm" onClick={() => nav("/memory")}>Open memory →</button>}
           </div>
-          {turns.map((t) => {
-            const me = t.is_me;
-            const who = t.person_name || `Speaker ${t.session_speaker_label}`;
+          {/* Coalesce only for display; crossWindow MUST be false here (labels aren't stabilized mid-recording). */}
+          {(() => {
+            const display = coalesceTurns(turns as any, { maxGapS: 2, maxMergeWords: 400, crossWindow: false });
+            // Base = first displayed turn's absolute time, so each row shows elapsed-from-start.
+            const _t0 = _ms((display[0] as any)?.abs_start);
+            const sd = buildSpeakerDisplay(display);
+            return display.map((t) => {
+            const me = !!t.is_me;
+            const who = t.person_name || sd.get(t.session_speaker_label) || "Speaker";
             return (
               <div key={t.id} className={`turn ${me ? "me" : ""}`}>
                 <div className="who">
                   {who}{me && <Chip kind="me">me</Chip>}
-                  <span className="ts mono">{clock(t.start_ts)}</span>
+                  <span className="ts mono">{clock((() => { const e = (_ms((t as any).abs_start) - _t0) / 1000; return Number.isFinite(e) && e >= 0 ? e : t.start_ts; })())}</span>
                   {t.lang && t.lang !== "en" && <span className="chip">{t.lang}</span>}
                 </div>
                 <div className="bubble">{t.text}</div>
               </div>
             );
-          })}
+            });
+          })()}
         </div>
       )}
       {turns.length === 0 && !recording && !processing && (
         // Fill the idle lower half with calm, on-brand affordances instead of void:
         // a continue-where-you-left-off chip (only if a memory exists) + a privacy reassurance.
         <div className="capture-idle">
-          <p className="faint" style={{ textAlign: "center", fontSize: 13, marginTop: 0 }}>
+          <p className="faint" style={{ textAlign: "center", fontSize: "var(--fs-s)", marginTop: 0 }}>
             Tap the mic to start, or upload a recording.
           </p>
+          {/* "Today" snapshot — top open actions (due ones first) + upcoming events. Only if non-empty. */}
+          {(() => {
+            // Stable sort: items WITH a due date first, original order otherwise.
+            const actions = [...openActions].sort((a, b) => (a.due ? 0 : 1) - (b.due ? 0 : 1)).slice(0, 3);
+            const events = upcoming.slice(0, 3);
+            if (actions.length === 0 && events.length === 0) return null;
+            return (
+              <div className="card">
+                <div className="row" style={{ marginBottom: 10 }}><CalendarClock size={15} color="var(--accent-2)" /><strong>Today</strong></div>
+                <div className="stack" style={{ gap: 8 }}>
+                  {actions.map((a) => (
+                    <Link to={`/conversation/${a.conversation_id ?? a.source_conversation}`} key={`a${a.id}`} className="between tap" style={{ gap: 10, minHeight: 40 }}>
+                      <span className="row" style={{ gap: 8, flex: 1, minWidth: 0, alignItems: "flex-start" }}><Square size={14} className="faint" style={{ flexShrink: 0, marginTop: 2 }} /><span className="clamp-2">{a.text}</span></span>
+                      {a.due ? <Chip kind="warn">due {a.due}</Chip> : null}
+                    </Link>
+                  ))}
+                  {events.map((ev) => (
+                    <Link to={`/conversation/${ev.conversation_id}`} key={`e${ev.id}`} className="between tap" style={{ gap: 10, minHeight: 40 }}>
+                      <span className="row" style={{ gap: 8, flex: 1, minWidth: 0, alignItems: "flex-start" }}><CalendarClock size={14} className="faint" style={{ flexShrink: 0, marginTop: 2 }} /><span className="clamp-2">{ev.title}</span></span>
+                      <span className="faint mono" style={{ fontSize: "var(--fs-xs)", whiteSpace: "nowrap", flexShrink: 0 }}>{ev.start_ts ? fmtDate(ev.start_ts) : ev.when_text}</span>
+                    </Link>
+                  ))}
+                  {openActions.length > actions.length && (
+                    <Link to="/memory?tab=actions" className="row faint" style={{ fontSize: "var(--fs-s)", minHeight: 40 }}>All actions →</Link>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
           {lastSession && (
             <Link to={`/conversation/${lastSession.id}`} className="card tap capture-last">
               <div className="meta">Last memory · {timeAgo(lastSession.started_at)}</div>
