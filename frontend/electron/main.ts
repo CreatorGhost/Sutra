@@ -5,9 +5,16 @@
 //
 // The system-audio loopback handler (setDisplayMediaRequestHandler) is registered here as the F2
 // landing point; for F1 it just resolves the request so the wiring compiles and is testable.
-import { app, BrowserWindow, session } from "electron";
+import { app, BrowserWindow, session, desktopCapturer } from "electron";
 import { join } from "node:path";
 import { initDesktopStorage } from "./storage";
+
+// Dev-only: expose a Chrome DevTools Protocol port so the renderer can be inspected/automated
+// headlessly (no second browser). Must be set before app is ready; absent in packaged builds.
+if (!app.isPackaged) {
+  app.commandLine.appendSwitch("remote-debugging-port", "9222");
+  app.commandLine.appendSwitch("remote-allow-origins", "*");
+}
 
 // Auto-update (ticket F7). electron-updater pulls signed releases from the electron-builder `publish`
 // provider and prompts to install on next launch. Gated behind app.isPackaged so it is INERT in dev
@@ -60,9 +67,15 @@ function createWindow(): void {
   if (typeof ses.setDisplayMediaRequestHandler === "function") {
     ses.setDisplayMediaRequestHandler(
       (_request, callback) => {
-        // 'loopback' = capture the system audio output stream directly (pre-output-device, so
-        // headphones/speakers are irrelevant — see spec §3).
-        callback({ audio: "loopback" });
+        // Electron REQUIRES a video source for display-media even when we only want audio — returning
+        // audio alone throws "Video was requested, but no video stream was provided". Hand back a screen
+        // source + whole-system LOOPBACK audio ('loopback' = the system output stream directly,
+        // pre-output-device, so headphones/speakers are irrelevant). ElectronCapture immediately drops
+        // the video track and keeps audio only (audio is never persisted).
+        desktopCapturer
+          .getSources({ types: ["screen"] })
+          .then((sources) => callback(sources[0] ? { video: sources[0], audio: "loopback" } : {}))
+          .catch(() => callback({}));
       },
       { useSystemPicker: false },
     );

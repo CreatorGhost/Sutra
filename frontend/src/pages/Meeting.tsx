@@ -15,6 +15,15 @@ import { Chip, ErrorBar } from "../components/ui";
 //     a session + starts the provider; each ~90s window is WAV-encoded in-flight and ingested as
 //     multichannel (mic=ch0 "Me", system=ch1 remotes); Stop drains uploads → closes → processes.
 // Audio is NEVER persisted: a window's PCM becomes a WAV Blob only for the in-flight ingest call.
+// Friendly speaker label for the live transcript: the named person, else "Me" (owner) or "Speaker N".
+function speakerName(t: any): string {
+  if (t?.person_name) return String(t.person_name);
+  const lbl = String(t?.session_speaker_label ?? "");
+  const m = lbl.match(/(\d+)/);
+  if (/remote/i.test(lbl) && m) return `Speaker ${Number(m[1]) + 1}`;
+  return "Me";
+}
+
 export default function Meeting() {
   const capability = useMemo(() => detectCaptureCapability(), []);
   // Resolve the provider through the SAME contract whether Electron or browser — the render path below
@@ -27,6 +36,7 @@ export default function Meeting() {
   const [inflight, setInflight] = useState(0);
   const [windowsEmitted, setWindowsEmitted] = useState(0);
   const [turnCount, setTurnCount] = useState(0);
+  const [turns, setTurns] = useState<any[]>([]);
 
   // --- source pickers ---
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
@@ -37,6 +47,9 @@ export default function Meeting() {
   const [installEvt, setInstallEvt] = useState<any>(null);
 
   const ctrlRef = useRef<MeetingController | null>(null);
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  // Live transcript auto-follows the newest turn.
+  useEffect(() => { const el = transcriptRef.current; if (el) el.scrollTop = el.scrollHeight; }, [turns]);
 
   const capturing = phase === "capturing";
   const processing = phase === "processing";
@@ -74,6 +87,7 @@ export default function Meeting() {
   const start = useCallback(async () => {
     setError(null);
     setTurnCount(0);
+    setTurns([]);
     const ctrl = new MeetingController({
       provider,
       api,
@@ -82,7 +96,7 @@ export default function Meeting() {
       onError: setError,
       onInflight: setInflight,
       onWindows: setWindowsEmitted,
-      onTurns: (t) => setTurnCount((n) => n + t.length),
+      onTurns: (t) => { setTurnCount((n) => n + t.length); setTurns((prev) => [...prev, ...t]); },
       onPhase: setPhase,
     });
     ctrlRef.current = ctrl;
@@ -129,13 +143,14 @@ export default function Meeting() {
   const dotClass = capturing ? "live" : processing || inflight > 0 ? "proc" : "idle";
 
   return (
-    <div className="page fade-in" style={{ paddingBottom: "calc(var(--nav-h) + var(--sab) + 8px)" }}>
+    <div className="page fade-in wide-page meeting-page" style={{ paddingBottom: "calc(var(--nav-h) + var(--sab) + 8px)" }}>
       <span className="sr-only" role="status" aria-live="assertive">
         {capturing ? "Meeting capture in progress" : processing ? "Processing meeting" : ended ? "Capture ended" : ""}
       </span>
       <ErrorBar message={error} onDismiss={() => setError(null)} />
 
-      <div className="hero">
+      <div className="meeting-grid">
+      <div className="hero meeting-main">
         <div style={{ fontSize: "var(--fs-body)", color: "var(--muted)", marginBottom: 4 }}>Meeting capture</div>
 
         {/* Live status region — windows + in-flight, screen-reader friendly. */}
@@ -222,6 +237,28 @@ export default function Meeting() {
           <ShieldCheck size={15} color="var(--ok)" style={{ flexShrink: 0 }} />
           <span style={{ fontSize: "var(--fs-s)" }}>Audio is processed live and never stored.</span>
         </div>
+      </div>
+
+        {/* Live transcript — fills the desktop canvas; on mobile it appears once turns arrive. */}
+        <aside className={`meeting-transcript${turns.length === 0 && !capturing ? " is-empty" : ""}`}>
+          <div className="mt-head">
+            <span className={`status-dot ${capturing ? "live" : "idle"}`} />
+            Live transcript
+            {turnCount > 0 && <span className="faint" style={{ marginLeft: "auto", fontWeight: 400, fontSize: "var(--fs-xs)" }}>{turnCount} turns</span>}
+          </div>
+          <div className="mt-body" ref={transcriptRef}>
+            {turns.length === 0 ? (
+              <div className="mt-empty">{capturing ? "Listening… turns appear as each window is transcribed." : "Your meeting transcript will appear here, live."}</div>
+            ) : (
+              turns.map((t, idx) => (
+                <div key={t.id ?? idx} className={`mt-turn${/remote/i.test(String(t.session_speaker_label ?? "")) ? "" : " me"}`}>
+                  <span className="mt-who">{speakerName(t)}</span>
+                  <span className="mt-text">{t.text}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </aside>
       </div>
     </div>
   );
