@@ -56,13 +56,12 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql://sutra:sutra@localhost:5433/sutra"
 
-    # Capture / windows
-    window_max_seconds: int = 300
-    window_min_seconds: int = 2
-
     # Speaker identity
     speaker_id_mode: str = "voiceprint"  # voiceprint | manual | off
     voiceprint_model: str = "speechbrain/spkrec-ecapa-voxceleb"
+    # Where speechbrain caches the ECAPA model. Default is the container's mounted volume; on a host run
+    # set VOICEPRINT_SAVEDIR to a writable dir (the container path is read-only off-container).
+    voiceprint_savedir: str = "/models/sb/ecapa"
     voiceprint_accept: float = 0.75
     voiceprint_new: float = 0.65
 
@@ -91,7 +90,6 @@ class Settings(BaseSettings):
     recap_enabled: bool = True
     recap_to: str = ""
     recap_time: str = "08:00"
-    recap_timezone: str = "Asia/Kolkata"
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
@@ -101,7 +99,11 @@ class Settings(BaseSettings):
 
     # App
     app_timezone: str = "Asia/Kolkata"
-    cors_origins: str = "http://localhost:5173,http://localhost:8000"
+    # Includes the on-device WebView origins: http://localhost (Android, androidScheme=http) and
+    # capacitor://localhost (iOS default scheme). Without these the preflighted /auth + /sync POSTs
+    # are CORS-blocked on device. Packaged Electron uses a file:// (null) origin — handle that per
+    # deployment (allow_origin_regex) rather than allow-listing "null" globally.
+    cors_origins: str = "http://localhost:5173,http://localhost:8000,http://localhost,capacitor://localhost"
     log_level: str = "info"
     retention_days: int = 0
 

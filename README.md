@@ -1,99 +1,109 @@
-# Sutra — Ambient Memory (MVP)
+# Sutra — Ambient Memory
 
-Privacy-first ambient memory you can test **today from your phone's browser**. Sutra captures a
-conversation, transcribes + diarizes it, extracts structured memory (summary, action items, decisions,
-entities), builds a personal **knowledge graph**, lets you **search** and **chat** over your own memory
-with **cited** answers, and emails you a **daily recap**.
+Privacy-first, **local-first** ambient memory for your phone. Sutra captures a conversation,
+transcribes it and separates who said what, distills it into structured memory (title, summary, key
+facts, decisions, action items with steps, scheduled events), builds a personal **knowledge graph**,
+and lets you **search** and **chat** over your own memory with **cited** answers — plus a daily recap.
+It's built for how people actually talk, treating **Hindi–English (Hinglish) code-switching** as
+first-class.
 
-> **Privacy invariant (non-negotiable):** Sutra stores transcripts and derived data only.
-> **Raw audio is never persisted.** Audio is processed in-flight and discarded.
+It is a **phone app today** (Android, plus a web/PWA build) — not a hardware wearable.
+
+> **Privacy invariant (non-negotiable):** raw audio is **in-flight only and never persisted by
+> default** — it's processed in the moment and discarded. Derived memory is stored **encrypted
+> on-device**; you can export or wipe it anytime; nothing is auto-uploaded. (The single narrow
+> exception is an explicit, currently-disabled on-device audio-training opt-in, which would store
+> samples encrypted on the device and never upload them.)
 
 ---
 
-## Stack
-- **Backend:** Python + FastAPI (async), Postgres + `pgvector`.
-- **AI (OpenAI):** `gpt-4o-transcribe-diarize` (diarized STT) · `gpt-5.4-mini` (extraction, Structured Outputs)
-  · `gpt-5.4-nano` (LLM rerank) · `text-embedding-3-large`@1536 · SpeechBrain **ECAPA-TDNN** voiceprints.
-- **Frontend:** React + Vite + TypeScript **PWA**, hand-crafted calm-dark design, `react-force-graph` graph.
-- See [`docs/M0-research-and-plan.md`](docs/M0-research-and-plan.md) for the verified API research and every decision.
+## Architecture (how it actually works today)
 
-## Quickstart (Docker)
+Sutra is **local-first**: all the real logic — capture, storage, search, graph, recap, people —
+runs **on-device** in the app. The only thing that leaves the device is, in the default mode, audio
+sent in-flight to a thin proxy for transcription/extraction; the proxy keeps nothing.
+
+- **The app:** Capacitor + React 19 + TypeScript, wrapped into a native Android app (also runs as a
+  web/PWA build). All on-device logic lives in `frontend/src/local/*` (facade: `frontend/src/local/sutra.ts`).
+- **On-device storage:** encrypted SQLite (**SQLCipher**) via `@capacitor-community/sqlite`. The
+  encryption key is held in **hardware-backed secure storage**. Schema + migrations are in
+  `frontend/src/local/schema.ts`.
+- **Networking:** a thin, **stateless** proxy at `backend/app/proxy.py` is the **only** holder of the
+  cloud API key. The phone talks **only** to this proxy (audio in-flight for transcription, plus
+  text-only extraction/embedding/rerank/chat calls). The proxy stores nothing.
+- **Intelligence:** advanced speech-to-text with speaker separation, on-device voiceprint matching to
+  keep speakers consistent and recognize enrolled people, and language AI for extraction and grounded
+  chat. (Specific model/vendor names are deliberately omitted — that's a competitive detail.)
+
+### Two backends — don't confuse them
+
+| Path | Status | Used by |
+|---|---|---|
+| `backend/app/proxy.py` | **Current / real.** Thin, stateless key-holder the phone talks to. | The phone app (default "hybrid" mode). |
+| `backend/app/main.py` (+ Postgres) | **Legacy.** The OLD full server that used to serve a PWA and persist data. | **Only** `backend/tests/` and `evals/`. **Not** used by the phone. |
+
+If you're reasoning about what the app does, look at `frontend/src/local/*` and `backend/app/proxy.py`.
+The `main.py` + Postgres stack is retained solely so the existing test/eval suites keep running; it is
+**not** the production data path and the phone never touches it.
+
+---
+
+## Build the app
+
 ```bash
-cp .env.example .env          # fill OPENAI_API_KEY (and SMTP for recap email, optional)
-docker compose up --build     # Postgres+pgvector + backend (serves the built PWA) on :8000
-# open http://localhost:8000
-python_seed() { docker compose exec backend python -m app.seed; }   # optional demo data
-docker compose exec backend python -m app.seed                      # seed retrieval/graph/chat
+npm --prefix frontend run build     # tsc + vite; catches type errors and produces the web build
 ```
 
-### Test it on your phone (mic needs HTTPS)
-`getUserMedia` requires a secure context, so a plain `http://<lan-ip>` URL will **not** grant the mic.
-Use a one-command tunnel:
+For the native Android sync/build and installing on a device, see **`RUN-ON-DEVICE.md`** (end-to-end:
+start the proxy, connect the device, build, install, first run). Deeper as-built internals, the build
+commands, and dev/debug notes live in **`docs/archive/BUILD-HISTORY.md`**. This README intentionally
+points to those rather than duplicating them.
+
+The proxy (which holds the cloud key) runs as a baked image:
+
 ```bash
-cloudflared tunnel --url http://localhost:8000
-# open the printed https://*.trycloudflare.com URL on your Android phone, grant the mic, record.
+docker compose up -d proxy          # proxy on :8787 (reads the API key from .env)
+curl -s localhost:8787/health       # health check
 ```
 
-## Weekend run order
-- **Saturday:** `docker compose up --build` → open the tunnel URL on your phone → **Settings → enroll
-  yourself** ("This is me", optionally a 5-10s voice sample) → **Capture** → hold a ~10-min mixed
-  Hindi/English conversation → watch diarized turns land → open **Memory** to see the summary, action
-  items, and entities; open **Graph**.
-- **Sunday:** Use **Ask Sutra** to query your memory ("what did Amartya say about his college shortlist?")
-  and get a cited answer → check the **daily recap** (Settings → "Send today's recap now", or wait for the
-  scheduled time). Try **Upload audio** on Capture with your `.m4a` recordings.
+---
 
-## Dev mode (fast iteration)
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up   # backend reload, no PWA build
-cd frontend && npm install && npm run dev                            # PWA on :5173, proxies /api -> :8000
-```
+## Deploy to a device
 
-## Ranking formula (hybrid retrieval)
-```
-candidates = semantic_topK(pgvector cosine) ∪ lexical_topK(Postgres ts_rank)
-rrf(d)     = Σ 1 / (RRF_K + rank_in_list(d))            # Reciprocal Rank Fusion, RRF_K=60
-recency(d) = 0.5 ^ (age_days / HALF_LIFE_DAYS)          # HALF_LIFE_DAYS=30 (configurable)
-final(d)   = RANK_W_RRF · norm(rrf) · recency · (1 + RANK_W_IMPORTANCE · importance_score)
-# optional rerank of the top-N: local cross-encoder (bge-reranker-base) or LLM (gpt-5.4-nano). Default OFF.
-```
-All weights are in `.env` and editable live in **Settings**.
+Follow **`RUN-ON-DEVICE.md`** for the validated flow on a physical Android phone — including making the
+on-device app reach your local proxy (`adb reverse tcp:8787 tcp:8787`, or baking a LAN proxy URL at
+build time), first-run permissions, and on-device verification that all data stays in encrypted SQLite.
 
-## Architecture
-```
-PWA (foreground, HTTPS, mic + wake lock)
-  getUserMedia → MediaRecorder + RMS VAD → ~2-5 min webm windows
-        │  multipart POST /api/sessions/{id}/windows
-        ▼
-  FastAPI ── OpenAI gpt-4o-transcribe-diarize (diarized_json, chunking=auto)
-        │    ECAPA voiceprint (in-memory ffmpeg decode → embed → DISCARD audio) → person identity
-        │    persist turns (no audio)
-        ▼
-  Postgres+pgvector ── segmentation (gap + topic-shift) → conversations
-                       extraction (gpt-5.4-mini, Structured Outputs) → memories + action_items
-                       graph upsert (entities + edges + evidence) → knowledge graph
-        │
-        ├─ Search  : semantic + lexical → RRF → recency × importance → [rerank?]
-        ├─ Chat    : hybrid seed → expand graph 1-2 hops → grounded answer with citations
-        └─ Recap   : APScheduler daily job → rollup → SMTP email
-```
+---
 
-## API (under `/api`)
-`health` · `settings` · `sessions` (+`/windows`, `/close`, `/process`, `/turns`) · `people` (+`/enroll`,
-relabel) · `conversations` · `graph` · `entities` · `search` · `chat` · `action_items` (+`/draft`) ·
-`recap/run` · `rollups`.
+## Privacy invariants (the non-negotiables)
 
-## Tests
-```bash
-docker compose exec backend pytest          # integration suite (mock provider; offline, deterministic)
-```
-Includes a privacy assertion that **no audio column exists** in any table, plus a full
-capture→extract→search→chat→recap pipeline test.
+- **Raw audio is never persisted by default** — in-flight only, then discarded. The lone exception is an
+  explicit, **currently-disabled** on-device audio-training opt-in (encrypted on-device, never uploaded).
+- **Local-first & you own your data** — derived memory is encrypted on-device; export or wipe anytime;
+  nothing is auto-uploaded.
+- **The proxy is stateless** — it holds only the cloud key and persists nothing.
+
+---
+
+## Tests & evals
+
+`backend/tests/` and `evals/` exercise the **legacy** `main.py` + Postgres server, not the phone's
+local-first path. Run them against that stack as documented in `docs/archive/BUILD-HISTORY.md`. (The
+opt-in hosted variant — accounts, sync, hosted MCP — is covered in `docs/archive/TIER-B.md`.)
 
 ## Known limitations (honest)
-- **No background / screen-off capture** in a PWA — Android Chrome mutes the mic when the tab isn't visible
-  and Wake Lock only keeps the *screen* on. Foreground-only; always-on requires a future native Android app.
-- **No live *diarized* streaming** (diarize isn't in the Realtime API) — diarized turns appear per window.
-- **VAD** uses a Web Audio energy gate (reliable, dependency-free); Silero (`@ricky0123/vad-web`) is a
-  documented drop-in upgrade.
-- Single user, no auth beyond local. Gmail/Calendar actions are **draft-only** (generated text, not sent).
+
+- **No background / screen-off capture in the web/PWA build** — browsers mute the mic when the tab isn't
+  visible. Screen-off capture is an Android-native capability (foreground service); validate long
+  screen-off sessions on the device.
+- **On-device AI compute is roadmap.** Today's intelligence uses a privacy-preserving cloud-assisted path
+  (audio in-flight only); what's local today is storage, search, graph, recaps, and the privacy
+  guarantee. The "on-device max-privacy" capture mode is a disabled stub.
+- **No live word-by-word diarization** — diarized turns appear per processed chunk.
+- **Single-user, local-trust model** — a free account is required (email + password, for the hosted
+  cloud-assist and optional sync), but there are no teams or shared memory. Email/calendar actions are
+  draft-only (generated text, never auto-sent).
+
+See `docs/OVERVIEW.md`, `docs/FEATURES.md`, and `docs/ROADMAP.md` for the vision, the full
+built-feature list, and what's next.

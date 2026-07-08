@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from .api import OVERRIDABLE, router
+from .api import OVERRIDABLE
 from .auth import auth_router
 from .auth.security import auth_enabled
 from .config import settings
@@ -87,7 +87,12 @@ app.add_middleware(
     allow_origins=settings.cors_list or ["*"],
     allow_methods=["*"], allow_headers=["*"], allow_credentials=False,
 )
-app.include_router(router)
+# SECURITY: the legacy single-tenant /api/* router is intentionally NOT mounted. Every one of its
+# routes was unauthenticated — anonymous read/tamper of the system-tenant memory plus paid LLM and
+# SMTP side-effects — and it has zero clients today (the phone talks only to the proxy on :8787 and
+# the Tier B routes below). api.py still exists solely to supply OVERRIDABLE to _load_overrides; its
+# handlers are now unreachable. Retire the module + orphaned services in a follow-up. Unmatched
+# /api/* requests fall through to the SPA catch-all, which 404s them. See docs/AUDIT-FIXES.md.
 # Tier B (hosted, multi-tenant). Routers are always mounted; each endpoint 503s when SUTRA_JWT_SECRET
 # is unset, so a deployment without a secret behaves exactly like the single-tenant server variant.
 app.include_router(auth_router)

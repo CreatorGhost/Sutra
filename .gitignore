@@ -49,6 +49,14 @@ artifacts/
 # Tool caches / benchmarks
 .benchmarks/
 .playwright-mcp/
+.impeccable/
+graphify-out/
+
+# Electron build output (compiled from electron/ + renderer)
+frontend/out/
+
+# Stray wasm backups (the tracked sql-wasm.wasm is the FTS5 build)
+*.sql-wasm-fts5-backup.wasm
 
 # Editor
 .vscode/

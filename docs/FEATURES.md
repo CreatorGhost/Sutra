@@ -14,7 +14,7 @@
 | Pause / resume / end | Full control of a live session. | Live |
 | Upload existing audio | Bring in recordings you already have (`.m4a/.mp3/.wav/.webm`). | Live |
 | Stays awake while working | Screen wake-lock through recording **and** processing so a lock can't kill a session. | Live |
-| Background mic, screen-off | Keeps listening with the screen off via a native foreground service. | Partial (Android native; browser/PWA is foreground-only) |
+| Background mic, screen-off | Keeps listening with the screen off via a native foreground service — hardened so audio flushes incrementally (chunked recording), voice-activity detection no longer depends on a foreground-only animation loop, and turning the screen off force-saves the current window. | Partial (Android native; browser/PWA is foreground-only) |
 | Live transcript | Watch turns appear as you talk. | Live |
 
 ## 2. Understand who & what was said
@@ -67,17 +67,55 @@
 | Encrypted on-device memory | Memory stored in an encrypted on-device database; key held in hardware-backed secure storage. | Live (native; web store is dev-only/unencrypted) |
 | Export or wipe | Your data, your call; nothing is auto-uploaded. | Live |
 | Works offline | Search, browse, graph, recaps, and people run locally. | Live |
-| Self-healing recovery | A conversation interrupted mid-processing is finished automatically on next launch. | Live |
+| Self-healing recovery | A conversation interrupted mid-processing is finished automatically on next launch, and a failed/interrupted conversation can be re-run on demand via a "Retry processing" button in its detail view. | Live |
 | Capture mode: Hybrid | Best-accuracy processing with audio used in-flight only. | Live (default) |
+| Hardenable processing proxy | The cloud-assist proxy can optionally require a shared secret, lock CORS to allowed origins, and cap upload size for safe hosting — all off by default so local/USB use is unchanged. | Live (opt-in) |
 
 ## 8. Setup & control
 | Feature | What it does | Status |
 |---|---|---|
 | Guided onboarding | First-run: welcome, privacy, capture mode, language. | Live |
 | People management | Enroll, name, and delete people. | Live |
-| Opt-in on-device training data | Your corrections become private training labels (text and optionally audio), stored on-device only. | Live |
+| Opt-in on-device training data | Your text corrections become private training labels, stored on-device only. The audio-retention opt-in is currently disabled/hidden — audio is never persisted by default. | Partial (text only; audio training disabled) |
 | Training export / wipe | Export captured data as standard files, or wipe it instantly. | Live |
 | Settings | Privacy, language, ranking, recap, people, sessions — all configurable and editable live. | Live |
+
+## 9. Minutes, cleanup & redaction
+| Feature | What it does | Status |
+|---|---|---|
+| Meeting minutes | Auto-generated for meetings (plus on-demand for any conversation); share/export as Markdown. | Live |
+| Transcript cleanup (corrector, not author) | A cleaned `text_clean` is produced alongside the raw transcript, with 1:1 / Devanagari / length guards — the raw is always recoverable. | Live |
+| Redaction | Redacted turns are excluded from every external surface (export, MCP, sync). | Live |
+
+## 10. Your Context (personal priors)
+| Feature | What it does | Status |
+|---|---|---|
+| Standing beliefs about people/projects/role | Rule-based priors derived from your own history, used as *defeasible defaults* (never authoritative), with confidence decay over time. | Live |
+| Your Context editor | Review and edit priors in Settings. | Live |
+| Per-prior cloud sharing | Each prior has its own `share_cloud` toggle, **default OFF** — priors stay on-device unless you opt one in. | Live |
+
+## 11. Connect your AI tools (local MCP — "External access")
+> **No separate cloud account or hosting** for this path — the app connects out to an MCP server on your own computer over a token-paired WebSocket; redaction/whitelisting is enforced on the phone. See [`../mcp-server/README.md`](../mcp-server/README.md).
+
+| Feature | What it does | Status |
+|---|---|---|
+| 10 read-only memory tools | search_memory, get_conversation, list_conversations, list_people, get_graph_neighborhood, list_action_items, upcoming_events, get_minutes, get_your_context, ask_memory — usable from Claude Desktop/Code, Cursor, any MCP client. | Live |
+| Pairing token + mutual auth | Reveal/copy/rotate a token in Settings; default-deny (`mcp_enabled` OFF), re-checked every request. | Live |
+| Per-scope sharing toggles | Independently allow/deny Transcripts, People, Graph, Your Context. | Live |
+| Privacy enforcement | No voiceprints/embeddings/draft bodies/redacted turns/tokens ever leave; graph evidence stripped of turn ids. | Live |
+
+## 12. Cloud sync & always-on access (Tier B — explicit opt-in)
+> **Off by default.** Honest copy: not "private" — *"stored on our servers so you can reach it anywhere; only you, signed in, can access it."* Code is built and tested; a public HTTPS deployment is the remaining step.
+
+| Feature | What it does | Status |
+|---|---|---|
+| Account + sync | Email/password (JWT); one-way phone→server push of a `share_cloud`-respecting projection. | Live (needs a host) |
+| Hosted MCP endpoint | The same 10 read tools at `/mcp`, scoped to the signed-in user, reachable when your phone is off. | Live (needs a host) |
+| AI write-back during chat | add_fact, correct_fact (supersede, never destroy), add_action_item, update_action_item, relabel_person — each behind its own consent toggle (**all default OFF**), every change audit-logged and reversible. | Live (needs a host) |
+| OAuth 2.1 connector | PKCE + dynamic client registration for connecting web AI tools. | Live (needs a host) |
+| Social sign-in (Google/Facebook) | Scaffolded, env-gated. | Partial (needs provider creds) |
+
+*Verification snapshot: Tier A — 29/29 unit + live E2E (34 assertions) + adversarial review. Tier B — 60/60 pytest + 68/68 live E2E (tenant isolation, write gating, cross-tenant denial, sync survival, full OAuth/PKCE flow); leak scans clean. Engineering contracts: [`archive/MCP.md`](./archive/MCP.md), [`archive/TIER-B.md`](./archive/TIER-B.md), [`archive/YOUR-CONTEXT.md`](./archive/YOUR-CONTEXT.md).*
 
 ---
 
@@ -90,8 +128,9 @@ So nobody over-promises (for marketing copy especially):
 - **Not universal always-on listening.** Screen-off capture is an Android-native capability; plain web/PWA is foreground-only.
 - **No live word-by-word diarization** — turns appear per processed chunk.
 - **No live calendar/email/Slack integrations**, and emails/drafts are never auto-sent.
-- **Single-user, local-trust model** — no accounts, teams, or shared memory.
+- **Single-user, local-trust model** — a free account is required (for hosted cloud-assist + optional sync), but there are no teams or shared memory.
 - **A few Settings are placeholders** (auto-drop unknown speakers; per-device model overrides) — visible but disabled.
+- **Audio training is off.** Only text corrections can become on-device training labels; the "keep audio for training" opt-in is currently hidden/disabled, so audio is never persisted.
 
 ---
 

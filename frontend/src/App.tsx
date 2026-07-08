@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 import { Nav } from "./components/Nav";
@@ -31,13 +31,13 @@ const RecapSettings = lazy(() => import("./pages/settings/RecapSettings"));
 const AdvancedSettings = lazy(() => import("./pages/settings/AdvancedSettings"));
 const SignIn = lazy(() => import("./pages/SignIn"));
 const AccountSettings = lazy(() => import("./pages/settings/AccountSettings"));
-// Public marketing site (web only). Lives outside the onboarding/auth gates below.
-const LandingRoutes = lazy(() => import("./landing/LandingRoutes"));
-// Scroll-choreographed 3D homepage concepts (separate, newer set).
-const LandingProRoutes = lazy(() => import("./landing-pro/LandingProRoutes"));
+// NOTE: the marketing landing site (src/landing/*, src/landing-pro/*) is intentionally NOT routed
+// from the shipped app — routing it here bundled ~10.5k LOC + the three.js/@react-three/gsap stack
+// (the react-three-fiber chunk alone was the largest JS asset) into the Android/iOS/desktop build for
+// pages a WebView can't even navigate to. The source stays in the repo; serve it as a separate static
+// marketing build once a variant is chosen. See docs/AUDIT-FIXES.md.
 
 export default function App() {
-  const { pathname } = useLocation();
   // First-run gate: show onboarding until the user completes it (flag in localStorage = race-free).
   const [onboarded, setOnboarded] = useState<boolean>(() => {
     try { return localStorage.getItem("sutra_onboarded") === "1"; } catch { return false; }
@@ -109,24 +109,6 @@ export default function App() {
     }, 2500);
     return () => clearTimeout(t);
   }, [onboarded]);
-
-  // Public landing/marketing routes — no onboarding, no account, no app chrome.
-  if (pathname.startsWith("/landing")) {
-    return (
-      <Suspense fallback={<div className="landing-root" />}>
-        <LandingRoutes />
-      </Suspense>
-    );
-  }
-
-  // Newer scroll-choreographed 3D homepage concepts — same public gate as above.
-  if (pathname.startsWith("/pro")) {
-    return (
-      <Suspense fallback={<div className="pro-root" />}>
-        <LandingProRoutes />
-      </Suspense>
-    );
-  }
 
   if (!onboarded) return <Onboarding onDone={() => { setOnboarded(true); setSignedIn(isSignedIn()); }} />;
   if (!signedIn) return <AccountGate onDone={() => setSignedIn(true)} />;

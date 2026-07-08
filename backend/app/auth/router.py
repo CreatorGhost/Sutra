@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from ..ratelimit import rate_limit
 from ..schemas import DeleteAccountRequest, LoginRequest, SignupRequest
 from . import service
 from .deps import User, current_user, require_auth_enabled
@@ -13,13 +14,16 @@ from .security import mint_token, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Throttle credential-stuffing / signup abuse per client IP (in-process; see ratelimit.py).
+_auth_rl = rate_limit("auth")
+
 
 def _token_response(user: dict) -> dict:
     return {"access_token": mint_token(user["id"]), "token_type": "bearer"}
 
 
 @router.post("/signup")
-async def signup_ep(body: SignupRequest) -> dict:
+async def signup_ep(body: SignupRequest, _rl: None = Depends(_auth_rl)) -> dict:
     require_auth_enabled()
     try:
         user = await service.create_user(body.email, body.password)
@@ -29,7 +33,7 @@ async def signup_ep(body: SignupRequest) -> dict:
 
 
 @router.post("/login")
-async def login_ep(body: LoginRequest) -> dict:
+async def login_ep(body: LoginRequest, _rl: None = Depends(_auth_rl)) -> dict:
     require_auth_enabled()
     user = await service.authenticate(body.email, body.password)
     if user is None:
