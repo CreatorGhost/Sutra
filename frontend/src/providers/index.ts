@@ -2,8 +2,8 @@ import type { Provider } from "./provider";
 import { CloudProvider } from "./cloudProvider";
 import { OnDeviceProvider } from "./ondeviceProvider";
 
-const PROXY_BASE =
-  (import.meta as any).env?.VITE_PROXY_URL || "http://localhost:8787";
+export const PROXY_BASE =
+  import.meta.env.VITE_PROXY_URL || "http://localhost:8787";
 
 export type Mode = "hybrid" | "ondevice";
 
@@ -16,14 +16,16 @@ export const MODE_COPY: Record<Mode, { label: string; audio: string }> = {
 export type Lang = "english" | "hinglish" | "devanagari" | "verbatim";
 
 /** Transcription language modes — user picks one in onboarding (switchable in Settings).
- *  `prompt` primes transcription; `translate` runs a second English-translation pass. */
+ *  `prompt` primes transcription; `translate: true` triggers a real second pass that runs the
+ *  transcript through Provider.translate (text→English) before it's stored. */
 export const LANGS: Record<Lang, { label: string; desc: string; example: string; prompt: string; translate: boolean }> = {
   english: {
     label: "English",
     desc: "Everything in clean English — Hindi is auto-translated for you.",
     example: "“chalo kal kaam karte hain” → “let's work tomorrow”",
-    // English mode is the ONLY mode that translates. (Previously this prompt only romanized, so the
-    // translate flag did nothing — fixed so the choice is honest.)
+    // English mode is the ONLY mode that translates. The prompt biases the ASR toward English, but the
+    // actual guarantee comes from the translate flag: ingest runs the transcript through
+    // Provider.translate (text→English), so Hindi can no longer leak through — the choice is honest.
     prompt: "This is a Hindi-English (Hinglish) conversation. Output EVERYTHING in clear, natural English — translate any Hindi/Hinglish speech to English (e.g. 'chalo kal kaam karte hain' -> 'let's work tomorrow'). Keep proper nouns and names as spoken; do NOT output Devanagari or romanized Hindi.",
     translate: true,
   },

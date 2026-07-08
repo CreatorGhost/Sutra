@@ -1,0 +1,545 @@
+/* ============================================================================
+   Sutra — Landing variant 5: "Swiss".
+   Art direction: Swiss International Style. Stark monochrome — near-black ground
+   (#0c0c0d) with bone text (#f2f2f2). True neutral, not warm. Exactly ONE hairline
+   indigo (#6f5cf0) accent. The TYPE is the design: enormous Space Grotesk, tight
+   tracking, strict 12-column grid, visible-but-quiet hairline rules, huge whitespace.
+   A single small monochrome wireframe torus-knot is punctuation, not the stage.
+   Every rule scoped under .lv5. Root background overridden via .landing-root.lv5.
+   ============================================================================ */
+
+/* --- Root: override the shared dark-indigo ground with two-class specificity --- */
+.landing-root.lv5 {
+  background: #0c0c0d;
+  background-image: none;
+  color: #f2f2f2;
+  font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+  scroll-behavior: smooth;
+}
+
+.lv5 {
+  /* palette */
+  --ink: #0c0c0d;
+  --bone: #f2f2f2;
+  --bone-dim: #9a9a9c;
+  --bone-faint: #7d7d80;
+  --rule: rgba(242, 242, 242, 0.14);
+  --rule-strong: rgba(242, 242, 242, 0.28);
+  --accent: #6f5cf0;
+
+  /* strict grid + rhythm */
+  --gut: clamp(16px, 2.2vw, 30px);
+  --edge: clamp(20px, 5vw, 72px);
+  --maxw: 1320px;
+
+  /* type scale — massive contrast between headline and captions */
+  --t-mega: clamp(3.6rem, 15.5vw, 14.5rem);
+  --t-h2: clamp(2rem, 6vw, 4.6rem);
+  --t-lead: clamp(1.05rem, 2vw, 1.45rem);
+  --t-label: clamp(0.66rem, 0.92vw, 0.78rem);
+
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.lv5 *,
+.lv5 *::before,
+.lv5 *::after { box-sizing: border-box; }
+
+.lv5 ::selection { background: var(--accent); color: #fff; }
+
+/* shared mono label — gallery-label terse, wide tracking, uppercase */
+.lv5 .label {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: var(--t-label);
+  font-weight: 500;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+  margin: 0;
+}
+.lv5 .label--accent { color: var(--accent); }
+
+/* the single hairline accent mark */
+.lv5 .accent-tick {
+  display: inline-block;
+  width: 26px;
+  height: 2px;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+/* ---- container + 12-col grid scaffold ---- */
+.lv5 .wrap {
+  width: 100%;
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding-inline: var(--edge);
+}
+.lv5 .grid12 {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  column-gap: var(--gut);
+}
+
+/* a quiet full-bleed hairline used to slice the page on the baseline grid */
+.lv5 .rule {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 0;
+}
+
+/* the measured rule: thin column-registration ticks hanging below a hairline.
+   Vignelli/museum wall-measure — the grid made visible, in monochrome. */
+.lv5 .rule--ticks {
+  position: relative;
+  height: 1px;
+  border-top: 1px solid var(--rule-strong);
+}
+.lv5 .rule--ticks::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 7px;
+  /* a tick every 1/12 of the width — registers the 12-col grid */
+  background-image: linear-gradient(to right, var(--rule) 1px, transparent 1px);
+  background-size: calc(100% / 12) 100%;
+  background-repeat: repeat-x;
+  opacity: 0.9;
+}
+@media (max-width: 760px) {
+  /* coarsen to a 4-tick measure on small screens so it never looks busy */
+  .lv5 .rule--ticks::before { background-size: 25% 100%; }
+}
+
+/* ============================ TOP BAR ============================ */
+/* flat, opaque, hairline-ruled — Swiss flatness, no glass/blur tell */
+.lv5 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--ink);
+  border-bottom: 1px solid var(--rule-strong);
+}
+.lv5 .topbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: clamp(58px, 7vh, 76px);
+}
+.lv5 .wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+  font-weight: 700;
+  font-size: clamp(1.05rem, 1.5vw, 1.3rem);
+  letter-spacing: -0.02em;
+  color: var(--bone);
+  text-decoration: none;
+}
+.lv5 .wordmark .glyph {
+  font-family: "Space Grotesk", sans-serif;
+  color: var(--accent);
+  font-weight: 700;
+}
+.lv5 .topnav {
+  display: flex;
+  align-items: center;
+  gap: clamp(18px, 2.6vw, 40px);
+}
+.lv5 .topnav a {
+  font-family: "JetBrains Mono", monospace;
+  font-size: var(--t-label);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+  text-decoration: none;
+  transition: color 0.18s ease;
+}
+.lv5 .topnav a:hover { color: var(--bone); }
+.lv5 .topnav .nav-cta {
+  color: var(--bone);
+  border-bottom: 1px solid var(--accent);
+  padding-bottom: 2px;
+}
+@media (max-width: 720px) {
+  .lv5 .topnav .nav-link { display: none; }
+}
+
+/* ============================ HERO ============================ */
+.lv5 .hero {
+  position: relative;
+  padding-top: clamp(40px, 8vh, 96px);
+  padding-bottom: clamp(28px, 5vh, 56px);
+  /* NEUTRALIZE the GLOBAL app `.hero` (index.css): it would tint this monochrome hero with a
+     dark indigo gradient + accent border + glow + rounded corners. Keep it flat near-black. */
+  background: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+.lv5 .hero::before { content: none; }
+/* top meta row: index + locale, gallery wall-text style */
+.lv5 .hero-meta {
+  align-items: end;
+  padding-bottom: clamp(20px, 4vh, 44px);
+}
+.lv5 .hero-meta .m-left { grid-column: 1 / 7; }
+.lv5 .hero-meta .m-right {
+  grid-column: 9 / 13;
+  text-align: right;
+}
+.lv5 .hero-meta .m-right .label { text-align: right; }
+
+.lv5 .hero-grid { align-items: stretch; }
+
+/* the massive headline dominates the left 9 columns; the top-right cell is left
+   deliberately empty for the 3D object — purposeful Swiss asymmetry, no collision */
+.lv5 .hero-head { grid-column: 1 / 10; }
+@media (max-width: 1100px) { .lv5 .hero-head { grid-column: 1 / 11; } }
+@media (max-width: 900px) { .lv5 .hero-head { grid-column: 1 / 13; } }
+
+.lv5 .mega {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: var(--t-mega);
+  line-height: 0.86;
+  letter-spacing: -0.05em;
+  margin: 0;
+  color: var(--bone);
+}
+/* forced three-line set — each line a block; type IS the design */
+.lv5 .mega .ln { display: block; }
+/* the first two lines sit dimmer; the payoff word is full-bone — Swiss restraint */
+.lv5 .mega .d1,
+.lv5 .mega .d2 { color: var(--bone-dim); }
+.lv5 .mega .findable {
+  position: relative;
+  display: inline-block;
+  color: var(--bone);
+}
+/* the SINGLE expressive flourish — one hairline indigo rule that draws on load */
+.lv5 .mega .findable::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0.04em;
+  height: 2px;
+  width: 100%;
+  background: var(--accent);
+  transform-origin: left;
+}
+
+/* the 3D object sits in the reserved top-right grid cell — punctuation, not stage */
+.lv5 .hero-object {
+  position: absolute;
+  top: clamp(96px, 16vh, 200px);
+  right: var(--edge);
+  width: clamp(140px, 19vw, 280px);
+  height: clamp(140px, 19vw, 280px);
+  pointer-events: none;
+}
+.lv5 .hero-object .canvas-wrap { width: 100%; height: 100%; }
+.lv5 .hero-object canvas { display: block; }
+.lv5 .obj-cap {
+  position: absolute;
+  bottom: -4px;
+  right: 0;
+  text-align: right;
+}
+@media (max-width: 900px) {
+  .lv5 .hero-object {
+    position: relative;
+    top: 0;
+    right: 0;
+    margin: 28px 0 0 auto;
+    width: clamp(160px, 52vw, 260px);
+    height: clamp(160px, 52vw, 260px);
+  }
+}
+
+/* sub + CTA row, aligned to the grid below the headline */
+.lv5 .hero-foot {
+  align-items: end;
+  padding-top: clamp(30px, 5vh, 56px);
+}
+.lv5 .hero-sub {
+  grid-column: 1 / 7;
+  font-size: var(--t-lead);
+  line-height: 1.45;
+  color: var(--bone-dim);
+  max-width: 44ch;
+  margin: 0;
+  font-weight: 400;
+}
+.lv5 .hero-sub strong { color: var(--bone); font-weight: 500; }
+@media (max-width: 900px) { .lv5 .hero-sub { grid-column: 1 / 13; } }
+
+.lv5 .hero-actions {
+  grid-column: 8 / 13;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: clamp(14px, 2vw, 28px);
+}
+@media (max-width: 900px) {
+  .lv5 .hero-actions { grid-column: 1 / 13; justify-content: flex-start; margin-top: 26px; }
+}
+
+/* CTAs — Swiss: a solid bone block + a ruled text link. No pills. */
+.lv5 .btn-solid {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bone);
+  color: var(--ink);
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 600;
+  font-size: clamp(0.95rem, 1.2vw, 1.05rem);
+  letter-spacing: -0.01em;
+  padding: 16px 24px;
+  text-decoration: none;
+  border: 1px solid var(--bone);
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+.lv5 .btn-solid:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.lv5 .btn-solid .arr { transition: transform 0.18s ease; }
+.lv5 .btn-solid:hover .arr { transform: translateX(4px); }
+
+.lv5 .btn-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--bone);
+  font-family: "JetBrains Mono", monospace;
+  font-size: var(--t-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--rule-strong);
+  transition: border-color 0.18s ease, color 0.18s ease;
+}
+.lv5 .btn-link:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ============================ PILLARS ============================ */
+.lv5 .pillars {
+  padding-block: clamp(56px, 10vh, 130px);
+}
+.lv5 .section-head {
+  align-items: baseline;
+  padding-bottom: clamp(34px, 6vh, 70px);
+}
+.lv5 .section-head .sh-index { grid-column: 1 / 3; }
+.lv5 .section-head .sh-title {
+  grid-column: 3 / 11;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 600;
+  font-size: var(--t-h2);
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+  margin: 0;
+  color: var(--bone);
+}
+.lv5 .section-head .sh-note {
+  grid-column: 11 / 13;
+  text-align: right;
+}
+@media (max-width: 760px) {
+  .lv5 .section-head .sh-index { grid-column: 1 / 13; margin-bottom: 14px; }
+  .lv5 .section-head .sh-title { grid-column: 1 / 13; }
+  .lv5 .section-head .sh-note { grid-column: 1 / 13; text-align: left; margin-top: 16px; }
+}
+
+/* numbered grid with hairline dividers — NOT glass cards */
+.lv5 .pillar-grid { border-top: 1px solid var(--rule-strong); }
+.lv5 .pillar-row {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  column-gap: var(--gut);
+  align-items: start;
+  padding-block: clamp(26px, 4vh, 48px);
+  border-bottom: 1px solid var(--rule);
+}
+.lv5 .pillar-row .p-num {
+  grid-column: 1 / 3;
+  font-family: "JetBrains Mono", monospace;
+  font-size: clamp(0.8rem, 1vw, 0.92rem);
+  letter-spacing: 0.1em;
+  color: var(--bone-faint);
+  padding-top: 0.35em;
+}
+.lv5 .pillar-row .p-title {
+  grid-column: 3 / 7;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 600;
+  font-size: clamp(1.4rem, 2.6vw, 2.1rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  margin: 0;
+  color: var(--bone);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.lv5 .pillar-row .p-title svg { color: var(--bone-dim); flex: none; }
+.lv5 .pillar-row .p-desc {
+  grid-column: 8 / 13;
+  font-size: clamp(1rem, 1.4vw, 1.18rem);
+  line-height: 1.5;
+  color: var(--bone-dim);
+  margin: 0;
+  max-width: 46ch;
+}
+.lv5 .pillar-row:hover .p-num { color: var(--accent); }
+@media (max-width: 760px) {
+  .lv5 .pillar-row .p-num { grid-column: 1 / 13; padding-top: 0; margin-bottom: 12px; }
+  .lv5 .pillar-row .p-title { grid-column: 1 / 13; margin-bottom: 12px; }
+  .lv5 .pillar-row .p-desc { grid-column: 1 / 13; }
+}
+
+/* ============================ HOW IT WORKS ============================ */
+.lv5 .how {
+  padding-block: clamp(56px, 10vh, 130px);
+  border-top: 1px solid var(--rule);
+}
+.lv5 .how-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  column-gap: var(--gut);
+  border-top: 1px solid var(--rule-strong);
+}
+.lv5 .step {
+  padding-top: clamp(22px, 4vh, 40px);
+  padding-right: var(--gut);
+  position: relative;
+}
+.lv5 .step + .step { border-left: 1px solid var(--rule); padding-left: var(--gut); }
+.lv5 .step .s-num {
+  font-family: "JetBrains Mono", monospace;
+  font-size: var(--t-label);
+  letter-spacing: 0.2em;
+  color: var(--accent);
+  margin: 0 0 18px;
+}
+.lv5 .step .s-verb {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  line-height: 0.96;
+  letter-spacing: -0.035em;
+  margin: 0 0 14px;
+  color: var(--bone);
+}
+.lv5 .step .s-body {
+  font-size: clamp(0.95rem, 1.3vw, 1.1rem);
+  line-height: 1.5;
+  color: var(--bone-dim);
+  margin: 0;
+  max-width: 34ch;
+}
+@media (max-width: 760px) {
+  .lv5 .how-grid { grid-template-columns: 1fr; }
+  .lv5 .step + .step { border-left: 0; border-top: 1px solid var(--rule); padding-left: 0; padding-top: 28px; margin-top: 28px; }
+}
+
+/* ============================ CLOSING CTA ============================ */
+.lv5 .close {
+  padding-block: clamp(70px, 14vh, 180px);
+  border-top: 1px solid var(--rule);
+}
+.lv5 .close-grid { align-items: end; }
+.lv5 .close-head { grid-column: 1 / 9; }
+@media (max-width: 900px) { .lv5 .close-head { grid-column: 1 / 13; } }
+.lv5 .close-head h2 {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: clamp(2.6rem, 9vw, 7rem);
+  line-height: 0.9;
+  letter-spacing: -0.045em;
+  margin: 0;
+  color: var(--bone);
+  text-wrap: balance;
+}
+.lv5 .close-head h2 .dot { color: var(--accent); }
+.lv5 .close-actions {
+  grid-column: 9 / 13;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+}
+@media (max-width: 900px) {
+  .lv5 .close-actions { grid-column: 1 / 13; margin-top: 36px; }
+}
+.lv5 .close-privacy {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: var(--t-label);
+  letter-spacing: 0.12em;
+  color: var(--bone-faint);
+}
+.lv5 .close-privacy svg { color: var(--bone-dim); flex: none; }
+
+/* ============================ FOOTER ============================ */
+.lv5 .foot {
+  border-top: 1px solid var(--rule-strong);
+  padding-block: clamp(30px, 5vh, 54px);
+}
+.lv5 .foot-grid { align-items: baseline; row-gap: 20px; }
+.lv5 .foot-mark { grid-column: 1 / 5; }
+.lv5 .foot-mark .fw {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 1.3rem;
+  letter-spacing: -0.02em;
+  color: var(--bone);
+}
+.lv5 .foot-mark .fm-meaning {
+  display: block;
+  margin-top: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  color: var(--bone-faint);
+}
+.lv5 .foot-tag {
+  grid-column: 6 / 11;
+  font-size: clamp(0.9rem, 1.2vw, 1.02rem);
+  line-height: 1.5;
+  color: var(--bone-dim);
+  margin: 0;
+  max-width: 40ch;
+}
+.lv5 .foot-priv {
+  grid-column: 11 / 13;
+  text-align: right;
+}
+.lv5 .foot-priv .label { text-align: right; }
+@media (max-width: 760px) {
+  .lv5 .foot-mark { grid-column: 1 / 13; }
+  .lv5 .foot-tag { grid-column: 1 / 13; }
+  .lv5 .foot-priv { grid-column: 1 / 13; text-align: left; }
+  .lv5 .foot-priv .label { text-align: left; }
+}
+
+/* ---- entrance: hairline draw + headline rise (disabled under reduced-motion) ---- */
+.lv5 .mega .findable::after { animation: lv5-draw 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.25s both; }
+@keyframes lv5-draw { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+.lv5 .rise { opacity: 0; transform: translateY(14px); animation: lv5-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.lv5 .rise.d1 { animation-delay: 0.05s; }
+.lv5 .rise.d2 { animation-delay: 0.16s; }
+.lv5 .rise.d3 { animation-delay: 0.28s; }
+@keyframes lv5-rise { to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-root.lv5 { scroll-behavior: auto; }
+  .lv5 .mega .findable::after { animation: none; }
+  .lv5 .rise { animation: none; opacity: 1; transform: none; }
+}

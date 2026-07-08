@@ -10,6 +10,11 @@ export class OnDeviceProvider implements Provider {
   }
   async transcribeDiarize(): Promise<Transcription> { this.fail(); }
   async extract(): Promise<any> { this.fail(); }
+  // Safe no-op: on-device translation isn't available, so the lower-accuracy fallback keeps the
+  // original text rather than failing the pipeline.
+  async translate(texts: string[]): Promise<string[]> { return texts; }
+  // Safe no-op: refinement is cloud-only, so on-device returns the input unchanged (idempotent).
+  async refine(texts: string[]): Promise<string[]> { return texts; }
   async embed(): Promise<number[][]> { this.fail(); }
   async rerank(): Promise<number[]> { this.fail(); }
   async chat(): Promise<any> { this.fail(); }

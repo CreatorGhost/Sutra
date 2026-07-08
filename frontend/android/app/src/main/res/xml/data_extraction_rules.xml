@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- No cloud backup: derived memory, settings, and SQLCipher/secure-store material stay local. -->
+        <exclude domain="root" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <!-- No device-to-device transfer for the same reason. A user-controlled export can be added separately. -->
+        <exclude domain="root" path="." />
+    </device-transfer>
+</data-extraction-rules>

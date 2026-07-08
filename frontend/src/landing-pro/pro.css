@@ -1,0 +1,213 @@
+/* ============================================================================
+   Sutra · landing-pro — shared engine stylesheet.
+   A NEW, scroll-choreographed marketing surface (separate from src/landing/*).
+   Architecture: a FIXED full-viewport 3D stage pinned behind NORMAL-FLOW content
+   that scrolls over it. The 3D scrubs to a 0..1 scroll-progress signal; foreground
+   text reveals on enter (GSAP ScrollTrigger). Apple-grade "one continuous world".
+
+   SHARED + READ-ONLY for variant authors. Per-variant palettes are set as CSS
+   custom properties via the `vars` prop on <ScrollStage>; per-variant rules live
+   in co-located ProV{N}.css scoped under a unique .pv{N} root class.
+   ============================================================================ */
+
+/* ---- the scroll container: escapes the app's fixed mobile shell ----------- */
+.pro-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  color: var(--pg-ink);
+  background: var(--pg-bg);
+  font-family: var(--pg-sans);
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+
+  /* default palette = dark; variants override these via inline `vars` */
+  --pg-bg: #07060e;
+  --pg-bg-2: #0d0b18;
+  --pg-ink: #f3f1fb;
+  --pg-ink-2: #b9b4d0;
+  --pg-ink-3: #837d9c;
+  --pg-line: rgba(255, 255, 255, 0.1);
+  --pg-card: rgba(255, 255, 255, 0.04);
+  --pg-card-border: rgba(255, 255, 255, 0.09);
+  --pg-accent: #8b7bff;
+  --pg-accent-2: #a99bff;
+  --pg-on-accent: #0a0912;
+  --pg-glow: rgba(139, 123, 255, 0.5);
+
+  /* fonts (loaded in index.html) */
+  --pg-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --pg-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  --pg-display: "Inter", -apple-system, system-ui, sans-serif;
+  --pg-serif: "Fraunces", Georgia, serif;
+
+  /* marketing type scale */
+  --pg-hero: clamp(2.9rem, 7.2vw, 6.2rem);
+  --pg-h2: clamp(2rem, 4.2vw, 3.6rem);
+  --pg-h3: clamp(1.25rem, 2vw, 1.7rem);
+  --pg-lead: clamp(1.08rem, 1.7vw, 1.4rem);
+  --pg-r: 18px;
+  --pg-r-pill: 999px;
+}
+.pro-root *,
+.pro-root *::before,
+.pro-root *::after { box-sizing: border-box; }
+.pro-root ::selection { background: var(--pg-glow); color: var(--pg-ink); }
+
+/* ---- the pinned 3D stage (fixed behind the scrolling content) ------------- */
+.pro-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none; /* let text stay selectable; interactive variants opt back in */
+}
+.pro-stage canvas { display: block; }
+
+/* ---- the scrolling foreground content ------------------------------------ */
+.pro-flow {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- layout helpers ------------------------------------------------------- */
+.pg-wrap { width: 100%; max-width: 1180px; margin-inline: auto; padding-inline: clamp(22px, 5vw, 64px); }
+.pg-wrap-narrow { max-width: 860px; }
+.pg-section { position: relative; padding-block: clamp(84px, 16vh, 220px); }
+.pg-section-pad { padding-block: clamp(56px, 9vh, 130px); }
+
+/* full-height scene beat — sized so the pinned 3D has room to choreograph */
+.pg-beat { position: relative; min-height: 100vh; display: flex; align-items: center; }
+.pg-beat-tall { min-height: 130vh; }
+
+/* ---- typography ----------------------------------------------------------- */
+.pg-eyebrow {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--pg-mono); font-size: 0.78rem; font-weight: 500;
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--pg-accent-2);
+}
+.pg-hero-title { font-family: var(--pg-display); font-size: var(--pg-hero); line-height: 1.0; letter-spacing: -0.03em; font-weight: 600; margin: 0; }
+.pg-h2 { font-family: var(--pg-display); font-size: var(--pg-h2); line-height: 1.06; letter-spacing: -0.02em; font-weight: 600; margin: 0; }
+.pg-h3 { font-size: var(--pg-h3); line-height: 1.2; letter-spacing: -0.01em; font-weight: 600; margin: 0; }
+.pg-lead { font-size: var(--pg-lead); line-height: 1.55; color: var(--pg-ink-2); max-width: 58ch; margin: 0; font-weight: 400; }
+.pg-mono { font-family: var(--pg-mono); }
+.pg-muted { color: var(--pg-ink-3); }
+.pg-accent-text { color: var(--pg-accent-2); }
+
+/* gradient-clipped emphasis */
+.pg-grad {
+  background: linear-gradient(100deg, var(--pg-accent) 0%, var(--pg-accent-2) 60%, var(--pg-ink) 130%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+
+/* ---- buttons -------------------------------------------------------------- */
+.pg-cta-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.pg-cta-center { justify-content: center; }
+.pg-btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  min-height: 54px; padding: 0 28px; border-radius: var(--pg-r-pill);
+  font-family: var(--pg-sans); font-size: 1.02rem; font-weight: 550; line-height: 1;
+  text-decoration: none; cursor: pointer; border: 1px solid transparent;
+  transition: transform 0.45s cubic-bezier(0.16,1,0.3,1), box-shadow 0.45s cubic-bezier(0.16,1,0.3,1), background 0.3s, color 0.3s, border-color 0.3s;
+  white-space: nowrap;
+}
+.pg-btn svg { transition: transform 0.45s cubic-bezier(0.16,1,0.3,1); }
+.pg-btn-primary { background: var(--pg-accent); color: var(--pg-on-accent); box-shadow: 0 10px 36px -12px var(--pg-glow); }
+.pg-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 18px 50px -14px var(--pg-glow); }
+.pg-btn-primary:hover svg { transform: translateX(4px); }
+.pg-btn-ghost { background: transparent; color: var(--pg-ink); border-color: var(--pg-card-border); }
+.pg-btn-ghost:hover { transform: translateY(-2px); border-color: var(--pg-accent-2); }
+.pg-btn:focus-visible { outline: 2px solid var(--pg-accent-2); outline-offset: 3px; }
+
+/* ---- reveal-on-enter (GSAP drives the transform; this is the safe default) - */
+.pro-reveal { will-change: transform, opacity; }
+
+/* ---- sticky nav ----------------------------------------------------------- */
+.pg-nav {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 18px; padding: 16px clamp(22px, 5vw, 64px);
+  transition: background 0.4s ease, backdrop-filter 0.4s ease, border-color 0.4s ease;
+  border-bottom: 1px solid transparent;
+}
+.pg-nav.is-scrolled {
+  background: color-mix(in srgb, var(--pg-bg) 72%, transparent);
+  -webkit-backdrop-filter: saturate(160%) blur(16px);
+  backdrop-filter: saturate(160%) blur(16px);
+  border-bottom-color: var(--pg-line);
+}
+.pg-brand { display: inline-flex; align-items: center; gap: 11px; text-decoration: none; color: var(--pg-ink); }
+.pg-brand-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--pg-accent); box-shadow: 0 0 18px var(--pg-glow); }
+.pg-brand-name { font-family: var(--pg-display); font-weight: 600; font-size: 1.18rem; letter-spacing: -0.01em; }
+.pg-brand-sa { font-family: var(--pg-serif); font-size: 1.05rem; color: var(--pg-ink-3); margin-left: 2px; }
+.pg-nav-links { display: flex; align-items: center; gap: 26px; }
+.pg-nav-link { color: var(--pg-ink-2); text-decoration: none; font-size: 0.96rem; font-weight: 450; transition: color 0.25s; }
+.pg-nav-link:hover { color: var(--pg-ink); }
+.pg-nav-cta {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--pg-accent); color: var(--pg-on-accent);
+  padding: 10px 18px; border-radius: var(--pg-r-pill); text-decoration: none;
+  font-size: 0.94rem; font-weight: 550; transition: transform 0.4s cubic-bezier(0.16,1,0.3,1), box-shadow 0.4s;
+}
+.pg-nav-cta:hover { transform: translateY(-1px); box-shadow: 0 10px 30px -10px var(--pg-glow); }
+@media (max-width: 720px) { .pg-nav-links .pg-nav-link { display: none; } }
+
+/* ---- scroll hint ---------------------------------------------------------- */
+.pg-scroll-hint {
+  position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%);
+  display: grid; place-items: center; gap: 8px;
+  font-family: var(--pg-mono); font-size: 0.68rem; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--pg-ink-3);
+}
+.pg-scroll-hint i {
+  width: 1px; height: 38px; display: block;
+  background: linear-gradient(var(--pg-accent-2), transparent);
+  animation: pg-hint 2.2s ease-in-out infinite;
+  transform-origin: top;
+}
+@keyframes pg-hint { 0%,100% { transform: scaleY(0.35); opacity: 0.4; } 50% { transform: scaleY(1); opacity: 1; } }
+
+/* ---- feature cards (shared "pillars" block) ------------------------------ */
+.pg-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(248px, 1fr)); }
+.pg-card {
+  position: relative; padding: 30px; border-radius: var(--pg-r);
+  background: var(--pg-card); border: 1px solid var(--pg-card-border);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  transition: transform 0.5s cubic-bezier(0.16,1,0.3,1), border-color 0.5s, background 0.5s;
+}
+.pg-card:hover { transform: translateY(-5px); border-color: var(--pg-accent-2); }
+.pg-card-icon {
+  display: grid; place-items: center; width: 46px; height: 46px; border-radius: 13px;
+  margin-bottom: 18px; color: var(--pg-accent-2);
+  background: color-mix(in srgb, var(--pg-accent) 16%, transparent);
+}
+.pg-card-title { font-size: 1.16rem; font-weight: 600; margin: 0 0 8px; letter-spacing: -0.01em; }
+.pg-card-desc { font-size: 0.98rem; line-height: 1.55; color: var(--pg-ink-2); margin: 0; }
+
+/* ---- assurance pills ------------------------------------------------------ */
+.pg-assurances { list-style: none; display: flex; flex-wrap: wrap; gap: 10px 22px; padding: 0; margin: 0; }
+.pg-assurances li { display: inline-flex; align-items: center; gap: 8px; font-size: 0.92rem; color: var(--pg-ink-2); }
+.pg-assurances svg { color: var(--pg-accent-2); }
+
+/* ---- footer --------------------------------------------------------------- */
+.pg-footer { position: relative; z-index: 1; border-top: 1px solid var(--pg-line); background: var(--pg-bg-2); }
+.pg-footer-inner { display: flex; flex-wrap: wrap; gap: 32px; justify-content: space-between; padding-block: 54px; }
+.pg-footer-tag { color: var(--pg-ink-2); max-width: 38ch; margin: 14px 0 0; font-size: 0.96rem; line-height: 1.5; }
+.pg-footer-priv { display: inline-flex; align-items: center; gap: 8px; color: var(--pg-ink-3); font-size: 0.86rem; margin-top: 14px; }
+.pg-footer-links { display: flex; flex-direction: column; gap: 11px; }
+.pg-footer-links a { color: var(--pg-ink-2); text-decoration: none; font-size: 0.95rem; transition: color 0.25s; }
+.pg-footer-links a:hover { color: var(--pg-ink); }
+.pg-footer-col { font-family: var(--pg-mono); font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--pg-ink-3); margin-bottom: 4px; }
+.pg-footer-rule { text-align: center; font-family: var(--pg-serif); font-style: italic; color: var(--pg-ink-3); padding: 22px; margin: 0; border-top: 1px solid var(--pg-line); }
+
+/* ---- reduced motion: kill scroll smoothing + show content immediately ----- */
+@media (prefers-reduced-motion: reduce) {
+  .pro-root { scroll-behavior: auto; }
+  .pg-scroll-hint i { animation: none; }
+  .pro-reveal { opacity: 1 !important; transform: none !important; }
+}

@@ -5,7 +5,10 @@ import { q } from "./db";
 import { getSettings, memoriesForSearch, memoryCards } from "./repo";
 import { cosine } from "./util";
 
-const num = (s: any, k: string, d: number) => (typeof s[k] === "number" ? s[k] : Number(s[k] ?? d)) || d;
+const num = (s: any, k: string, d: number) => {
+  const v = typeof s[k] === "number" ? s[k] : Number(s[k]);
+  return Number.isFinite(v) ? v : d;
+};
 
 function ftsTokens(query: string): string {
   const toks = (query.match(/[\wऀ-ॿ]+/g) ?? []).slice(0, 24);
@@ -27,8 +30,10 @@ export async function searchMemories(query: string, provider: Provider, topNArg?
   const k = num(s, "rank_rrf_k", 60), prefetch = num(s, "search_prefetch", 30);
   const topN = topNArg ?? num(s, "search_topn", 10);
   const halfLife = num(s, "rank_half_life_days", 30), wImp = num(s, "rank_w_importance", 0.5), wRrf = num(s, "rank_w_rrf", 1);
+  const recencyOn = String(s["rank_recency"] ?? "on") === "on";
 
   const [qvec] = await provider.embed([query]);
+  if (!qvec || !qvec.length) return [];
   // semantic
   const mem = await memoriesForSearch();
   const sem = mem.map((m) => ({ id: m.id, sim: cosine(qvec, m.vec) }))
@@ -50,8 +55,9 @@ export async function searchMemories(query: string, provider: Provider, topNArg?
   const cards = (await memoryCards([...rrf.keys()])) as any[];
   const out = cards.map((c) => {
     const norm = (rrf.get(c.id) ?? 0) / rmax;
-    const score = wRrf * norm * recency(c.created_at, halfLife) * (1 + wImp * (c.importance ?? 0.5));
-    return { ...c, facts: JSON.parse(c.facts || "[]"), rrf: rrf.get(c.id), score };
+    const score = wRrf * norm * (recencyOn ? recency(c.created_at, halfLife) : 1) * (1 + wImp * (c.importance ?? 0.5));
+    const facts = (() => { try { return JSON.parse(c.facts || "[]"); } catch { return []; } })();
+    return { ...c, facts, rrf: rrf.get(c.id), score };
   }).sort((a, b) => b.score - a.score);
 
   const mode = String(s["rerank"] ?? "off");
@@ -62,6 +68,8 @@ export async function searchMemories(query: string, provider: Provider, topNArg?
       head = head.map((h, i) => ({ ...h, score: scores[i] ?? h.score })).sort((a, b) => b.score - a.score);
       return head.slice(0, topN);
     } catch { /* fall back to fused order */ }
+  } else if (mode === "crossencoder") {
+    console.warn("crossencoder rerank not available on device; using fused order");
   }
   return out.slice(0, topN);
 }

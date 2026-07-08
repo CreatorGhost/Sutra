@@ -1,4 +1,7 @@
+/// <reference types="@capacitor/keyboard" />
+
 import type { CapacitorConfig } from "@capacitor/cli";
+import { KeyboardResize, KeyboardStyle } from "@capacitor/keyboard";
 
 const config: CapacitorConfig = {
   appId: "app.sutra.memory",
@@ -14,6 +17,15 @@ const config: CapacitorConfig = {
     CapacitorSQLite: {
       androidIsEncryption: true,
       androidBiometric: { biometricAuth: false },
+      iosDatabaseLocation: "Library/CapacitorDatabase",
+      iosIsEncryption: true,
+      iosKeychainPrefix: "sutra",
+      iosBiometric: { biometricAuth: false },
+    },
+    Keyboard: {
+      resize: KeyboardResize.Body,
+      style: KeyboardStyle.Default,
+      resizeOnFullScreen: true,
     },
   },
 };

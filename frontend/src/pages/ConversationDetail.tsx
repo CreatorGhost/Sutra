@@ -47,6 +47,7 @@ export default function ConversationDetail() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState("");
+  const [saving, setSaving] = useState(false);
   const [openAction, setOpenAction] = useState<number | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [cleaning, setCleaning] = useState(false);
@@ -115,15 +116,23 @@ export default function ConversationDetail() {
   }, [data, cid]);
 
   const relabel = async (label: string, sessionId: number, isMe: boolean, explicitName?: string) => {
+    if (saving) return; // ignore extra clicks while the (slow) re-map + minutes regen is in flight
     const name = isMe ? "Me" : (explicitName?.trim() || nameInput.trim());
     if (!name && !isMe) return;
+    setSaving(true); setError(null);
     try {
       await api.relabel(sessionId, label, { name, is_me: isMe });
       // First successful label means the user understands the affordance — retire the hint.
       try { localStorage.setItem("sutra_hint_speaker", "1"); } catch { /* private mode */ }
       setHintDone(true);
-      setEditing(null); setNameInput(""); load();
+      setEditing(null); setNameInput("");
+      await load();
+      // The minutes refresh runs in the background (people.ts) so the name registers instantly; pull
+      // the regenerated minutes in once they've had time to land (a slower regen still shows on the
+      // next manual reload).
+      window.setTimeout(() => { void load(); }, 6000);
     } catch (e: any) { setError(e.message); }
+    finally { setSaving(false); }
   };
 
   // Map / unmap the conversation to a project (always a USER choice; re-runs minutes best-effort).
@@ -582,15 +591,15 @@ export default function ConversationDetail() {
                 {rosterSuggestions.length > 0 && (
                   <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
                     {rosterSuggestions.map((name) => (
-                      <button key={name} className="chip" style={{ font: "inherit", cursor: "pointer", minHeight: 36 }}
+                      <button key={name} className="chip" style={{ font: "inherit", cursor: "pointer", minHeight: 36 }} disabled={saving}
                         onClick={() => relabel(t.session_speaker_label, sessionId, false, name)}>{name}</button>
                     ))}
                   </div>
                 )}
                 <div className="row">
-                  <input className="input" aria-label="Speaker name" placeholder="Name…" value={nameInput} onChange={(e) => setNameInput(e.target.value)} />
-                  <button className="btn primary sm" onClick={() => relabel(t.session_speaker_label, sessionId, false)}>Save</button>
-                  <button className="btn sm" onClick={() => relabel(t.session_speaker_label, sessionId, true)}>This is me</button>
+                  <input className="input" aria-label="Speaker name" placeholder="Name…" value={nameInput} disabled={saving} onChange={(e) => setNameInput(e.target.value)} />
+                  <button className="btn primary sm" disabled={saving} onClick={() => relabel(t.session_speaker_label, sessionId, false)}>{saving ? "Saving…" : "Save"}</button>
+                  <button className="btn sm" disabled={saving} onClick={() => relabel(t.session_speaker_label, sessionId, true)}>This is me</button>
                 </div>
               </div>
             )}

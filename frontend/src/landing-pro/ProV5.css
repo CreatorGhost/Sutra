@@ -1,0 +1,184 @@
+/* ProV5 "Dawn" — a chaptered poem along the thread, night → dawn. Scoped .pv5.
+   The 3D background animates indigo night → warm dawn, so the later (bright)
+   chapters sit on soft dark scrims to keep the light DOM copy legible.
+   Voice: poetic, literary, sparse — Fraunces italic accents, lots of air. */
+
+/* ---- poetic serif accents (Fraunces italic) ----------------------------- */
+.pv5 .pv5-serif {
+  font-family: var(--pg-serif);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.005em;
+}
+.pv5 .pv5-em {
+  color: var(--pg-accent-2);
+  font-family: var(--pg-serif);
+  font-style: italic;
+}
+
+/* ---- HERO · night ------------------------------------------------------- */
+.pv5 .pv5-hero { padding-top: 9vh; }
+.pv5 .pv5-hero-wrap { max-width: 940px; }
+.pv5 .pv5-eyebrow { opacity: 0.95; }
+.pv5 .pv5-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--pg-accent); box-shadow: 0 0 14px var(--pg-glow); display: inline-block;
+}
+.pv5 .pv5-title { margin-top: 24px; max-width: 15ch; }
+.pv5 .pv5-poetic {
+  margin: 26px 0 0; max-width: 42ch;
+  font-family: var(--pg-serif); font-style: italic; font-weight: 400;
+  font-size: clamp(1.2rem, 2.1vw, 1.7rem); line-height: 1.42;
+  color: var(--pg-accent-2);
+}
+.pv5 .pv5-hero-cta { margin-top: 38px; }
+
+/* ---- chapter labels (I · The dark, etc.) -------------------------------- */
+.pv5 .pv5-chapter {
+  display: flex; align-items: center; gap: 16px;
+  margin: 0 0 30px;
+}
+.pv5 .pv5-chapter-center { justify-content: center; }
+.pv5 .pv5-chapter-num {
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  line-height: 1; color: var(--pg-accent);
+  text-shadow: 0 0 26px var(--pg-glow);
+}
+.pv5 .pv5-chapter-rule {
+  flex: 0 0 auto; width: clamp(34px, 6vw, 64px); height: 1px;
+  background: linear-gradient(90deg, var(--pg-accent-2), transparent);
+}
+.pv5 .pv5-chapter-center .pv5-chapter-rule {
+  background: linear-gradient(90deg, transparent, var(--pg-accent-2), transparent);
+  width: clamp(48px, 9vw, 96px);
+}
+.pv5 .pv5-chapter-name {
+  font-family: var(--pg-mono); font-size: 0.78rem; font-weight: 500;
+  letter-spacing: 0.24em; text-transform: uppercase; color: var(--pg-ink-2);
+}
+
+/* ---- acts: shared rhythm — tall, airy, generous so the 3D can choreograph */
+.pv5 .pv5-act { padding-block: clamp(120px, 22vh, 280px); }
+/* Act I sits deepest in the night — give it the most breathing room. */
+.pv5 .pv5-act-dark { padding-block: clamp(140px, 26vh, 320px); }
+/* Act II is the longest beat (the weaving) — extra room to scroll the knots. */
+.pv5 .pv5-act-thread { padding-block: clamp(130px, 24vh, 300px); }
+
+/* ACT I · The dark — verse, plenty of negative space */
+.pv5 .pv5-verse {
+  margin: 0; max-width: 22ch;
+  font-family: var(--pg-display); font-weight: 600;
+  font-size: clamp(2rem, 4.6vw, 3.7rem); line-height: 1.1; letter-spacing: -0.02em;
+  color: var(--pg-ink);
+}
+.pv5 .pv5-verse-sub {
+  margin: 28px 0 0; max-width: 50ch;
+  font-size: var(--pg-lead); line-height: 1.62; color: var(--pg-ink-2);
+}
+
+/* ACT II · The thread — what Sutra does, then a woven ladder of lines */
+.pv5 .pv5-act-lead { margin: 0; max-width: 18ch; }
+.pv5 .pv5-act-intro { max-width: 54ch; }
+
+.pv5 .pv5-weave {
+  list-style: none; margin: 54px 0 0; padding: 0;
+  display: grid; gap: 0; max-width: 720px;
+}
+.pv5 .pv5-weave-line {
+  position: relative;
+  display: grid; grid-template-columns: 22px 1fr; gap: 20px; align-items: start;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--pg-line);
+}
+.pv5 .pv5-weave-line:last-child { border-bottom: 0; }
+/* the vertical thread the knots are strung on */
+.pv5 .pv5-weave-line::before {
+  content: ""; position: absolute; left: 10px; top: 0; bottom: 0; width: 1px;
+  background: linear-gradient(var(--pg-line), color-mix(in srgb, var(--pg-accent) 30%, transparent), var(--pg-line));
+}
+.pv5 .pv5-weave-line:first-child::before { top: 50%; }
+.pv5 .pv5-weave-line:last-child::before { bottom: 50%; }
+.pv5 .pv5-weave-knot {
+  position: relative; z-index: 1; margin-top: 8px;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--pg-accent);
+  box-shadow: 0 0 14px var(--pg-glow), 0 0 0 4px color-mix(in srgb, var(--pg-accent) 14%, transparent);
+}
+.pv5 .pv5-weave-text {
+  margin: 0; font-size: clamp(1.05rem, 1.7vw, 1.3rem); line-height: 1.5; color: var(--pg-ink-2);
+}
+.pv5 .pv5-weave-lead {
+  color: var(--pg-ink); font-weight: 600; letter-spacing: -0.01em;
+}
+
+/* ACT III · The light — the answer + the two vows */
+.pv5 .pv5-act-light .pg-wrap-narrow { text-align: center; }
+.pv5 .pv5-light-head { margin: 0 auto; max-width: 14ch; }
+.pv5 .pv5-light-sub { margin: 26px auto 0; max-width: 48ch; }
+
+.pv5 .pv5-vows {
+  margin: 56px auto 0; max-width: 640px;
+  display: grid; gap: 18px; text-align: left;
+}
+.pv5 .pv5-vow {
+  display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: start;
+  padding: 24px 26px; border-radius: var(--pg-r);
+  background: var(--pg-card); border: 1px solid var(--pg-card-border);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  transition: border-color 0.4s, transform 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+.pv5 .pv5-vow:hover { border-color: var(--pg-accent-2); transform: translateY(-3px); }
+.pv5 .pv5-vow-icon {
+  display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px;
+  color: var(--pg-accent-2); background: color-mix(in srgb, var(--pg-accent) 18%, transparent);
+}
+.pv5 .pv5-vow-text { margin: 0; font-size: 1rem; line-height: 1.58; color: var(--pg-ink-2); }
+
+/* ---- FINALE · sunrise · CTA --------------------------------------------- */
+.pv5 .pv5-finale { padding-block: clamp(130px, 24vh, 300px); }
+.pv5 .pv5-finale-wrap { text-align: center; }
+.pv5 .pv5-finale-quote {
+  position: relative; margin: 0 auto 38px; max-width: 22ch;
+  font-size: clamp(1.5rem, 3.4vw, 2.6rem); line-height: 1.25; color: var(--pg-ink);
+  display: grid; gap: 14px; justify-items: center;
+}
+.pv5 .pv5-quote-mark { color: var(--pg-accent); opacity: 0.8; }
+.pv5 .pv5-finale-cite {
+  font-family: var(--pg-mono); font-style: normal; font-size: 0.74rem;
+  letter-spacing: 0.22em; text-transform: uppercase; color: var(--pg-ink-3);
+}
+.pv5 .pv5-finale-head { margin: 0 auto 30px; max-width: 16ch; }
+.pv5 .pv5-finale-cta { margin-top: 4px; }
+.pv5 .pv5-finale-trust {
+  display: inline-flex; align-items: center; gap: 9px; margin-top: 30px;
+  font-size: 0.9rem; color: var(--pg-ink-2);
+}
+.pv5 .pv5-finale-trust svg { color: var(--pg-accent-2); }
+
+/* ---- legibility scrims for the bright (dawn) chapters -------------------- */
+/* A soft dark radial behind late text holds contrast against the warm sky.
+   The scrim sits above the canvas but below the section's text. */
+.pv5 .pv5-scrim,
+.pv5 .pv5-scrim-soft { position: relative; isolation: isolate; }
+.pv5 .pv5-scrim::before,
+.pv5 .pv5-scrim-soft::before {
+  content: ""; position: absolute; inset: -4% -8%; z-index: 0; pointer-events: none;
+}
+.pv5 .pv5-scrim::before {
+  background: radial-gradient(ellipse 80% 70% at 50% 50%,
+    rgba(8,6,26,0.80) 0%, rgba(8,6,26,0.56) 42%, rgba(8,6,26,0) 78%);
+}
+.pv5 .pv5-scrim-soft::before {
+  background: radial-gradient(ellipse 84% 72% at 50% 45%,
+    rgba(8,6,26,0.56) 0%, rgba(8,6,26,0.32) 46%, rgba(8,6,26,0) 80%);
+}
+.pv5 .pv5-scrim > *,
+.pv5 .pv5-scrim-soft > * { position: relative; z-index: 1; }
+
+/* ---- responsive --------------------------------------------------------- */
+@media (max-width: 640px) {
+  .pv5 .pv5-br { display: none; }
+  .pv5 .pv5-weave-line { gap: 16px; }
+  .pv5 .pv5-vow { grid-template-columns: 1fr; gap: 14px; padding: 22px; }
+  .pv5 .pv5-vow-icon { width: 38px; height: 38px; }
+}

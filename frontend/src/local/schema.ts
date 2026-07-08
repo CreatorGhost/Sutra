@@ -1,7 +1,7 @@
 // On-device SQLite schema (port of the Postgres schema.sql). Transcripts only — no audio columns.
 // pgvector vector(N) -> embedding BLOB (Float32) + dim; jsonb -> TEXT (JSON1); arrays -> JSON text.
 // Bi-temporal edges (valid_from/valid_to/ingested_at) baked in from day one.
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 9;
 
 export const MIGRATIONS: Record<number, string> = {
   1: `
@@ -93,6 +93,11 @@ CREATE TABLE IF NOT EXISTS training_samples(
   transcript TEXT);
 CREATE TABLE IF NOT EXISTS training_extraction(sample_id INTEGER PRIMARY KEY, extraction_raw TEXT, extraction_corrected TEXT);
 CREATE TABLE IF NOT EXISTS training_asr(sample_id INTEGER PRIMARY KEY, asr_raw TEXT, asr_corrected TEXT, diarization TEXT);
+-- training_audio: the ONLY place in the schema that can hold raw audio, and it is OPT-IN ONLY.
+-- The default privacy invariant stands: no raw audio is persisted. Audio is used in-flight and discarded.
+-- This table is only ever written if the user explicitly opts into on-device audio training (encrypted
+-- on-device, never uploaded). That opt-in is currently UNWIRED/disabled in the UI, so in practice this
+-- table stays empty. Do not write to it without an explicit, surfaced user consent flow.
 CREATE TABLE IF NOT EXISTS training_audio(sample_id INTEGER PRIMARY KEY, audio BLOB, mime TEXT);
 CREATE TABLE IF NOT EXISTS training_edits(id INTEGER PRIMARY KEY AUTOINCREMENT, sample_id INTEGER, field TEXT, before TEXT, after TEXT, ts TEXT NOT NULL DEFAULT (datetime('now')));
 `,
@@ -118,5 +123,106 @@ CREATE TABLE IF NOT EXISTS events(
   created_at TEXT NOT NULL DEFAULT (datetime('now')));
 CREATE INDEX IF NOT EXISTS idx_events_start ON events(start_ts);
 CREATE INDEX IF NOT EXISTS idx_events_conv ON events(conversation_id);
+`,
+
+  5: `
+-- "Clean-up Transcript": a context-aware refinement pass over a conversation's turns. Non-destructive —
+-- turns.text stays the RAW source of truth; cleaned text lands here (NULL until cleaned). A per-conversation
+-- conversations.refined (0/1) toggle decides whether cleaned text is shown/used; user can revert anytime.
+ALTER TABLE turns ADD COLUMN text_clean TEXT;
+ALTER TABLE conversations ADD COLUMN refined INTEGER NOT NULL DEFAULT 0;
+`,
+
+  6: `
+-- "Minutes of Meeting": a conversation flagged as a meeting (is_meeting, set by the extractor) can have
+-- structured minutes generated for it — automatically (when auto_minutes is on) or on demand via the
+-- per-conversation button. Minutes are DERIVED & non-destructive: the transcript + memory stay the
+-- source of truth; minutes live in their own table and can be regenerated or cleared anytime.
+ALTER TABLE conversations ADD COLUMN is_meeting INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS minutes(
+  conversation_id INTEGER PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  generated_at TEXT NOT NULL DEFAULT (datetime('now')));
+`,
+
+  7: `
+-- "Your Context": a PROFILE TIER of the user's personal PRIORS — beliefs the user holds (or that we
+-- have derived about their world), NOT ground truth. Priors are canonicalized (one row per subject,
+-- keyed on (kind, norm_subject) / shared entity_id, reinforced on re-mention) and decay over time
+-- (effective confidence ramps down by a half-life). They are DERIVED & non-destructive: the transcript +
+-- memories + graph stay the source of truth; priors live in their own table and can be edited, dismissed,
+-- superseded, or cleared anytime. Derivation is rule-based (no extra LLM calls). Privacy: one control,
+-- share_cloud (default 0); only share_cloud=1 priors ride along in cloud-mode chat. Derived priors are
+-- status='suggested' (never auto-confirmed); conflicts are only FLAGGED (contradicted++) — never
+-- auto-superseded (the user supersedes explicitly). Additive only — no existing table/row is touched.
+CREATE TABLE IF NOT EXISTS priors(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  entity_id INTEGER,
+  subject TEXT NOT NULL,
+  norm_subject TEXT NOT NULL,
+  value TEXT,
+  attrs TEXT NOT NULL DEFAULT '{}',
+  confidence REAL NOT NULL DEFAULT 0.5,
+  supported INTEGER NOT NULL DEFAULT 1,
+  contradicted INTEGER NOT NULL DEFAULT 0,
+  provenance TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'suggested',
+  source_conversation INTEGER,
+  source_turn_ids TEXT NOT NULL DEFAULT '[]',
+  is_prior INTEGER NOT NULL DEFAULT 1,
+  share_cloud INTEGER NOT NULL DEFAULT 0,
+  valid_from TEXT,
+  valid_to TEXT,
+  last_confirmed_at TEXT,
+  superseded_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')));
+CREATE INDEX IF NOT EXISTS idx_priors_norm ON priors(norm_subject);
+CREATE INDEX IF NOT EXISTS idx_priors_kind ON priors(kind);
+CREATE INDEX IF NOT EXISTS idx_priors_entity ON priors(entity_id);
+CREATE INDEX IF NOT EXISTS idx_priors_status ON priors(status);
+`,
+
+  8: `
+-- "Projects": user-authored, per-project CONTEXT that grounds the AI (cleanup + attribution + minutes).
+-- A project = a one-time, user-written brief (free text, injected verbatim) + a structured people list
+-- (name + role-in-THIS-project, optionally voice-linked to a known person) + canonical terms/glossary.
+-- The AI NEVER auto-derives context — the user authors it; the app may only OFFER to save (confirm-only).
+-- v1 is ON-DEVICE ONLY: context_enabled (default 1) gates LOCAL use; share_cloud (default 0) is a UI
+-- placeholder — cloud egress of projects is DEFERRED/disabled in v1 (never conflate the two switches).
+-- Additive & non-destructive: project_id on conversations is NULLABLE; unmapped conversations are the
+-- default and behave exactly as today. The SAME person can have a DIFFERENT role in different projects,
+-- so role lives ONLY on project_people (membership), never globally on people.
+CREATE TABLE IF NOT EXISTS projects(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  brief TEXT,
+  color TEXT,
+  context_enabled INTEGER NOT NULL DEFAULT 1,
+  share_cloud INTEGER NOT NULL DEFAULT 0,
+  terms TEXT, /* JSON: [{canonical, heardAs:[]}] */
+  created_at TEXT DEFAULT (datetime('now')));
+
+-- Map a conversation to a project (NULL = unmapped = today's behavior). Nullable, additive.
+ALTER TABLE conversations ADD COLUMN project_id INTEGER;
+
+-- Per-project membership: role lives HERE (per-project), never on the global people row. One global
+-- people row per human (one voiceprint); the same person may carry a different role in each project.
+CREATE TABLE IF NOT EXISTS project_people(
+  project_id INTEGER,
+  person_id INTEGER,
+  role TEXT,
+  PRIMARY KEY(project_id, person_id));
+CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id);
+`,
+
+  9: `
+-- Projects mapping provenance (P3). Additive & non-destructive.
+-- project_auto=1 marks a SILENT, high-confidence auto-map (vs a user choice) so the UI can show a
+-- "Mapped to X — undo" affordance; a user-set project clears it. suggested_project_id holds a
+-- MEDIUM-confidence guess the user can one-tap confirm — the conversation stays UNMAPPED until they do
+-- (low/none leaves both NULL/0, exactly today's behavior).
+ALTER TABLE conversations ADD COLUMN project_auto INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE conversations ADD COLUMN suggested_project_id INTEGER;
 `,
 };

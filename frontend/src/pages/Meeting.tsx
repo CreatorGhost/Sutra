@@ -5,6 +5,7 @@ import { createCaptureProvider } from "../capture/CaptureProvider";
 import { MeetingController, type MeetingPhase, NO_AUDIO_TRACK_MESSAGE } from "../capture/meetingCapture";
 import type { AudioOutputKind } from "../capture/stereoCore";
 import { api } from "../local/sutra";
+import { OWNER_LABEL } from "../local/channelAttribution";
 import { Chip, ErrorBar } from "../components/ui";
 
 // Online-meeting capture (ticket F6 — approach #1 "WAV-at-the-edge, controller-mirror").
@@ -19,9 +20,10 @@ import { Chip, ErrorBar } from "../components/ui";
 function speakerName(t: any): string {
   if (t?.person_name) return String(t.person_name);
   const lbl = String(t?.session_speaker_label ?? "");
+  if (lbl === OWNER_LABEL) return "Me";
+  // remote ("r0","r1"…) or single-channel diarizer ("0","1"…) → a 1-based Speaker N
   const m = lbl.match(/(\d+)/);
-  if (/remote/i.test(lbl) && m) return `Speaker ${Number(m[1]) + 1}`;
-  return "Me";
+  return m ? `Speaker ${Number(m[1]) + 1}` : "Speaker";
 }
 
 export default function Meeting() {
@@ -251,7 +253,7 @@ export default function Meeting() {
               <div className="mt-empty">{capturing ? "Listening… turns appear as each window is transcribed." : "Your meeting transcript will appear here, live."}</div>
             ) : (
               turns.map((t, idx) => (
-                <div key={t.id ?? idx} className={`mt-turn${/remote/i.test(String(t.session_speaker_label ?? "")) ? "" : " me"}`}>
+                <div key={t.id ?? idx} className={`mt-turn${t.session_speaker_label === OWNER_LABEL ? " me" : ""}`}>
                   <span className="mt-who">{speakerName(t)}</span>
                   <span className="mt-text">{t.text}</span>
                 </div>

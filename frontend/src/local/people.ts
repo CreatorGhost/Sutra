@@ -1,5 +1,7 @@
-import { findPersonByName, insertPerson, relabelSpeaker as repoRelabel, turnVoiceprintsForLabel, upsertPersonVoiceprint } from "./repo";
+import { findPersonByName, getSettings, insertPerson, minutesFor, relabelSpeaker as repoRelabel, sessionConversationIds, setConversationProject, turnVoiceprintsForLabel, upsertPersonVoiceprint } from "./repo";
 import { meanVector } from "./util";
+import { getProvider, type Mode } from "../providers";
+import { generateMinutes } from "./minutes";
 
 /** "This is me" / name labeling. Maps a session's speaker (cloud label or voiceprint cluster) to a
  *  person, then LEARNS that person's voiceprint from the labeled turns so future sessions auto-tag them
@@ -17,7 +19,50 @@ export async function relabelSpeaker(sessionId: number, label: string, opts: { p
     const vecs = await turnVoiceprintsForLabel(sessionId, label);
     if (vecs.length) await upsertPersonVoiceprint(personId!, meanVector(vecs));
   } catch (e) { console.warn("voiceprint enroll-on-label skipped", e); }
+  // Minutes refresh runs in the BACKGROUND (fire-and-forget) so the rename registers INSTANTLY — the
+  // re-map above is what the UI shows right away; the cloud minutes refresh (real name into
+  // attendees/owners/discussion) lands a moment later. Self-swallowing & never blocks the rename.
+  void regenerateMinutesAfterNaming(sessionId);
   return { session_id: sessionId, label, person_id: personId };
+}
+
+/** Re-run minutes for any conversation in this session that already has a minutes row, so a name added
+ *  after generation replaces the frozen "Speaker N". Mirrors the auto-minutes gate (settings + cloud);
+ *  the manual Regenerate button is unaffected. Best-effort — swallows every error. */
+async function regenerateMinutesAfterNaming(sessionId: number): Promise<void> {
+  try {
+    if ((await getSettings()).auto_minutes === false) return;
+    const mode = String((await getSettings())["mode"] ?? "hybrid") as Mode;
+    const provider = getProvider(mode);
+    if (provider.id !== "cloud") return;
+    for (const cid of await sessionConversationIds(sessionId)) {
+      try { if (await minutesFor(cid)) await generateMinutes(cid, provider); }
+      catch (e) { console.warn("minutes regen-on-name skipped", cid, e); }
+    }
+  } catch (e) { console.warn("minutes regen-on-name pass skipped", e); }
+}
+
+/** User maps (or unmaps, with null) a conversation to a project, then RE-RUNS that conversation's minutes
+ *  so the new project's glossary/roster grounds them (or, on unmap, reverts to ungrounded). Always a USER
+ *  choice (auto=false), so it overrides any silent auto-map and clears the pending suggestion. Minutes
+ *  regeneration is best-effort and never throws — re-mapping must succeed even if minutes can't run. */
+export async function setProjectForConversation(convId: number, projectId: number | null) {
+  await setConversationProject(convId, projectId, false);
+  await regenerateMinutesForConversation(convId);
+  return { conversation_id: convId, project_id: projectId };
+}
+
+/** Re-run minutes for ONE conversation (if it already has a minutes row), mirroring the auto-minutes gate
+ *  (auto on, cloud provider). Best-effort — swallows every error. Used when a project re-map changes the
+ *  grounding context. */
+async function regenerateMinutesForConversation(convId: number): Promise<void> {
+  try {
+    if ((await getSettings()).auto_minutes === false) return;
+    const mode = String((await getSettings())["mode"] ?? "hybrid") as Mode;
+    const provider = getProvider(mode);
+    if (provider.id !== "cloud") return;
+    if (await minutesFor(convId)) await generateMinutes(convId, provider);
+  } catch (e) { console.warn("minutes regen-on-remap skipped", convId, e); }
 }
 
 export async function enroll(name: string, isMe: boolean, _audio?: Blob | null) {

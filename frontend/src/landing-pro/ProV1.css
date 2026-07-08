@@ -1,0 +1,167 @@
+/* ============================================================================
+   ProV1 "Constellation" — bespoke dark/cinematic layout. Scoped under .pv1.
+   Sections: hero · entity legend · grounded-chat showcase · scale line ·
+   privacy line · CTA. Two custom components live here: the entity legend and
+   the chat-bubble stack.
+   ============================================================================ */
+
+/* ── 1 · HERO ─────────────────────────────────────────────────────────── */
+.pv1 .pv1-hero { padding-top: 8vh; }
+.pv1 .pv1-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--pg-accent); box-shadow: 0 0 12px var(--pg-glow); display: inline-block;
+}
+.pv1 .pv1-title { margin-top: 22px; max-width: 16ch; }
+.pv1 .pv1-lead { margin-top: 26px; max-width: 52ch; }
+.pv1 .pv1-hero .pg-cta-row { margin-top: 36px; }
+
+.pv1 .pv1-section-title { margin-top: 14px; max-width: 22ch; }
+
+/* ── 2 · ENTITY LEGEND ────────────────────────────────────────────────── */
+.pv1 .pv1-legend-sec { min-height: 100vh; display: flex; align-items: center; }
+.pv1 .pv1-legend-lead { margin-top: 22px; max-width: 56ch; }
+
+.pv1 .pv1-legend {
+  list-style: none; margin: 56px 0 0; padding: 0;
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 920px;
+}
+.pv1 .pv1-legend-key {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 14px; row-gap: 2px;
+  align-items: center;
+  padding: 20px 22px; border-radius: var(--pg-r);
+  background: var(--pg-card); border: 1px solid var(--pg-card-border);
+  transition: border-color 0.45s, transform 0.45s cubic-bezier(0.16,1,0.3,1), background 0.45s;
+}
+.pv1 .pv1-legend-key:hover { border-color: var(--pg-accent-2); transform: translateY(-3px); }
+.pv1 .pv1-legend-dot {
+  grid-row: 1 / 3; align-self: center;
+  width: 12px; height: 12px; border-radius: 50%;
+}
+.pv1 .pv1-legend-label { font-size: 1.08rem; font-weight: 600; letter-spacing: -0.01em; color: var(--pg-ink); }
+.pv1 .pv1-legend-gloss { font-size: 0.9rem; color: var(--pg-ink-3); line-height: 1.3; }
+
+/* ── 3 · GROUNDED-CHAT SHOWCASE ───────────────────────────────────────── */
+.pv1 .pv1-ask-sec { min-height: 100vh; }
+.pv1 .pv1-ask-grid {
+  display: grid; gap: clamp(36px, 6vw, 80px);
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1fr);
+  align-items: center;
+}
+.pv1 .pv1-ask-lead { margin-top: 22px; max-width: 42ch; }
+
+/* the chat panel */
+.pv1 .pv1-chat {
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02));
+  border: 1px solid var(--pg-card-border);
+  box-shadow: 0 40px 120px -50px rgba(0,0,0,0.85), 0 0 60px -30px var(--pg-glow);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  overflow: hidden;
+}
+.pv1 .pv1-chat-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 22px; border-bottom: 1px solid var(--pg-line);
+  background: rgba(255,255,255,0.025);
+}
+.pv1 .pv1-chat-head-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--pg-accent); box-shadow: 0 0 12px var(--pg-glow);
+}
+.pv1 .pv1-chat-head-name {
+  font-family: var(--pg-mono); font-size: 0.74rem; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--pg-ink-3);
+}
+.pv1 .pv1-chat-body {
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 26px 22px 30px;
+}
+
+/* rows + bubbles */
+.pv1 .pv1-chat-row { display: flex; width: 100%; }
+.pv1 .pv1-chat-row--you { justify-content: flex-end; }
+.pv1 .pv1-chat-row--sutra { justify-content: flex-start; }
+
+.pv1 .pv1-bubble {
+  max-width: 78%;
+  padding: 14px 17px; border-radius: 18px;
+  font-size: 0.98rem; line-height: 1.5;
+}
+.pv1 .pv1-bubble--you {
+  background: var(--pg-accent); color: var(--pg-on-accent);
+  border-bottom-right-radius: 6px; font-weight: 500;
+  box-shadow: 0 10px 30px -14px var(--pg-glow);
+}
+.pv1 .pv1-bubble--sutra {
+  position: relative;
+  background: rgba(255,255,255,0.05); color: var(--pg-ink);
+  border: 1px solid var(--pg-card-border);
+  border-bottom-left-radius: 6px;
+  padding-left: 17px;
+}
+.pv1 .pv1-bubble-mark {
+  position: absolute; left: 0; top: 14px; bottom: 14px; width: 2.5px;
+  border-radius: 2px;
+  background: linear-gradient(var(--pg-accent-2), var(--pg-accent));
+}
+.pv1 .pv1-bubble-text { margin: 0; }
+.pv1 .pv1-bubble--sutra.is-empty { color: var(--pg-ink-3); font-style: italic; }
+.pv1 .pv1-bubble--sutra.is-empty .pv1-bubble-mark {
+  background: linear-gradient(var(--pg-ink-3), transparent);
+}
+
+/* source chip */
+.pv1 .pv1-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-top: 11px; padding: 5px 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pg-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 32%, transparent);
+  font-family: var(--pg-mono); font-size: 0.72rem; letter-spacing: 0.02em;
+  color: var(--pg-accent-2); white-space: nowrap;
+}
+.pv1 .pv1-chip-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--pg-accent-2); box-shadow: 0 0 8px var(--pg-glow);
+}
+
+.pv1 .pv1-ask-caption {
+  margin: 40px auto 0; max-width: 60ch; text-align: center;
+  font-size: 0.98rem; line-height: 1.55; color: var(--pg-ink-3);
+}
+
+/* ── 4 · SCALE LINE ───────────────────────────────────────────────────── */
+.pv1 .pv1-scale { min-height: 86vh; text-align: center; }
+.pv1 .pv1-scale-line {
+  margin: 0 auto; max-width: 18ch;
+  font-family: var(--pg-display); font-weight: 600;
+  font-size: clamp(2.1rem, 5.2vw, 4.4rem);
+  line-height: 1.08; letter-spacing: -0.02em;
+  color: var(--pg-ink);
+}
+
+/* ── 5 · PRIVACY LINE ─────────────────────────────────────────────────── */
+.pv1 .pv1-privacy { padding-block: clamp(110px, 18vh, 220px); text-align: center; }
+.pv1 .pv1-privacy-line {
+  margin: 0 auto; max-width: 30ch;
+  font-size: clamp(1.15rem, 2vw, 1.55rem); line-height: 1.45;
+  font-weight: 450; color: var(--pg-ink-2);
+}
+
+/* ── 6 · CTA ──────────────────────────────────────────────────────────── */
+.pv1 .pv1-cta { padding-bottom: clamp(120px, 22vh, 260px); }
+.pv1 .pv1-cta-title { max-width: 18ch; margin: 0 auto 22px; }
+
+/* ── responsive ───────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .pv1 .pv1-ask-grid { grid-template-columns: 1fr; }
+  .pv1 .pv1-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .pv1 .pv1-legend { grid-template-columns: 1fr; }
+  .pv1 .pv1-bubble { max-width: 88%; }
+}

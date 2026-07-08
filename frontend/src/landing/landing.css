@@ -1,0 +1,52 @@
+/* ============================================================================
+   Sutra landing — shared full-bleed marketing surface. SHARED, do not let variant
+   authors edit this file; variant-specific CSS lives in co-located LandingV{N}.css
+   scoped under a unique .lv{N} root class.
+   ============================================================================ */
+
+/* Escapes the app's fixed mobile shell (body is overflow:hidden, .app is 100dvh):
+   a fixed, independently-scrolling full-screen surface. */
+.landing-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg);
+  background-image: var(--bg-glow);
+  background-repeat: no-repeat;
+  color: var(--text);
+  font-family: var(--f-sans);
+  -webkit-user-select: text;
+  user-select: text;
+  scroll-behavior: smooth;
+  /* marketing type scale — larger than the compact in-app scale */
+  --l-hero: clamp(2.6rem, 6.4vw, 5.25rem);
+  --l-h2: clamp(1.7rem, 3.4vw, 2.85rem);
+  --l-lead: clamp(1.05rem, 1.7vw, 1.35rem);
+}
+.landing-root ::selection { background: var(--accent-soft); }
+
+/* layout helpers (variants may use or roll their own) */
+.l-container { width: 100%; max-width: 1120px; margin-inline: auto; padding-inline: clamp(20px, 5vw, 56px); }
+.l-section { position: relative; padding-block: clamp(64px, 12vh, 168px); }
+
+/* type helpers */
+.l-eyebrow { font-family: var(--f-mono); font-size: var(--fs-xs); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-2); }
+.l-hero-title { font-size: var(--l-hero); line-height: 1.02; letter-spacing: -0.02em; font-weight: 700; margin: 0; }
+.l-h2 { font-size: var(--l-h2); line-height: 1.1; letter-spacing: -0.015em; font-weight: 700; margin: 0; }
+.l-lead { font-size: var(--l-lead); line-height: 1.55; color: var(--text-2); max-width: 56ch; margin: 0; }
+
+/* full-bleed hero 3D canvas layer + foreground stacking */
+.l-canvas { position: absolute; inset: 0; z-index: 0; }
+.l-canvas canvas { display: block; }
+.l-fg { position: relative; z-index: 1; }
+
+.l-cta-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+/* big landing CTA (the global .btn scale is tuned for mobile chrome; landing wants more presence) */
+.l-btn-lg { min-height: 52px; padding: 14px 26px; font-size: var(--fs-l); border-radius: var(--r-pill); }
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-root { scroll-behavior: auto; }
+}

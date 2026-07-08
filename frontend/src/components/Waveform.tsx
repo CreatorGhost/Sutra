@@ -12,8 +12,6 @@ export function Waveform({ active, level }: { active: boolean; level: number }) 
   useEffect(() => {
     const cv = ref.current!;
     const ctx = cv.getContext("2d")!;
-    const css = getComputedStyle(document.documentElement);
-    const accent = (css.getPropertyValue("--accent").trim() || "#8b7bff");
     let t = 0, smooth = 0, raf = 0;
     const resize = () => {
       const r = cv.getBoundingClientRect();
@@ -23,8 +21,9 @@ export function Waveform({ active, level }: { active: boolean; level: number }) 
     };
     resize();
     const ro = new ResizeObserver(resize); ro.observe(cv);
-    const hex = (a: string) => accent + a;
     const draw = () => {
+      const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#8b7bff";
+      const hex = (a: string) => accent + a;
       const w = cv.clientWidth, h = cv.clientHeight, mid = h / 2;
       const target = activeRef.current ? Math.max(0.08, Math.min(1, levelRef.current)) : 0.05;
       smooth += (target - smooth) * 0.12;
