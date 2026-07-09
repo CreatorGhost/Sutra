@@ -205,7 +205,7 @@ export default function Memory() {
                   <span className="faint mono" style={{ fontSize: "var(--fs-xs)", whiteSpace: "nowrap" }}>{fmtDate(r.started_at)}</span>
                 </div>
                 <div className="muted" style={{ fontSize: "var(--fs-s)" }}>{r.summary}</div>
-                <div className="score-bar" style={{ marginTop: 10 }}><i style={{ width: `${Math.min(100, r.score * 100)}%` }} /></div>
+                <div className="score-bar" style={{ marginTop: 10 }}><i style={{ transform: `scaleX(${Math.min(1, r.score)})` }} /></div>
               </Link>
             ))}
           </div>

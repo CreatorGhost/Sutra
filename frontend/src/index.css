@@ -39,7 +39,9 @@
   /* Stronger entrance/feedback curve — more punch than --ease. Use for ENTRANCES and PRESS
      feedback (transform/opacity); keep --ease for color/background-only transitions. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --spring: cubic-bezier(0.34, 1.3, 0.5, 1);
+  /* Snappy deceleration for entrances / toggle knobs / sheet slide-ups — a strong ease-out (expo),
+     deliberately NO overshoot: a bouncy/elastic curve (y>1) reads as an "AI motion" tell. */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --dur: 0.22s;
   --f-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, system-ui, "Segoe UI", sans-serif;
   --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
@@ -193,7 +195,7 @@ label.field { display: block; margin-bottom: 14px; } label.field > span { displa
 .switch { width: 51px; height: 31px; border-radius: 999px; padding: 2px; background: var(--surface-3);
   border: 1px solid var(--border); flex: 0 0 auto; transition: background var(--dur), border-color var(--dur); }
 .switch span { display: block; width: 25px; height: 25px; border-radius: 50%; background: var(--text);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.28); transform: translateX(0); transition: transform var(--dur) var(--spring), background var(--dur); }
+  box-shadow: 0 2px 8px rgba(0,0,0,0.28); transform: translateX(0); transition: transform var(--dur) var(--ease-out-expo), background var(--dur); }
 .switch.on { background: var(--accent); border-color: transparent; }
 .switch.on span { background: var(--on-accent); transform: translateX(20px); }
 
@@ -285,7 +287,7 @@ label.field { display: block; margin-bottom: 14px; } label.field > span { displa
 .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 61; max-width: var(--content); margin: 0 auto;
   background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(24px) saturate(1.2);
   border: 1px solid var(--border-strong); border-bottom: none; border-radius: var(--r-sheet) var(--r-sheet) 0 0;
-  padding: 12px 20px calc(20px + var(--sab)); box-shadow: var(--shadow-pop); animation: sheet-in 0.34s var(--spring); }
+  padding: 12px 20px calc(20px + var(--sab)); box-shadow: var(--shadow-pop); animation: sheet-in 0.34s var(--ease-out-expo); }
 .grabber { width: 40px; height: 4px; border-radius: 4px; background: var(--border-strong); margin: 0 auto 14px; }
 @keyframes sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes fade { from { opacity: 0; } }
@@ -316,13 +318,28 @@ label.field { display: block; margin-bottom: 14px; } label.field > span { displa
 .fade-in { animation: rise 0.34s var(--ease) both; } @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
 .cite { color: var(--accent-2); font-size: var(--fs-xs); background: var(--accent-soft); padding: 2px 8px; border-radius: 6px; }
 .score-bar { height: 4px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
-.score-bar > i { display: block; height: 100%; background: var(--accent); transition: width 0.3s ease; }
+/* Fill scales along X (transform, not width) so it never triggers layout — the consumer sets
+   transform: scaleX(0..1) inline. transform-origin keeps it growing from the left edge. */
+.score-bar > i { display: block; height: 100%; width: 100%; background: var(--accent);
+  transform-origin: left center; transform: scaleX(0); transition: transform 0.3s var(--ease-out); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
   clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .status-line { display: flex; align-items: center; gap: 9px; font-size: var(--fs-s); color: var(--text-2); }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .status-dot.idle { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
 .status-dot.live { background: var(--danger); animation: blink 1.2s infinite; } .status-dot.proc { background: var(--amber); } @keyframes blink { 50% { opacity: 0.3; } }
+
+/* Desktop pointer affordances — tappable surfaces gain a quiet hover cue so the web/desktop build
+   doesn't feel inert (touch has press feedback already). Gated to real pointers: Capacitor Android
+   fires :hover on tap and would leave the cue stuck, so hover changes must never reach touch. */
+@media (hover: hover) and (pointer: fine) {
+  .card.tap:hover { border-color: var(--accent-line); }
+  .conv-row:hover { background: var(--surface-2); }
+  .settings-row:not(:disabled):hover { background: var(--surface-2); }
+  .onboard-opt:hover:not(.sel) { border-color: var(--border-strong); }
+  .btn.primary:not(:disabled):hover { background: var(--accent-2); }
+  .icon-btn:hover { border-color: var(--border-strong); color: var(--text); }
+}
 
 @media (min-width: 720px) {
   .nav { max-width: 1100px; left: 50%; transform: translateX(-50%); border-radius: var(--r-card) var(--r-card) 0 0; }
@@ -376,7 +393,7 @@ label.field { display: block; margin-bottom: 14px; } label.field > span { displa
   border: none; padding: 0; cursor: pointer; display: grid; place-items: center; color: var(--on-accent);
   background: radial-gradient(circle at 50% 35%, var(--accent-2), var(--accent));
   box-shadow: 0 10px 36px -10px var(--accent-glow);
-  transition: transform 0.18s var(--spring), background 0.25s var(--ease);
+  transition: transform 0.18s var(--ease-out-expo), background 0.25s var(--ease);
   -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
   appearance: none; -webkit-appearance: none; user-select: none; -webkit-user-select: none;
   touch-action: manipulation; outline: none; will-change: transform;
@@ -463,7 +480,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 18px; height: 18px;
 
 /* Recording stage: the mic dissolves out and a live amplitude-reactive waveform fades in. */
 .mic-stage { position: relative; width: 100%; min-height: 156px; display: grid; place-items: center; }
-.mic-stage > .mic-btn { grid-area: 1 / 1; transition: opacity 0.4s var(--ease-out), transform 0.5s var(--spring), filter 0.4s var(--ease-out); }
+.mic-stage > .mic-btn { grid-area: 1 / 1; transition: opacity 0.4s var(--ease-out), transform 0.5s var(--ease-out-expo), filter 0.4s var(--ease-out); }
 .mic-stage > .wave-stage { grid-area: 1 / 1; width: 100%; opacity: 0; transform: scale(0.92); pointer-events: none;
   transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out); }
 /* The mic cross-dissolves into the waveform — it scales DOWN gently (never vanishing to near-zero) and
