@@ -31,6 +31,7 @@ const RecapSettings = lazy(() => import("./pages/settings/RecapSettings"));
 const AdvancedSettings = lazy(() => import("./pages/settings/AdvancedSettings"));
 const SignIn = lazy(() => import("./pages/SignIn"));
 const AccountSettings = lazy(() => import("./pages/settings/AccountSettings"));
+const LegalDoc = lazy(() => import("./pages/LegalDoc"));
 // NOTE: the marketing landing site (src/landing/*, src/landing-pro/*) is intentionally NOT routed
 // from the shipped app — routing it here bundled ~10.5k LOC + the three.js/@react-three/gsap stack
 // (the react-three-fiber chunk alone was the largest JS asset) into the Android/iOS/desktop build for
@@ -136,6 +137,7 @@ export default function App() {
           <Route path="/settings/recap" element={<RecapSettings />} />
           <Route path="/settings/advanced" element={<AdvancedSettings />} />
           <Route path="/signin" element={<SignIn />} />
+          <Route path="/legal/:doc" element={<LegalDoc />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

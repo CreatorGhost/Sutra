@@ -88,7 +88,12 @@ export default function Settings() {
         ))}
       </div>
 
-      <p className="faint" style={{ textAlign: "center", fontSize: "var(--fs-xs)", marginTop: 8 }}>Sutra · transcripts & memory only, never audio.</p>
+      <p className="faint" style={{ textAlign: "center", fontSize: "var(--fs-xs)", marginTop: 12 }}>
+        <button onClick={() => navigate("/legal/privacy")} style={{ background: "none", border: 0, color: "var(--accent-2)", cursor: "pointer", font: "inherit", padding: 0 }}>Privacy Policy</button>
+        {"  ·  "}
+        <button onClick={() => navigate("/legal/terms")} style={{ background: "none", border: 0, color: "var(--accent-2)", cursor: "pointer", font: "inherit", padding: 0 }}>Terms</button>
+      </p>
+      <p className="faint" style={{ textAlign: "center", fontSize: "var(--fs-xs)", marginTop: 4 }}>Sutra · transcripts & memory only, never audio.</p>
     </div>
   );
 }

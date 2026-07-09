@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import AVFoundation
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -7,8 +8,25 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        configureAudioSession()
         return true
+    }
+
+    /// Background-capture parity with Android's foreground mic service. With `UIBackgroundModes=audio`
+    /// in Info.plist and a `.playAndRecord` session, the WebView's getUserMedia stream can keep running
+    /// when the app is backgrounded or the screen is locked. `.mixWithOthers` avoids stealing other
+    /// apps' audio; the mic indicator only shows while capture is actually recording.
+    /// NOTE (needs device verification): if WKWebView getUserMedia still suspends in the background on
+    /// a real device, the fallback is a native AVAudioEngine capture plugin feeding the pipeline.
+    private func configureAudioSession() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .default,
+                                    options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth])
+            try session.setActive(true)
+        } catch {
+            NSLog("Sutra: AVAudioSession configuration failed: \(error.localizedDescription)")
+        }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
