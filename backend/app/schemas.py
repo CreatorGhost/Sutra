@@ -37,6 +37,20 @@ class LoginRequest(BaseModel):
         return v.strip().lower()
 
 
+class RequestResetBody(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+    @field_validator("email")
+    @classmethod
+    def _norm_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class ResetBody(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
+    new_password: str = Field(min_length=8, max_length=200)
+
+
 class DeleteAccountRequest(BaseModel):
     """Fresh confirmation for DELETE /auth/account: password accounts confirm with their password;
     social accounts (no password hash) confirm by typing their email."""

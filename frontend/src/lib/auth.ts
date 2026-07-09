@@ -88,6 +88,12 @@ export function signOut(): void {
   clearToken();
 }
 
+/** Kick off a forgot-password email. Always resolves — the server intentionally returns 200 for both
+ *  known and unknown emails (anti user-enumeration), so there is nothing to branch on here. */
+export async function requestReset(email: string): Promise<void> {
+  await postJson<{ ok: boolean }>("/auth/request-reset", { email: email.trim() });
+}
+
 /** Permanently delete the account + every server-side copy (the server cascades: memory projection,
  *  plan, usage, OAuth grants, settings). Requires the password as fresh confirmation. The device's
  *  local memory is NOT touched. Clears the stored token on success. */

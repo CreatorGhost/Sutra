@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Cloud, Loader2, Shield } from "lucide-react";
-import { signup, login, getAuthProviders, consumeTokenFragment, beginSocialLogin, type AuthProviders } from "../lib/auth";
+import { signup, login, requestReset, getAuthProviders, consumeTokenFragment, beginSocialLogin, type AuthProviders } from "../lib/auth";
 import { ErrorBar } from "../components/ui";
 
 // Tier B sign-in (opt-in, hosted). Email + password against the server variant's /auth/* endpoints.
@@ -22,6 +22,13 @@ export default function SignIn() {
   // Which sign-in providers the server enabled. Default to password-only (no social buttons) so the
   // email/password form always works even if the probe fails or social isn't configured.
   const [providers, setProviders] = useState<AuthProviders>({ password: true, google: false, facebook: false });
+
+  // Forgot-password: a small inline reveal, not a separate route. The confirmation message is
+  // intentionally generic (matches the server's anti-enumeration 200-always contract).
+  const [showForgot, setShowForgot] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
 
   const canSubmit = email.trim().length > 3 && email.includes("@") && password.length >= 8 && !busy;
 
@@ -45,6 +52,21 @@ export default function SignIn() {
   // redirects to the provider and back to /signin#token=…&nonce=…, which this page consumes on return
   // (the token is only adopted when the echoed nonce matches the one beginSocialLogin generated).
   const startOAuth = (provider: "google" | "facebook") => beginSocialLogin(provider);
+
+  const submitReset = async () => {
+    const trimmed = resetEmail.trim();
+    if (!trimmed.includes("@") || resetBusy) return;
+    setResetBusy(true);
+    try {
+      await requestReset(trimmed);
+    } catch {
+      // Swallow: the server always answers 200, so a failure here is a network issue — the generic
+      // message below is still correct/safe to show (never reveal whether the email exists).
+    } finally {
+      setResetBusy(false);
+      setResetMsg("If an account exists for that email, we've sent a reset link.");
+    }
+  };
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -98,6 +120,35 @@ export default function SignIn() {
           {tab === "create" ? " Create account" : " Sign in"}
         </button>
       </form>
+
+      {tab === "signin" && (
+        <div style={{ marginTop: 10 }}>
+          {!showForgot ? (
+            <button type="button" className="btn ghost" style={{ padding: 0, fontSize: "var(--fs-xs)" }}
+              onClick={() => { setShowForgot(true); setResetMsg(null); }}>
+              Forgot password?
+            </button>
+          ) : resetMsg ? (
+            <span className="faint" style={{ fontSize: "var(--fs-xs)" }}>{resetMsg}</span>
+          ) : (
+            <div style={{ marginTop: 4 }}>
+              <label className="field"><span>Email for reset link</span>
+                <input className="input" type="email" autoComplete="email" inputMode="email"
+                  value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} placeholder="you@example.com" />
+              </label>
+              <div className="row" style={{ gap: 8 }}>
+                <button type="button" className="btn block" disabled={!resetEmail.trim().includes("@") || resetBusy}
+                  onClick={() => void submitReset()}>
+                  {resetBusy ? <Loader2 size={14} style={{ animation: "spin .8s linear infinite" }} /> : "Send reset link"}
+                </button>
+                <button type="button" className="btn ghost" onClick={() => { setShowForgot(false); setResetEmail(""); }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {(providers.google || providers.facebook) && (
         <div style={{ marginTop: 16 }}>

@@ -6,6 +6,7 @@ Email is stored CITEXT (case-insensitive unique), so lookups need no lower() dan
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from ..db import get_pool
 from .security import hash_password, needs_rehash, verify_password
@@ -108,3 +109,42 @@ async def authenticate(email: str, password: str) -> dict | None:
             log.warning("password rehash failed for user %s", user["id"])
     await ensure_entitlement(user["id"])
     return user
+
+
+# ----- Forgot-password (basic email flow) -----
+RESET_TOKEN_TTL_MINUTES = 30
+
+
+async def create_password_reset_token(user_id, token_hash: str) -> None:
+    """Store a reset row for an already-hashed token (the raw token is never persisted)."""
+    pool = await get_pool()
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
+    await pool.execute(
+        "INSERT INTO password_reset_tokens(user_id, token_hash, expires_at) VALUES($1,$2,$3)",
+        user_id, token_hash, expires_at,
+    )
+
+
+async def consume_password_reset_token(token_hash: str) -> dict | None:
+    """Atomically claim an unused, unexpired reset row by marking it used and return it, else None.
+
+    The UPDATE ... WHERE used_at IS NULL AND expires_at > now() RETURNING is a single round-trip
+    compare-and-set, so two concurrent requests for the same token can't both succeed.
+    """
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "UPDATE password_reset_tokens SET used_at=now() "
+        "WHERE token_hash=$1 AND used_at IS NULL AND expires_at > now() "
+        "RETURNING id, user_id",
+        token_hash,
+    )
+    return dict(row) if row else None
+
+
+async def set_password(user_id, new_password: str) -> None:
+    """Overwrite the account's password hash (used by the reset flow)."""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE users SET password_hash=$1 WHERE id=$2",
+        hash_password(new_password), user_id,
+    )

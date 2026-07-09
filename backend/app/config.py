@@ -120,6 +120,12 @@ class Settings(BaseSettings):
     sutra_jwt_secret: str = ""               # HS256 signing secret; REQUIRED to enable /auth + /sync
     sutra_jwt_ttl_minutes: int = 10080       # access-token TTL (7d default for the test phase)
 
+    # Transactional mail (forgot-password). "log" (default) just logs the message — safe for dev/test
+    # with no provider configured. "resend" sends via the Resend HTTP API (real keys live in .env).
+    mail_provider: str = "log"               # log | resend
+    resend_api_key: str = ""
+    mail_from: str = "Sutra <onboarding@resend.dev>"
+
     @property
     def cors_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
