@@ -5,14 +5,18 @@ credential-stuffing on a single-box deploy, with no new dependency. Ceiling: it 
 across workers/replicas and resets on process restart. If the control plane ever runs multiple
 workers or replicas, swap _consume for a Redis token bucket keyed the same way (bucket:ip).
 """
-from __future__ import annotations
-
+# NB: intentionally NO `from __future__ import annotations`. The FastAPI dependency `_dep` below
+# annotates `request: Request`, where Request is imported lazily *inside* rate_limit(). Under
+# future-annotations every annotation becomes a STRING, and FastAPI can't resolve "Request" in this
+# module's globals (the import is local) — so it treats `request` as a required query param and 422s
+# every login/signup/request-reset. Eager annotations resolve the real class from the closure. Keep it.
 import time
 from collections import defaultdict, deque
 
 # (max requests, window seconds) per client key.
 _LIMITS: dict[str, tuple[int, float]] = {
-    "auth": (10, 60.0),  # 10 login/signup attempts per minute per client IP
+    "auth": (10, 60.0),   # 10 login/signup attempts per minute per client IP
+    "reset": (3, 3600.0), # 3 password-reset requests per hour per client IP
 }
 _hits: dict[str, deque] = defaultdict(deque)
 
