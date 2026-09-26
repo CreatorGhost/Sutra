@@ -17,8 +17,9 @@ A minimal meeting-notes app in the spirit of Aside:
 - **Notes when you stop.** You get Summary, Decisions, Action items (with checkboxes) and Open questions. There's also a *Detailed* style, the transcript with speakers you can rename, and **Ask about this meeting…**.
 
 ```bash
-cd frontend && npm install
+cd frontend && npm install   # postinstall rebuilds the SQLite engine for Electron
 npm run dev            # desktop app (electron-vite)
+# If Electron reports NODE_MODULE_VERSION mismatch: npm run rebuild:electron
 npm run dev:web        # same UI in the browser (Chrome/Edge for meeting capture)
 npm test && npm run typecheck
 npm run build:desktop  # packaged app (dmg / nsis / AppImage)

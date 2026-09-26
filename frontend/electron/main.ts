@@ -12,7 +12,7 @@
 //
 // Security: contextIsolation ON, nodeIntegration OFF, sandbox ON; the renderer only sees the frozen
 // preload bridge (electron/preload.ts).
-import { app, BrowserWindow, Menu, Tray, desktopCapturer, ipcMain, nativeImage, screen, session, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, Menu, Tray, desktopCapturer, dialog, ipcMain, nativeImage, screen, session, shell, systemPreferences } from "electron";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { initDesktopStorage } from "./storage";
@@ -24,6 +24,14 @@ import { macAppCandidates, type Detection, type TrackerUpdate } from "../src/sha
 import type { AgentId, AgentRequest } from "../src/shared/agentProtocol";
 
 const isMac = process.platform === "darwin";
+
+// Name the app "Sutra" everywhere (menus, userData folder) — in dev Electron would call itself
+// "Electron". The Dock label in `npm run dev` still reads "Electron" (it's Electron.app's own bundle
+// name); the packaged app is "Sutra".
+const legacyUserData = join(app.getPath("appData"), "sutra-frontend");
+app.setName("Sutra");
+// Dev builds used to store data under the package name; keep using it so nothing is orphaned.
+if (existsSync(legacyUserData) && !existsSync(join(app.getPath("appData"), "Sutra"))) app.setPath("userData", legacyUserData);
 
 // macOS system-audio loopback for getDisplayMedia goes through ScreenCaptureKit; these Chromium
 // features gate it on current Electron builds (unknown feature names are ignored, so this is safe).
@@ -411,7 +419,12 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === "media"));
     loadPrefs();
     void userPath(); // resolve the login-shell PATH once, up front, so Record never waits on it
-    initDesktopStorage();
+    const dbError = initDesktopStorage();
+    if (dbError) dialog.showErrorBox("Sutra can't open its database", dbError);
+    if (isMac && !app.isPackaged) {
+      const icon = join(__dirname, "../../public/icon-512.png");
+      if (existsSync(icon)) app.dock?.setIcon(nativeImage.createFromPath(icon));
+    }
     registerIpc();
     createMainWindow();
     createPillWindow();
