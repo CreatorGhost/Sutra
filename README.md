@@ -10,6 +10,21 @@ with **cited** answers, and emails you a **daily recap**.
 
 ---
 
+## Desktop app (macOS / Windows / Linux)
+A minimal meeting-notes app in the spirit of Aside:
+- **It notices your calls.** When Google Meet, Zoom, Teams, Slack huddles and similar are in progress, a small pill appears at the top of the screen: *"Google Chrome in call · ● Record ×"*.
+- **No bot joins.** Sutra records your mic and the call's audio as two channels and transcribes each separately, so "you" and "everyone else" are always attributed correctly.
+- **Notes when you stop.** You get Summary, Decisions, Action items (with checkboxes) and Open questions. There's also a *Detailed* style, the transcript with speakers you can rename, and **Ask about this meeting…**.
+
+```bash
+cd frontend && npm install
+npm run dev            # desktop app (electron-vite)
+npm run dev:web        # same UI in the browser (Chrome/Edge for meeting capture)
+npm test && npm run typecheck
+npm run build:desktop  # packaged app (dmg / nsis / AppImage)
+```
+See [`docs/AUDIT-2026-09.md`](docs/AUDIT-2026-09.md) for the audit, what changed, and the macOS permissions to allow.
+
 ## Stack
 - **Backend:** Python + FastAPI (async), Postgres + `pgvector`.
 - **AI (OpenAI):** `gpt-4o-transcribe-diarize` (diarized STT) · `gpt-5.4-mini` (extraction, Structured Outputs)

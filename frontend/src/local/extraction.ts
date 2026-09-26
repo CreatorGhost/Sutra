@@ -15,7 +15,7 @@ export async function extractConversation(convId: number, provider: Provider) {
   const turns = (detail?.turns ?? []) as any[];
   if (!turns.length) return null;
   const turnIds = turns.map((t) => t.id);
-  const transcript = turns.map((t) => `${t.person_name || "Speaker " + t.session_speaker_label}: ${t.text}`).join("\n");
+  const transcript = turns.map((t) => `${t.person_name || (t.session_speaker_label === "me" ? "Me" : "Speaker " + t.session_speaker_label)}: ${t.text}`).join("\n");
 
   // Give the model the conversation's date so it can resolve relative times ("kal 11 baje" -> ISO datetime).
   const convDate = String((detail as any)?.conversation?.started_at ?? "").slice(0, 10);
@@ -30,8 +30,9 @@ export async function extractConversation(convId: number, provider: Provider) {
   const memVec = vecs[0], entVecs = vecs.slice(1);
 
   const memId = await repo.upsertMemory({
-    conversation_id: convId, title: data.title ?? "Untitled", summary,
+    conversation_id: convId, title: data.title ?? "Untitled", subtitle: data.subtitle ?? null, summary,
     facts: data.facts ?? [], action_items: data.action_items ?? [], decisions: data.decisions ?? [],
+    open_questions: data.open_questions ?? [],
     importance: clamp(data.importance_score), type_tags: data.type_tags ?? [], embed_model: provider.id,
   }, memVec);
   await repo.setConversationTitle(convId, data.title ?? "Untitled conversation");
@@ -72,9 +73,13 @@ export async function extractConversation(convId: number, provider: Provider) {
     const s = nameToId[normName(rel.src ?? "")], d = nameToId[normName(rel.dst ?? "")];
     if (s && d) await graph.upsertEdge(s, d, rel.relation ?? "related_to", convId, turnIds);
   }
+  // Replace (not append): re-extraction (recovery pass, "Regenerate") used to duplicate every action item.
+  await repo.clearActions(convId);
   for (const a of (data.action_items ?? []) as any[]) {
     await repo.insertAction({ text: a.text, owner: a.owner, due: a.due, source_conversation: convId });
   }
+  // Notes derived from the old extraction (e.g. a cached Detailed style) are stale now.
+  await repo.clearNotes(convId);
   await repo.setConversationStatus(convId, "done");
   return { conversation_id: convId, memory_id: memId, title: data.title, entities: Object.keys(nameToId).length,
            action_items: (data.action_items ?? []).length, importance: clamp(data.importance_score) };

@@ -66,8 +66,9 @@ export function clampBrief(raw: unknown, cap: number = BRIEF_CAP): string {
 }
 
 // ---- sessions ----
-export async function createSession(device?: string) {
-  const { lastId } = await run("INSERT INTO sessions(device,status) VALUES(?, 'active')", [device ?? null]);
+export type SessionKind = "meeting" | "ambient";
+export async function createSession(device?: string, kind: SessionKind = "ambient", sourceApp?: string | null) {
+  const { lastId } = await run("INSERT INTO sessions(device,status,kind,source_app) VALUES(?, 'active', ?, ?)", [device ?? null, kind, sourceApp ?? null]);
   await persist();
   return (await q("SELECT * FROM sessions WHERE id=?", [lastId]))[0];
 }
@@ -192,18 +193,38 @@ export const setConversationTitle = async (id: number, title: string) => { await
 export const setConversationStatus = async (id: number, status: string) => { await run("UPDATE conversations SET status=? WHERE id=?", [status, id]); await persist(); };
 export const setConversationMeeting = async (id: number, on: boolean) => { await run("UPDATE conversations SET is_meeting=? WHERE id=?", [on ? 1 : 0, id]); await persist(); };
 
-// ---- minutes (Minutes of Meeting) — derived, non-destructive; one row per conversation ----
-export const setMinutes = async (cid: number, data: any) => {
-  await run(`INSERT INTO minutes(conversation_id,data,generated_at) VALUES(?,?,datetime('now'))
-             ON CONFLICT(conversation_id) DO UPDATE SET data=excluded.data, generated_at=excluded.generated_at`,
-    [cid, J(data ?? {})]);
-  await persist();
-};
-export const clearMinutes = async (cid: number) => { await run("DELETE FROM minutes WHERE conversation_id=?", [cid]); await persist(); };
-export const minutesFor = async (cid: number) => {
-  const row = (await q("SELECT data,generated_at FROM minutes WHERE conversation_id=?", [cid]))[0] as any;
+// ---- notes (per-style meeting notes; derived + regenerable, one row per conversation per style) ----
+export const getNotes = async (cid: number, style: string) => {
+  const row = (await q("SELECT data,generated_at FROM notes WHERE conversation_id=? AND style=?", [cid, style]))[0] as any;
   return row ? { ...P(row.data, {} as Record<string, unknown>), generated_at: row.generated_at } : null;
 };
+export const setNotes = async (cid: number, style: string, data: unknown) => {
+  await run(`INSERT INTO notes(conversation_id,style,data,generated_at) VALUES(?,?,?,datetime('now'))
+             ON CONFLICT(conversation_id,style) DO UPDATE SET data=excluded.data, generated_at=excluded.generated_at`,
+    [cid, style, J(data ?? {})]);
+  await persist();
+};
+export const clearNotes = async (cid: number) => { await run("DELETE FROM notes WHERE conversation_id=?", [cid]); await persist(); };
+export const setConversationSourceApp = async (id: number, app: string | null) => { await run("UPDATE conversations SET source_app=? WHERE id=?", [app, id]); await persist(); };
+export const setConversationTags = async (id: number, tags: string[]) => { await run("UPDATE conversations SET tags=? WHERE id=?", [J(tags), id]); await persist(); };
+/** Delete a conversation and everything derived from it. Graph entities/edges are kept (they are shared
+ *  across conversations); their evidence simply points at a conversation that no longer exists. */
+export async function deleteConversation(cid: number) {
+  const mem = (await q("SELECT id,title,summary,facts FROM memories WHERE conversation_id=?", [cid]))[0] as any;
+  if (mem) {
+    await ftsRemove(mem);
+    await run("DELETE FROM memories WHERE id=?", [mem.id]);
+  }
+  await run("DELETE FROM action_items WHERE source_conversation=?", [cid]);
+  await run("DELETE FROM events WHERE conversation_id=?", [cid]);
+  await run("DELETE FROM notes WHERE conversation_id=?", [cid]);
+  await run("DELETE FROM turns WHERE conversation_id=?", [cid]);
+  await run("DELETE FROM conversations WHERE id=?", [cid]);
+  await persist();
+}
+/** The most recent conversation(s) of a session — where a finished recording lands. */
+export const latestConversationForSession = async (sid: number): Promise<number | null> =>
+  ((await q("SELECT id FROM conversations WHERE session_id=? ORDER BY id DESC LIMIT 1", [sid]))[0] as any)?.id ?? null;
 /** Conversation ids in a session (to make processSession idempotent — skip re-segmentation). */
 export const sessionConversationIds = async (sid: number): Promise<number[]> =>
   (await q("SELECT id FROM conversations WHERE session_id=? ORDER BY id", [sid])).map((r: any) => r.id);
@@ -230,73 +251,65 @@ export const upcomingEvents = (nowIso: string) =>
      FROM events e LEFT JOIN conversations c ON c.id=e.conversation_id
      WHERE e.start_ts IS NOT NULL AND e.start_ts >= ? ORDER BY e.start_ts LIMIT 50`, [nowIso]);
 export const listConversations = async () =>
-  (await q(`SELECT c.*, m.summary, m.importance AS importance_score, m.type_tags, json_array_length(m.action_items) action_count
+  (await q(`SELECT c.*, m.summary, m.subtitle, m.importance AS importance_score, m.type_tags, json_array_length(m.action_items) action_count
             FROM conversations c LEFT JOIN memories m ON m.conversation_id=c.id
-            ORDER BY c.started_at DESC LIMIT 200`)).map((r: any) =>
-    ({ ...r, type_tags: P(r.type_tags, []), participant_person_ids: P(r.participant_person_ids, []) }));
+            ORDER BY COALESCE(c.started_at, c.created_at) DESC LIMIT 500`)).map((r: any) =>
+    ({ ...r, type_tags: P(r.type_tags, []), tags: P(r.tags, []), participant_person_ids: P(r.participant_person_ids, []) }));
 export async function conversationDetail(cid: number) {
-  const conv = (await q("SELECT * FROM conversations WHERE id=?", [cid]))[0];
+  const conv = (await q("SELECT * FROM conversations WHERE id=?", [cid]))[0] as any;
   if (!conv) return null;
-  const m = (await q(`SELECT id,conversation_id,title,summary,facts,action_items,decisions,importance AS importance_score,type_tags,created_at
-                      FROM memories WHERE conversation_id=?`, [cid]))[0];
-  const turns = await q(`SELECT t.id,t.session_speaker_label,t.session_id,t.person_id,p.canonical_name person_name,p.is_me,t.text,t.text_clean,t.lang,t.start_ts,t.end_ts,t.abs_start,t.window_index,t.redacted
-                         FROM turns t LEFT JOIN people p ON p.id=t.person_id WHERE t.conversation_id=? ORDER BY t.window_index,t.start_ts,t.id`, [cid]);
-  // Non-destructive cleaned text: when this conversation is refined, display + extraction use t.text_clean
-  // (falling back to raw t.text per-turn where no cleaned text exists). Raw t.text stays the source of truth.
-  const useClean = !!(conv as any).refined;
-  const hasClean = (turns as any[]).some((t: any) => t.text_clean != null);
-  const resolved = (turns as any[]).map((t: any) => ({ ...t, text: (useClean && t.text_clean) ? t.text_clean : t.text }));
-  // Read-time coalescing: merge consecutive same-speaker diarization turns for coherent display/extraction.
-  // crossWindow only when speakers are stabilized (person_id present); never mutates stored rows.
-  const crossWindow = resolved.some((t: any) => t.person_id != null);
-  const coalesced = coalesceTurns(resolved as any, { maxGapS: 2, maxMergeWords: 400, crossWindow });
-  const ids = P<number[]>((conv as any).participant_person_ids, []).filter((x) => Number.isInteger(x));
-  const participants = ids.length ? await q(`SELECT id,canonical_name,is_me FROM people WHERE id IN (${ids.map(() => "?").join(",")})`, ids) : [];
-  const events = await q("SELECT id,title,when_text,start_ts,kind FROM events WHERE conversation_id=? ORDER BY (start_ts IS NULL), start_ts, id", [cid]);
-  const minutes = await minutesFor(cid);
-  const memory = m ? { ...m, facts: P((m as any).facts, []), action_items: P((m as any).action_items, []), decisions: P((m as any).decisions, []), type_tags: P((m as any).type_tags, []) } : null;
-  return { conversation: { ...conv, participant_person_ids: ids, refined: useClean, hasClean, is_meeting: !!(conv as any).is_meeting, project_id: (conv as any).project_id ?? null, project_auto: !!(conv as any).project_auto, suggested_project_id: (conv as any).suggested_project_id ?? null }, memory, turns: coalesced, participants, events, minutes };
-}
-
-/** Redaction-safe variant of conversationDetail used by the MCP read layer: identical result shape,
- *  but turns with redacted=1 are EXCLUDED (filtered in SQL with t.redacted=0) before coalesce/return,
- *  so a redacted turn can never reach an external consumer. Everything else (clean-text resolution,
- *  cross-window coalescing, participants/events/minutes) is preserved exactly as conversationDetail. */
-export async function conversationDetailSafe(cid: number) {
-  const conv = (await q("SELECT * FROM conversations WHERE id=?", [cid]))[0];
-  if (!conv) return null;
-  const m = (await q(`SELECT id,conversation_id,title,summary,facts,action_items,decisions,importance AS importance_score,type_tags,created_at
-                      FROM memories WHERE conversation_id=?`, [cid]))[0];
+  const m = (await q(`SELECT id,conversation_id,title,subtitle,summary,facts,action_items,decisions,open_questions,importance AS importance_score,type_tags,created_at
+                      FROM memories WHERE conversation_id=?`, [cid]))[0] as any;
   const turns = await q(`SELECT t.id,t.session_speaker_label,t.session_id,t.person_id,p.canonical_name person_name,p.is_me,t.text,t.text_clean,t.lang,t.start_ts,t.end_ts,t.abs_start,t.window_index,t.redacted
                          FROM turns t LEFT JOIN people p ON p.id=t.person_id WHERE t.conversation_id=? AND t.redacted=0 ORDER BY t.window_index,t.start_ts,t.id`, [cid]);
-  const useClean = !!(conv as any).refined;
-  const hasClean = (turns as any[]).some((t: any) => t.text_clean != null);
+  // Non-destructive cleaned text: when refined, display + extraction use t.text_clean (falling back to raw
+  // per turn). Raw t.text stays the source of truth.
+  const useClean = !!conv.refined;
   const resolved = (turns as any[]).map((t: any) => ({ ...t, text: (useClean && t.text_clean) ? t.text_clean : t.text }));
+  // Read-time coalescing: merge consecutive same-speaker diarization fragments. crossWindow only once
+  // speakers are stabilised (person_id present); never mutates stored rows.
   const crossWindow = resolved.some((t: any) => t.person_id != null);
   const coalesced = coalesceTurns(resolved as any, { maxGapS: 2, maxMergeWords: 400, crossWindow });
-  const ids = P<number[]>((conv as any).participant_person_ids, []).filter((x) => Number.isInteger(x));
+  const ids = P<number[]>(conv.participant_person_ids, []).filter((x) => Number.isInteger(x));
   const participants = ids.length ? await q(`SELECT id,canonical_name,is_me FROM people WHERE id IN (${ids.map(() => "?").join(",")})`, ids) : [];
   const events = await q("SELECT id,title,when_text,start_ts,kind FROM events WHERE conversation_id=? ORDER BY (start_ts IS NULL), start_ts, id", [cid]);
-  const minutes = await minutesFor(cid);
-  const memory = m ? { ...m, facts: P((m as any).facts, []), action_items: P((m as any).action_items, []), decisions: P((m as any).decisions, []), type_tags: P((m as any).type_tags, []) } : null;
-  return { conversation: { ...conv, participant_person_ids: ids, refined: useClean, hasClean, is_meeting: !!(conv as any).is_meeting }, memory, turns: coalesced, participants, events, minutes };
+  const actions = await q("SELECT id,text,owner,due,status FROM action_items WHERE source_conversation=? ORDER BY id", [cid]);
+  const memory = m ? { ...m, facts: P(m.facts, []), action_items: P(m.action_items, []), decisions: P(m.decisions, []),
+                           open_questions: P(m.open_questions, []), type_tags: P(m.type_tags, []) } : null;
+  return {
+    conversation: { ...conv, participant_person_ids: ids, refined: useClean, is_meeting: !!conv.is_meeting, tags: P<string[]>(conv.tags, []) },
+    memory, turns: coalesced, participants, events, actions,
+  };
 }
 
 // ---- memories (+ FTS mirror) ----
+// memories_fts is CONTENTLESS (content=''), so a plain DELETE is rejected ("cannot DELETE from
+// contentless fts5 table"). Removing a row needs the FTS5 'delete' command with the ORIGINAL values.
+const ftsText = (factsJson: unknown) => P<string[]>(factsJson, []).join(" ");
+async function ftsRemove(row: { id: number; title?: string | null; summary?: string | null; facts?: unknown }) {
+  try {
+    await run("INSERT INTO memories_fts(memories_fts,rowid,title,summary,facts) VALUES('delete',?,?,?,?)",
+      [row.id, row.title ?? "", row.summary ?? "", ftsText(row.facts)]);
+  } catch (e) { console.warn("FTS delete skipped", e); }
+}
+
 export async function upsertMemory(m: any, embedding?: number[]) {
+  const prev = (await q("SELECT id,title,summary,facts FROM memories WHERE conversation_id=?", [m.conversation_id]))[0] as any;
+  if (prev) await ftsRemove(prev);
   await run(
-    `INSERT INTO memories(conversation_id,title,summary,facts,action_items,decisions,importance,type_tags,embedding,embed_model,embed_dim)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT(conversation_id) DO UPDATE SET title=excluded.title,summary=excluded.summary,facts=excluded.facts,
-       action_items=excluded.action_items,decisions=excluded.decisions,importance=excluded.importance,
+    `INSERT INTO memories(conversation_id,title,subtitle,summary,facts,action_items,decisions,open_questions,importance,type_tags,embedding,embed_model,embed_dim)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(conversation_id) DO UPDATE SET title=excluded.title,subtitle=excluded.subtitle,summary=excluded.summary,facts=excluded.facts,
+       action_items=excluded.action_items,decisions=excluded.decisions,open_questions=excluded.open_questions,importance=excluded.importance,
        type_tags=excluded.type_tags,embedding=excluded.embedding,embed_model=excluded.embed_model,embed_dim=excluded.embed_dim`,
-    [m.conversation_id, m.title ?? "", m.summary, J(m.facts ?? []), J(m.action_items ?? []), J(m.decisions ?? []),
-     m.importance ?? 0.5, J(m.type_tags ?? []), embedding ? vecToBlob(embedding) : null, m.embed_model ?? null, embedding?.length ?? null]);
+    [m.conversation_id, m.title ?? "", m.subtitle ?? null, m.summary, J(m.facts ?? []), J(m.action_items ?? []), J(m.decisions ?? []),
+     J(m.open_questions ?? []), m.importance ?? 0.5, J(m.type_tags ?? []), embedding ? vecToBlob(embedding) : null, m.embed_model ?? null, embedding?.length ?? null]);
   const row = (await q("SELECT id FROM memories WHERE conversation_id=?", [m.conversation_id]))[0] as any;
   const id = row.id;
-  await run("DELETE FROM memories_fts WHERE rowid=?", [id]);
-  await run("INSERT INTO memories_fts(rowid,title,summary,facts) VALUES(?,?,?,?)",
-    [id, m.title ?? "", m.summary, (m.facts ?? []).join(" ")]);
+  try {
+    await run("INSERT INTO memories_fts(rowid,title,summary,facts) VALUES(?,?,?,?)",
+      [id, m.title ?? "", m.summary, (m.facts ?? []).join(" ")]);
+  } catch (e) { console.warn("FTS mirror skipped (engine without FTS5?)", e); }
   await persist();
   return id;
 }

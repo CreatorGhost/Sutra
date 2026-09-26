@@ -1,4 +1,4 @@
-import { getSettings, insertConversation, setTurnsConversation, unsegmentedTurns } from "./repo";
+import { getSession, getSettings, insertConversation, latestConversationForSession, setConversationMeeting, setConversationSourceApp, setTurnsConversation, unsegmentedTurns } from "./repo";
 
 const toks = (t: string) => new Set((t.toLowerCase().match(/\w+/g) ?? []));
 function jaccard(a: Set<string>, b: Set<string>) {
@@ -7,7 +7,28 @@ function jaccard(a: Set<string>, b: Set<string>) {
   return inter / (a.size + b.size - inter);
 }
 
+/** An explicit meeting recording is ONE meeting: never split it on silence or topic shift (that turned a
+ *  1-hour call into several fragments). New turns from a resumed/reprocessed recording are appended to the
+ *  session's existing conversation. Returns the conversation id when it was created or grew. */
+async function segmentMeeting(sessionId: number, sourceApp: string | null): Promise<number[]> {
+  const turns = await unsegmentedTurns(sessionId) as any[];
+  if (!turns.length) return [];
+  let convId = await latestConversationForSession(sessionId);
+  if (convId == null) {
+    const participants = [...new Set(turns.map((t) => t.person_id).filter((x) => x != null))];
+    convId = await insertConversation({
+      session_id: sessionId, started_at: turns[0].abs_start, ended_at: turns[turns.length - 1].abs_start, participant_person_ids: participants,
+    });
+    await setConversationMeeting(convId, true);
+    if (sourceApp) await setConversationSourceApp(convId, sourceApp);
+  }
+  await setTurnsConversation(turns.map((t) => t.id), convId);
+  return [convId];
+}
+
 export async function segmentSession(sessionId: number): Promise<number[]> {
+  const sess = await getSession(sessionId) as any;
+  if (sess?.kind === "meeting") return segmentMeeting(sessionId, sess.source_app ?? null);
   const s = await getSettings();
   const gap = Number(s["segment_gap_seconds"] ?? 300);
   const topic = String(s["segment_topic_shift"] ?? "on") === "on";

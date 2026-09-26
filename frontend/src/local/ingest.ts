@@ -7,7 +7,14 @@ import { attributeSegments } from "./channelAttribution";
 /** Diarize a window and persist turns. The audio Blob is used in-flight only and never stored.
  *  P2: speaker identity = the per-call diarization label; cross-session identity comes from manual
  *  "this is me" labeling (auto ECAPA voiceprint is Phase 3). */
-export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: number, provider: Provider, filename?: string, windowStartMs?: number, requestMultichannel?: boolean) {
+/** How a window's audio maps to speakers. `multichannel` asks the STT provider to split a stereo file
+ *  itself (not every provider can); `channel` says the (mono) blob IS one known channel — 0 = the owner's
+ *  mic, 1 = the meeting's system audio — which works with every provider (see MeetingController). */
+export interface IngestChannelOpts { multichannel?: boolean; channel?: 0 | 1 }
+
+export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: number, provider: Provider, filename?: string, windowStartMs?: number, channelOpts?: boolean | IngestChannelOpts) {
+  const opts: IngestChannelOpts = typeof channelOpts === "boolean" ? { multichannel: channelOpts } : (channelOpts ?? {});
+  const requestMultichannel = !!opts.multichannel;
   const sess = await repo.getSession(sessionId);
   if (!sess) throw new Error("session not found");
   // Honor the user's transcription-language choice (onboarding/Settings → transcript_lang setting).
@@ -25,8 +32,12 @@ export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: n
   // Online-meeting capture sends two-channel WAV windows and asks for per-channel diarization so the
   // owner (mic, ch0) and remotes (system, ch1) are tagged at the source (F4 attribution then applies).
   // Ambient capture leaves multichannel undefined → the opt is omitted and the request is unchanged.
+  // The owner's own mic channel never needs voiceprints (it is always "Me").
   const tr = await provider.transcribeDiarize(blob, filename ?? `window-${windowIndex}.${fallbackExt}`,
-    { prompt: langCfg.prompt, voiceprints: wantVoiceprints, multichannel: requestMultichannel || undefined });
+    { prompt: langCfg.prompt, voiceprints: wantVoiceprints && opts.channel !== 0, multichannel: requestMultichannel || undefined });
+  // A known-channel mono window: tag every segment so attribution treats it exactly like a provider-split
+  // multichannel response (channel 0 → "Me", channel 1 → remotes, diarized among themselves).
+  if (opts.channel != null) for (const s of tr.segments as any[]) { s.channel = opts.channel; s.is_me = opts.channel === 0; }
   const started: string | null = sess.started_at ?? null;
   // English mode (degrade-safe): when the user picked "english" we translate segment texts to English
   // in ONE batched call (cloud only — on-device has no translate endpoint). On ANY failure we keep the

@@ -56,7 +56,7 @@ function mockCapacitor() {
     };
   });
   // Skip real migrations: report the connection already at the latest schema version.
-  vi.doMock("../schema", () => ({ SCHEMA_VERSION: 0, MIGRATIONS: {} }));
+  vi.doMock("../schema", () => ({ SCHEMA_VERSION: 0, MIGRATIONS: {}, ensureSchema: async () => {} }));
 }
 
 beforeEach(() => {
