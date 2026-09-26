@@ -1,0 +1,82 @@
+import { useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft, Loader2, Mic, ShieldCheck, Square } from "lucide-react";
+import { speakerName } from "../local/speakers";
+import { clock } from "./format";
+import { useNow, useRecorder } from "./recorder";
+import { LevelBars } from "./ui";
+
+/** The recording screen: big clock, live level, and the transcript as each ~90 s window lands. */
+export function LiveView() {
+  const nav = useNavigate();
+  const { state: rec, start, stop, clearError } = useRecorder();
+  const now = useNow(rec.status === "recording");
+  const endRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" }); }, [rec.turns.length]);
+
+  // When the notes are ready, open them.
+  const prevStatus = useRef(rec.status);
+  useEffect(() => {
+    if (prevStatus.current === "processing" && rec.status === "idle" && rec.lastConversationId) nav(`/m/${rec.lastConversationId}`, { replace: true });
+    prevStatus.current = rec.status;
+  }, [rec.status, rec.lastConversationId, nav]);
+
+  const recording = rec.status === "recording";
+  return (
+    <div className="live">
+      <div className="pane-top drag">
+        <button className="icon-btn ghost sm back-btn" onClick={() => nav("/")} aria-label="Back"><ArrowLeft size={18} /></button>
+      </div>
+      <div className="live-head">
+        {rec.status === "processing" ? (
+          <>
+            <div className="hero-mark"><Loader2 size={24} className="spin" /></div>
+            <p className="hero-title">Writing your notes…</p>
+            <p className="hero-text">Transcribing the last few seconds and pulling out the summary, decisions and action items.</p>
+          </>
+        ) : recording || rec.status === "starting" ? (
+          <>
+            <div className="muted" style={{ fontWeight: 600 }}>
+              <span className="live-dot" />{rec.status === "starting" ? "Starting…" : `Recording${rec.app ? ` · ${rec.app}` : ""}`}
+            </div>
+            <div className="live-clock">{rec.startedAt ? clock(now - rec.startedAt) : "0:00"}</div>
+            <div style={{ color: "var(--rec)", marginBottom: 20 }}><LevelBars level={rec.level} count={7} /></div>
+            <button className="btn primary" onClick={() => void stop()} disabled={!recording}><Square size={13} fill="currentColor" /> Stop & write notes</button>
+          </>
+        ) : (
+          <>
+            <div className="hero-mark"><Mic size={24} /></div>
+            <p className="hero-title">Ready when you are</p>
+            <p className="hero-text">
+              {rec.mode === "mic" ? "Sutra listens through your microphone." : "Sutra records your mic and the meeting's audio — no bot joins the call."}
+            </p>
+            <button className="btn primary" onClick={() => void start()}>Start recording</button>
+          </>
+        )}
+        {rec.error && (
+          <div className="notice err" style={{ maxWidth: 560, margin: "22px auto 0", textAlign: "left" }}>
+            <div className="grow">{rec.error}</div>
+            <button className="icon-btn ghost sm" onClick={clearError} aria-label="Dismiss">×</button>
+          </div>
+        )}
+      </div>
+      <div className="live-body">
+        {recording && rec.turns.length === 0 && (
+          <p className="faint" style={{ textAlign: "center" }}>The transcript appears here as you talk — in chunks of about a minute and a half.</p>
+        )}
+        <div className="transcript">
+          {rec.turns.map((t, i) => (
+            <div key={t.id ?? i}>
+              <div className="turn-head"><span className="speaker">{speakerName(t)}</span></div>
+              <div className="turn-text">{t.text}</div>
+            </div>
+          ))}
+        </div>
+        <div ref={endRef} />
+        <p className="faint" style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", fontSize: 13, marginTop: 28 }}>
+          <ShieldCheck size={14} /> Audio is transcribed in-flight and never stored.
+        </p>
+      </div>
+    </div>
+  );
+}

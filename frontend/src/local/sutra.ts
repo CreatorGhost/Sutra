@@ -3,16 +3,15 @@
 import { Capacitor } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
-import { getProvider, MODE_COPY, type Mode } from "../providers";
+import { MODE_COPY, resolveProvider, type Mode } from "../providers";
 import { q } from "./db";
 import * as chatSvc from "./chat";
 import * as extractSvc from "./extraction";
 import { expand, graphOverview } from "./graph";
 import * as ingestSvc from "./ingest";
 import * as peopleSvc from "./people";
-import * as minutesSvc from "./minutes";
+import * as notesSvc from "./notes";
 import * as recapSvc from "./recap";
-import * as refinementSvc from "./refinement";
 import * as repo from "./repo";
 import { searchMemories } from "./search";
 import * as training from "./training";
@@ -20,7 +19,7 @@ import * as training from "./training";
 async function currentMode(): Promise<Mode> {
   return (String((await repo.getSettings())["mode"] ?? "hybrid") as Mode);
 }
-async function provider() { return getProvider(await currentMode()); }
+async function provider() { return resolveProvider(await repo.getSettings()); }
 
 export const api = {
   health: async () => ({ status: "ok", mode: await currentMode(), privacy: MODE_COPY[await currentMode()].audio }),
@@ -28,7 +27,7 @@ export const api = {
   getSettings: () => repo.getSettings(),
   putSettings: (data: Record<string, unknown>) => repo.putSettings(data),
 
-  createSession: (device?: string) => repo.createSession(device),
+  createSession: (device?: string, kind?: repo.SessionKind, sourceApp?: string | null) => repo.createSession(device, kind, sourceApp),
   listSessions: () => repo.listSessions(),
   closeSession: async (sid: number) => { await repo.closeSession(sid); return { session_id: sid, status: "closed" }; },
   processSession: async (sid: number) => extractSvc.processSession(sid, await provider()),
@@ -36,8 +35,10 @@ export const api = {
    *  prior crash). Safe to call on launch. Hybrid only — no-ops cleanly on-device. */
   reprocessIncomplete: async () => extractSvc.reprocessIncomplete(await provider()),
   sessionTurns: (sid: number) => repo.sessionTurns(sid),
-  ingestWindow: async (sid: number, blob: Blob, index: number, filename?: string, windowStartMs?: number, multichannel?: boolean) =>
-    ingestSvc.ingestWindow(sid, blob, index, await provider(), filename, windowStartMs, multichannel),
+  ingestWindow: async (sid: number, blob: Blob, index: number, filename?: string, windowStartMs?: number, channelOpts?: boolean | ingestSvc.IngestChannelOpts) =>
+    ingestSvc.ingestWindow(sid, blob, index, await provider(), filename, windowStartMs, channelOpts),
+  /** The conversation a finished recording produced (the newest one in its session). */
+  conversationForSession: (sid: number) => repo.latestConversationForSession(sid),
 
   listPeople: () => repo.listPeople(),
   enroll: (fd: FormData) => peopleSvc.enroll(String(fd.get("name") ?? ""), String(fd.get("is_me")) === "true", fd.get("file") as Blob | null),
@@ -46,39 +47,48 @@ export const api = {
 
   listConversations: () => repo.listConversations(),
   conversation: (cid: number) => repo.conversationDetail(cid),
-  cleanConversation: async (cid: number) => refinementSvc.cleanConversation(cid, await provider()),
-  setConversationRefined: async (cid: number, on: boolean) => refinementSvc.setRefined(cid, on, await provider()),
-  // Minutes of Meeting — generate/regenerate (cloud), clear, or share/copy as Markdown.
-  generateMinutes: async (cid: number) => minutesSvc.generateMinutes(cid, await provider()),
-  clearMinutes: (cid: number) => minutesSvc.clearMinutes(cid),
-  shareMinutes: async (cid: number) => {
+  deleteConversation: (cid: number) => repo.deleteConversation(cid),
+  setTags: (cid: number, tags: string[]) => repo.setConversationTags(cid, tags),
+  setTitle: (cid: number, title: string) => repo.setConversationTitle(cid, title),
+  /** Re-run extraction for one meeting (e.g. after renaming speakers, or after a failure). */
+  reprocessConversation: async (cid: number) => extractSvc.extractConversation(cid, await provider()),
+
+  // Meeting notes (Brief comes with the extraction; Detailed is generated on demand and cached).
+  detailedNotes: async (cid: number, force = false) => notesSvc.detailedNotes(cid, await provider(), force),
+  askMeeting: async (cid: number, question: string, history: { q: string; a: string }[] = []) =>
+    notesSvc.askMeeting(cid, question, await provider(), history),
+  notesMarkdown: async (cid: number, style: notesSvc.NoteStyle, withTranscript = false) => {
     const d = await repo.conversationDetail(cid);
-    const text = minutesSvc.minutesToMarkdown((d?.conversation as any)?.title, d?.minutes as any);
-    if (!text) return { ok: false };
-    if (Capacitor.isNativePlatform()) {
-      try { await Share.share({ title: "Meeting minutes", text, dialogTitle: "Share minutes" }); }
-      catch (e: any) { if (!/cancel/i.test(String(e?.message ?? e))) throw e; }
-    } else {
-      try { await navigator.clipboard.writeText(text); } catch { /* clipboard may be blocked */ }
-    }
-    return { ok: true };
+    if (!d) return "";
+    const detailed = style === "detailed" ? ((await repo.getNotes(cid, "detailed")) as any) : null;
+    return notesSvc.notesToMarkdown(d, style, detailed, withTranscript);
   },
-  // Explicit one-tap copy of the same Markdown the Share action builds. Works on the Android WebView:
-  // tries the async clipboard API first, then falls back to a hidden-textarea execCommand("copy") for
-  // old/insecure WebViews. Returns ok:false when there are no minutes or every copy path failed.
-  copyMinutes: async (cid: number) => {
-    const d = await repo.conversationDetail(cid);
-    const text = minutesSvc.minutesToMarkdown((d?.conversation as any)?.title, d?.minutes as any);
-    if (!text) return { ok: false };
-    try { await navigator.clipboard.writeText(text); return { ok: true }; }
-    catch { /* clipboard API unavailable (insecure context / old WebView) — fall back below */ }
+  /** Copy text to the clipboard, falling back to execCommand for old / insecure WebViews. */
+  copyText: async (text: string) => {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* fall through */ }
     try {
       const ta = document.createElement("textarea");
       ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
       document.body.appendChild(ta); ta.select();
       const ok = document.execCommand("copy"); document.body.removeChild(ta);
-      return { ok };
-    } catch { return { ok: false }; }
+      return ok;
+    } catch { return false; }
+  },
+  /** Save/share a text file: native share sheet on mobile, a download (save dialog) elsewhere. */
+  exportText: async (filename: string, text: string, mime = "text/markdown") => {
+    if (Capacitor.isNativePlatform()) {
+      const path = `exports/${filename}`;
+      const written = await Filesystem.writeFile({ path, data: text, directory: Directory.Cache, encoding: Encoding.UTF8, recursive: true });
+      const uri = written.uri || (await Filesystem.getUri({ path, directory: Directory.Cache })).uri;
+      try { await Share.share({ title: filename, files: [uri], dialogTitle: "Export" }); }
+      catch (e: any) { if (!/cancel/i.test(String(e?.message ?? e))) throw e; }
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: mime }));
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   },
   upcomingEvents: () => repo.upcomingEvents(new Date().toISOString()),
   graph: (entityId?: number, hops = 2) => (entityId ? expand([entityId], hops) : graphOverview()),
@@ -124,12 +134,11 @@ export const api = {
   addProjectPerson: (projectId: number, member: Parameters<typeof repo.addProjectPerson>[1]) => repo.addProjectPerson(projectId, member),
   setProjectPersonRole: (projectId: number, personId: number, role: string | null) => repo.setProjectPersonRole(projectId, personId, role),
   removeProjectPerson: (projectId: number, personId: number) => repo.removeProjectPerson(projectId, personId),
-  // Mapping a conversation is always a USER choice: routes through the people service so it overrides any
-  // silent auto-map, clears the pending suggestion, and re-runs that conversation's minutes (best-effort).
-  setConversationProject: (convId: number, projectId: number | null) => peopleSvc.setProjectForConversation(convId, projectId),
+  // Mapping a conversation is always a USER choice (auto=false), which also clears any pending suggestion.
+  setConversationProject: (convId: number, projectId: number | null) => repo.setConversationProject(convId, projectId),
   projectForConversation: (convId: number) => repo.projectForConversation(convId),
   // P3 mapping/provenance: confirm a MEDIUM suggestion (one tap -> a real user map), or dismiss it.
-  confirmProjectSuggestion: (convId: number, projectId: number) => peopleSvc.setProjectForConversation(convId, projectId),
+  confirmProjectSuggestion: (convId: number, projectId: number) => repo.setConversationProject(convId, projectId),
   dismissProjectSuggestion: (convId: number) => repo.setConversationProjectSuggestion(convId, null),
 
   getMode: currentMode,
@@ -181,7 +190,4 @@ export const api = {
 // destructive `wipe`), so gate it strictly behind import.meta.env.DEV.
 if (import.meta.env.DEV && typeof window !== "undefined") {
   (window as any).__sutra = api;
-  // DEV-only MCP e2e fixture seeder. Lazy dynamic import keeps devSeed (and its raw delete/insert
-  // helpers) out of production bundles; devSeed imports repo/db/graph only (no cycle back to sutra).
-  (window as any).__sutraDev = { seed: () => import("./devSeed").then((m) => m.seed()) };
 }

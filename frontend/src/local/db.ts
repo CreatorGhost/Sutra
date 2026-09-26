@@ -1,6 +1,6 @@
 import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from "@capacitor-community/sqlite";
 import { Capacitor } from "@capacitor/core";
-import { MIGRATIONS, SCHEMA_VERSION } from "./schema";
+import { MIGRATIONS, SCHEMA_VERSION, ensureSchema } from "./schema";
 import { createElectronStorageProvider } from "../storage/electronStorage";
 import type { StorageProvider } from "../storage/StorageProvider";
 
@@ -115,6 +115,12 @@ async function migrate(c: SQLiteDBConnection): Promise<void> {
     }
     await c.execute(`PRAGMA user_version=${v};`);
   }
+  // Self-heal columns/tables regardless of user_version (a DB migrated by a divergent build can be
+  // ahead of SCHEMA_VERSION yet still lack them).
+  await ensureSchema({
+    exec: async (sql) => { await c.execute(sql); },
+    columns: async (t) => (((await c.query(`PRAGMA table_info(${t});`)).values ?? []) as any[]).map((r) => String(r.name)),
+  });
 }
 
 export async function q<T = any>(sql: string, params: any[] = []): Promise<T[]> {

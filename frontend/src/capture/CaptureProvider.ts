@@ -41,6 +41,8 @@ export interface CaptureStartOptions {
   /** Output device kind for the echo policy (spec §6). Defaults to "headphones" (the ideal,
    *  no-bleed case); the capture UI passes the detected value. */
   output?: AudioOutputKind;
+  /** Optional input levels in [0,1] for the mic and the system channel, emitted ~10×/s. */
+  onLevel?: (me: number, them: number) => void;
 }
 
 /** The single capture contract. Both ElectronCapture and BrowserCapture implement it. */
@@ -53,8 +55,31 @@ export interface CaptureProvider {
   stop(): Promise<void>;
 }
 
-/** Path to the worklet module served from public/. Stable in dev and packaged builds. */
-const WORKLET_URL = "/worklets/pcm-encoder.js";
+/** The worklet module served from public/, resolved against the document so it works from the dev
+ *  server AND from file:// in the packaged desktop app (an absolute "/worklets/…" path resolves to the
+ *  filesystem root there and fails to load). */
+function workletUrl(): string {
+  try { return new URL("worklets/pcm-encoder.js", document.baseURI).href; } catch { return "worklets/pcm-encoder.js"; }
+}
+
+/** Accumulates per-channel energy from the worklet's interleaved chunks and reports RMS ~10×/s. */
+class LevelMeter {
+  private sum0 = 0; private sum1 = 0; private n = 0; private last = 0;
+  constructor(private readonly sink: (me: number, them: number) => void, private readonly everyMs = 100) {}
+  push(pcm: Int16Array): void {
+    for (let i = 0; i + 1 < pcm.length; i += 2) {
+      const a = pcm[i] / 32768, b = pcm[i + 1] / 32768;
+      this.sum0 += a * a; this.sum1 += b * b;
+    }
+    this.n += pcm.length >> 1;
+    const now = Date.now();
+    if (now - this.last >= this.everyMs && this.n > 0) {
+      this.sink(Math.sqrt(this.sum0 / this.n), Math.sqrt(this.sum1 / this.n));
+      this.sum0 = this.sum1 = this.n = 0;
+      this.last = now;
+    }
+  }
+}
 
 /**
  * StereoCaptureCore — the shared Web Audio engine. Given an already-acquired mic track and system
@@ -80,12 +105,13 @@ class StereoCaptureCore {
     sysStream: MediaStream,
     onWindow: ((w: CaptureWindow) => void) | undefined,
     onEnded: (err: Error) => void,
+    onLevel?: (me: number, them: number) => void,
   ): Promise<void> {
     this.tracks = [...micStream.getAudioTracks(), ...sysStream.getAudioTracks()];
 
     const ctx = new AudioContext({ sampleRate: CAPTURE_SAMPLE_RATE });
     this.ctx = ctx;
-    await ctx.audioWorklet.addModule(WORKLET_URL);
+    await ctx.audioWorklet.addModule(workletUrl());
 
     const merger = ctx.createChannelMerger(2);
     this.merger = merger;
@@ -106,16 +132,24 @@ class StereoCaptureCore {
 
     const buffer = new StereoWindowBuffer((w) => onWindow?.(w));
     this.buffer = buffer;
+    const meter = onLevel ? new LevelMeter(onLevel) : null;
     worklet.port.onmessage = (e: MessageEvent) => {
       // The worklet posts the interleaved Int16 buffer; wrap and feed the in-RAM ring buffer.
-      buffer.push(new Int16Array(e.data as ArrayBuffer));
+      const chunk = new Int16Array(e.data as ArrayBuffer);
+      meter?.push(chunk);
+      buffer.push(chunk);
     };
 
     merger.connect(worklet);
 
     // If any track ends (user clicks "stop sharing", device unplugged), surface it once.
+    let endedFired = false;
     for (const t of this.tracks) {
-      t.addEventListener("ended", () => onEnded(new Error("Capture stream ended.")), { once: true });
+      t.addEventListener("ended", () => {
+        if (endedFired || this.stopped) return; // our own stop() also ends tracks — not an error
+        endedFired = true;
+        onEnded(new Error("Capture stream ended."));
+      }, { once: true });
     }
   }
 
@@ -212,7 +246,7 @@ export class ElectronCapture implements CaptureProvider {
       for (const v of sysStream.getVideoTracks()) v.stop(); // audio only
 
       this.core = new StereoCaptureCore();
-      await this.core.run(micStream, sysStream, options?.onWindow, (err) => options?.onError?.(err));
+      await this.core.run(micStream, sysStream, options?.onWindow, (err) => options?.onError?.(err), options?.onLevel);
     } catch (err) {
       stopAll(acquired);
       this.core = null;
@@ -272,7 +306,7 @@ export class BrowserCapture implements CaptureProvider {
       for (const v of sysStream.getVideoTracks()) v.stop(); // drop the mandatory video track
 
       this.core = new StereoCaptureCore();
-      await this.core.run(micStream, sysStream, options?.onWindow, (err) => options?.onError?.(err));
+      await this.core.run(micStream, sysStream, options?.onWindow, (err) => options?.onError?.(err), options?.onLevel);
     } catch (err) {
       stopAll(acquired);
       this.core = null;

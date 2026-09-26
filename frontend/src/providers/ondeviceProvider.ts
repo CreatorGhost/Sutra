@@ -10,6 +10,8 @@ export class OnDeviceProvider implements Provider {
   }
   async transcribeDiarize(): Promise<Transcription> { this.fail(); }
   async extract(): Promise<any> { this.fail(); }
+  async translate(): Promise<string[]> { this.fail(); }
+  async refine(): Promise<string[]> { this.fail(); }
   async embed(): Promise<number[][]> { this.fail(); }
   async rerank(): Promise<number[]> { this.fail(); }
   async chat(): Promise<any> { this.fail(); }

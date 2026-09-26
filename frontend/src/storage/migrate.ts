@@ -12,7 +12,7 @@
 // better-sqlite3 is synchronous, so this is a plain sync function over a tiny driver interface (no
 // dependency on better-sqlite3 itself — the adapter injects exec/userVersion). That also lets the
 // unit test drive it against an in-memory DB without any async plumbing.
-import { MIGRATIONS, SCHEMA_VERSION } from "../local/schema";
+import { MIGRATIONS, SCHEMA_VERSION, ensureSchemaSync } from "../local/schema";
 
 /** The minimal synchronous driver migrate() needs — supplied by the desktop adapter. */
 export interface MigrateDriver {
@@ -22,6 +22,8 @@ export interface MigrateDriver {
   getUserVersion(): number;
   /** Set PRAGMA user_version to v. */
   setUserVersion(v: number): void;
+  /** Column names of a table (PRAGMA table_info). Optional so older fakes keep working. */
+  columns?(table: string): string[];
 }
 
 /** Apply pending migrations up to SCHEMA_VERSION. Idempotent and tolerant of a partially-applied
@@ -42,4 +44,6 @@ export function runMigrations(driver: MigrateDriver): void {
     }
     driver.setUserVersion(v);
   }
+  const columns = driver.columns?.bind(driver);
+  if (columns) ensureSchemaSync({ exec: (sql) => driver.exec(sql), columns });
 }
