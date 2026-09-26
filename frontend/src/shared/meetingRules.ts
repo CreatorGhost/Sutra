@@ -56,6 +56,34 @@ const KNOWN_APPS: Record<string, string> = {
   "gotomeeting": "GoTo Meeting", "g2mcomm.exe": "GoTo Meeting", "bluejeans": "BlueJeans", "ringcentral": "RingCentral",
 };
 
+/** macOS bundle identifiers → product name. Helper processes ("com.google.Chrome.helper.renderer") map
+ *  to their parent app by prefix. */
+const BUNDLE_IDS: [string, string][] = [
+  ["com.google.Chrome", "Google Chrome"], ["com.microsoft.edgemac", "Microsoft Edge"], ["org.mozilla.firefox", "Firefox"],
+  ["com.apple.Safari", "Safari"], ["com.apple.WebKit", "Safari"], ["company.thebrowser.Browser", "Arc"], ["com.brave.Browser", "Brave Browser"],
+  ["org.chromium.Chromium", "Chromium"], ["com.vivaldi.Vivaldi", "Vivaldi"], ["com.operasoftware.Opera", "Opera"],
+  ["us.zoom.xos", "Zoom"], ["com.microsoft.teams", "Microsoft Teams"], ["com.tinyspeck.slackmacgap", "Slack"], ["com.hnc.Discord", "Discord"],
+  ["net.whatsapp.WhatsApp", "WhatsApp"], ["desktop.WhatsApp", "WhatsApp"], ["com.apple.FaceTime", "FaceTime"], ["com.apple.avconferenced", "FaceTime"],
+  ["com.cisco.webexmeetingsapp", "Webex"], ["Cisco-Systems.Spark", "Webex"], ["com.skype.skype", "Skype"],
+  ["ru.keepcoder.Telegram", "Telegram"], ["org.telegram.desktop", "Telegram"], ["org.whispersystems.signal-desktop", "Signal"],
+];
+
+export function appFromBundleId(id: string | null | undefined): string | null {
+  const s = String(id ?? "");
+  for (const [prefix, name] of BUNDLE_IDS) if (s === prefix || s.startsWith(prefix + ".")) return name;
+  return null;
+}
+
+/** Where an app usually lives on macOS — used to find its real icon when we only know its name. */
+export function macAppCandidates(app: string): string[] {
+  const special: Record<string, string[]> = {
+    "Zoom": ["zoom.us"], "Microsoft Teams": ["Microsoft Teams", "Microsoft Teams (work or school)", "Microsoft Teams classic"],
+    "Webex": ["Webex", "Cisco Webex Meetings"], "FaceTime": ["FaceTime"], "Safari": ["Safari"],
+  };
+  const names = special[app] ?? [app];
+  return names.flatMap((n) => [`/Applications/${n}.app`, `/System/Applications/${n}.app`, `/System/Cryptexes/App/System/Applications/${n}.app`]);
+}
+
 /** Store-app package family prefixes (Windows "packaged" mic consumers). */
 const PACKAGE_APPS: [RegExp, string][] = [
   [/^MSTeams_/i, "Microsoft Teams"], [/^MicrosoftTeams/i, "Microsoft Teams"], [/WhatsAppDesktop/i, "WhatsApp"],
@@ -137,8 +165,9 @@ export function detectMeeting(obs: Observation): Detection | null {
   for (const c of obs.micConsumers ?? []) {
     const raw = c.path || c.name || "";
     if (!raw || IGNORED.test(raw) || IGNORED.test(c.name ?? "")) continue;
-    const app = appName(c.name && !c.path ? c.name : raw);
-    if (!CALL_CAPABLE.has(app)) continue;
+    // Path first (…/Google Chrome.app/… → the outer app), then a macOS bundle id, then the name.
+    const app = (c.path ? appName(c.path) : "") || appFromBundleId(c.name) || appName(c.name ?? raw);
+    if (IGNORED.test(app) || !CALL_CAPABLE.has(app)) continue;
     const svc = isBrowser(app) ? (tabHit && tabHit.t.browser === app ? tabHit.svc! : undefined) : app;
     return { app, service: svc, appPath: c.path, source: "mic", key: key(app, svc) };
   }

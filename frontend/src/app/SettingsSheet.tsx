@@ -6,6 +6,7 @@ import { desktop, type DesktopPrefs } from "../desktop/bridge";
 import { applyTheme, readTheme, type ThemeChoice } from "./theme";
 import { notifyDataChanged } from "./events";
 import { Switch } from "./ui";
+import { Intelligence } from "./Intelligence";
 
 /** Everything configurable, on one sheet. Pipeline settings live in the on-device DB; desktop-only
  *  detection prefs live in the main process (so detection works before any window has loaded). */
@@ -92,6 +93,11 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
               </select>
             </div>
           </div>
+        </div>
+
+        <div className="set-group">
+          <div className="set-label" style={{ marginBottom: 12 }}>Intelligence</div>
+          {settings && <Intelligence settings={settings} onChange={(p) => put({ ...p, setup_engines: true })} />}
         </div>
 
         {desktop && prefs && (

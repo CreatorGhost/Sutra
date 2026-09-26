@@ -6,7 +6,7 @@ import { NOTE_STYLES, type DetailedNotes, type NoteStyle } from "../local/notes"
 import { isMe, speakerName } from "../local/speakers";
 import { notifyDataChanged, useDataVersion } from "./events";
 import { duration, longDate, offsetLabel } from "./format";
-import { Popover, friendlyError, useToast } from "./ui";
+import { AppIcon, Popover, friendlyError, useAppIcon, useToast } from "./ui";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof api.conversation>>>;
 
@@ -100,7 +100,8 @@ export function MeetingView() {
             <StylePicker style={style} onChange={chooseStyle} />
             <TagEditor cid={cid} tags={c.tags ?? []} />
             <span className="faint when">
-              {[longDate(c.started_at ?? c.created_at), duration(c.started_at, c.ended_at), c.source_app].filter(Boolean).join(" · ")}
+              {[longDate(c.started_at ?? c.created_at), duration(c.started_at, c.ended_at)].filter(Boolean).join(" · ")}
+              {c.source_app && <> · <SourceApp name={c.source_app} /></>}
             </span>
           </div>
 
@@ -123,6 +124,11 @@ export function MeetingView() {
       {toast}
     </>
   );
+}
+
+function SourceApp({ name }: { name: string }) {
+  const icon = useAppIcon(name);
+  return <span className="app-inline">{icon && <AppIcon src={icon} name={name} size={16} className="" />}{name}</span>;
 }
 
 function firstSentence(s: string): string {

@@ -38,6 +38,19 @@ contextBridge.exposeInMainWorld(
       get: () => ipcRenderer.invoke("sutra:permissions:get"),
       request: (kind: "microphone" | "screen") => ipcRenderer.invoke("sutra:permissions:request", kind),
     }),
+    icon: (appName: string) => ipcRenderer.invoke("sutra:icon", appName),
+    ai: Object.freeze({
+      detect: () => ipcRenderer.invoke("sutra:ai:detect"),
+      run: (id: string, req: unknown) => ipcRenderer.invoke("sutra:ai:run", id, req),
+    }),
+    stt: Object.freeze({
+      status: () => ipcRenderer.invoke("sutra:stt:status"),
+      download: (id: string) => ipcRenderer.invoke("sutra:stt:download", id),
+      cancel: () => ipcRenderer.invoke("sutra:stt:cancel"),
+      remove: (id: string) => ipcRenderer.invoke("sutra:stt:delete", id),
+      transcribe: (wav: ArrayBuffer, opts: unknown) => ipcRenderer.invoke("sutra:stt:transcribe", wav, opts),
+      onProgress: (cb: (p: unknown) => void) => listen("sutra:stt:progress", cb),
+    }),
     onNavigate: (cb: (path: string) => void) => listen("sutra:navigate", cb),
   }),
 );

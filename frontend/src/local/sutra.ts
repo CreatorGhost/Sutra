@@ -3,7 +3,7 @@
 import { Capacitor } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
-import { getProvider, MODE_COPY, type Mode } from "../providers";
+import { MODE_COPY, resolveProvider, type Mode } from "../providers";
 import { q } from "./db";
 import * as chatSvc from "./chat";
 import * as extractSvc from "./extraction";
@@ -19,7 +19,7 @@ import * as training from "./training";
 async function currentMode(): Promise<Mode> {
   return (String((await repo.getSettings())["mode"] ?? "hybrid") as Mode);
 }
-async function provider() { return getProvider(await currentMode()); }
+async function provider() { return resolveProvider(await repo.getSettings()); }
 
 export const api = {
   health: async () => ({ status: "ok", mode: await currentMode(), privacy: MODE_COPY[await currentMode()].audio }),

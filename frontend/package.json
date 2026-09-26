@@ -9,7 +9,7 @@
     "dev:web": "vite",
     "build": "tsc -b && vite build",
     "build:pwa": "tsc -b && vite build",
-    "build:desktop": "npm run typecheck && electron-vite build && electron-builder --config electron-builder.json",
+    "build:desktop": "npm run typecheck && node scripts/build-mac-helper.mjs && electron-vite build && electron-builder --config electron-builder.json",
     "typecheck": "tsc -b && tsc -p tsconfig.electron.json",
     "preview": "vite preview",
     "test": "vitest run"

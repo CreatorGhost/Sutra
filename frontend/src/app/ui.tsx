@@ -60,11 +60,26 @@ export function Switch({ checked, onChange, label }: { checked: boolean; onChang
 
 /** Friendly error text: never leak raw SQL/engine errors. */
 export function friendlyError(e: unknown): string {
-  const raw = String((e as any)?.message ?? e ?? "");
+  const raw = String((e as any)?.message ?? e ?? "").replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, "");
   if (/executesql|no such (module|table|column)|sqlite|sql logic|fts5|datatype mismatch|near "/i.test(raw)) {
     console.error("[sutra]", raw);
     return "Something went wrong reading your notes. Try restarting Sutra.";
   }
   if (/unreachable|failed to fetch|networkerror/i.test(raw)) return "Can't reach the Sutra service — check your connection.";
   return raw || "Something went wrong.";
+}
+
+/** The real app logo (Google Chrome, WhatsApp, Zoom…) from the OS, via the desktop bridge. */
+const iconCache = new Map<string, Promise<string | null>>();
+export function useAppIcon(name: string | null | undefined): string | undefined {
+  const [src, setSrc] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const bridge = (globalThis as any).sutraDesktop;
+    if (!name || !bridge?.icon) { setSrc(undefined); return; }
+    let alive = true;
+    if (!iconCache.has(name)) iconCache.set(name, bridge.icon(name).catch(() => null));
+    void iconCache.get(name)!.then((s) => { if (alive) setSrc(s ?? undefined); });
+    return () => { alive = false; };
+  }, [name]);
+  return src;
 }

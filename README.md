@@ -23,7 +23,7 @@ npm run dev:web        # same UI in the browser (Chrome/Edge for meeting capture
 npm test && npm run typecheck
 npm run build:desktop  # packaged app (dmg / nsis / AppImage)
 ```
-See [`docs/AUDIT-2026-09.md`](docs/AUDIT-2026-09.md) for the audit, what changed, and the macOS permissions to allow.
+See [`docs/AUDIT-2026-09.md`](docs/AUDIT-2026-09.md) for the audit and macOS permissions, and [`docs/LOCAL-AI.md`](docs/LOCAL-AI.md) for local transcription models (whisper.cpp) and running notes/Q&A through Claude Code, Codex or Cursor Agent.
 
 ## Stack
 - **Backend:** Python + FastAPI (async), Postgres + `pgvector`.

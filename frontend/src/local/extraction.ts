@@ -26,7 +26,11 @@ export async function extractConversation(convId: number, provider: Provider) {
   const summary = data.summary ?? "";
   // Never embed the literal "(empty)" (it pollutes semantic search) — fall back to title/first fact.
   const seed = summary.trim() || String(data.title ?? "").trim() || String(data.facts?.[0] ?? "").trim() || "conversation";
-  const vecs = await provider.embed([seed, ...entTexts]);
+  // Embeddings power semantic search; engines that can't embed (local agents) fall back to keywords.
+  let vecs: number[][] = [];
+  if (provider.canEmbed !== false) {
+    try { vecs = await provider.embed([seed, ...entTexts]); } catch (e) { console.warn("embeddings skipped", e); }
+  }
   const memVec = vecs[0], entVecs = vecs.slice(1);
 
   const memId = await repo.upsertMemory({

@@ -28,10 +28,13 @@ export async function searchMemories(query: string, provider: Provider, topNArg?
   const topN = topNArg ?? num(s, "search_topn", 10);
   const halfLife = num(s, "rank_half_life_days", 30), wImp = num(s, "rank_w_importance", 0.5), wRrf = num(s, "rank_w_rrf", 1);
 
-  const [qvec] = await provider.embed([query]);
-  // semantic
-  const mem = await memoriesForSearch();
-  const sem = mem.map((m) => ({ id: m.id, sim: cosine(qvec, m.vec) }))
+  let qvec: number[] | null = null;
+  if (provider.canEmbed !== false) {
+    try { [qvec] = await provider.embed([query]); } catch (e) { console.warn("query embedding skipped", e); }
+  }
+  // semantic (skipped when the engine can't embed — keyword search still works)
+  const mem = qvec ? await memoriesForSearch() : [];
+  const sem = mem.filter((m) => m.vec.length === qvec!.length).map((m) => ({ id: m.id, sim: cosine(qvec!, m.vec) }))
     .sort((a, b) => b.sim - a.sim).slice(0, prefetch);
   // lexical (FTS5 BM25; lower bm25 = better)
   let lex: { id: number }[] = [];

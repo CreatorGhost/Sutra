@@ -14,6 +14,7 @@ import { api } from "../local/sutra";
 import { desktop, type RecorderSnapshot } from "../desktop/bridge";
 import { notifyDataChanged } from "./events";
 import { friendlyError } from "./ui";
+import { localSttReady } from "./Intelligence";
 
 export type RecStatus = RecorderSnapshot["status"];
 
@@ -164,6 +165,8 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     const app = opts?.app ?? null;
     patch({ ...INITIAL, status: "starting", app, mode: meeting ? "meeting" : "mic", lastConversationId: stateRef.current.lastConversationId });
     try {
+      const notReady = await localSttReady(await api.getSettings());
+      if (notReady) throw new Error(notReady);
       if (meeting) await startMeeting(app);
       else await startMic();
     } catch (e) {

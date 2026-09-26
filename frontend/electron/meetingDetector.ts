@@ -10,10 +10,13 @@
 // Nothing here records audio; it only reads app/window/tab NAMES, and nothing it reads is stored.
 import { desktopCapturer, systemPreferences } from "electron";
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { macMicConsumers } from "./micHelper";
 import {
   DetectionTracker,
   appName,
   bundlePath,
+  macAppCandidates,
   detectMeeting,
   parsePactlSourceOutputs,
   parseUrlList,
@@ -85,11 +88,12 @@ async function observe(): Promise<Observation> {
     const [pactl, titles, ps] = await Promise.all([run("pactl", ["list", "source-outputs"]), windowTitles(), run("ps", ["-eo", "comm="])]);
     return { micConsumers: parsePactlSourceOutputs(pactl), windows: titles, processes: ps.split("\n").map((s) => s.trim()).filter(Boolean) };
   }
-  // macOS
+  // macOS: the mic watcher names the exact app (Chrome, WhatsApp, FaceTime…) when available; tabs
+  // still supply WHICH service a browser call is on.
   const ps = await run("ps", ["-Axo", "comm="]);
   const processes = ps.split("\n").map((s) => s.trim()).filter(Boolean);
-  const [tabs, titles] = await Promise.all([macTabs(processes), windowTitles()]);
-  return { tabs, windows: titles, processes };
+  const [mic, tabs, titles] = await Promise.all([macMicConsumers(), macTabs(processes), windowTitles()]);
+  return { micConsumers: mic ?? undefined, tabs, windows: titles, processes };
 }
 
 /** Best-effort path to the app's bundle/executable so the pill can show its real icon. */
@@ -97,7 +101,8 @@ function resolveAppPath(det: Detection, processes: string[] = []): string | unde
   if (det.appPath) return process.platform === "darwin" ? (bundlePath(det.appPath) ?? det.appPath) : det.appPath;
   if (process.platform !== "darwin") return undefined;
   const hit = processes.find((p) => bundlePath(p) && appName(p) === det.app);
-  return hit ? bundlePath(hit) ?? undefined : undefined;
+  if (hit) return bundlePath(hit) ?? undefined;
+  return macAppCandidates(det.app).find((p) => existsSync(p));
 }
 
 // ---- the loop -------------------------------------------------------------------------------------

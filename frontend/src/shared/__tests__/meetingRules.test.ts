@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   DetectionTracker,
+  appFromBundleId,
   appName,
   bundlePath,
+  macAppCandidates,
   detectMeeting,
   parsePactlSourceOutputs,
   parseUrlList,
@@ -22,6 +24,27 @@ describe("appName", () => {
   it("finds the bundle path for an executable", () => {
     expect(bundlePath("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")).toBe("/Applications/Google Chrome.app");
     expect(bundlePath("C:\\x\\chrome.exe")).toBeNull();
+  });
+});
+
+describe("macOS mic consumers (micwatch helper)", () => {
+  it("maps helper processes and bundle ids to the real app", () => {
+    expect(appFromBundleId("com.google.Chrome.helper")).toBe("Google Chrome");
+    expect(appFromBundleId("net.whatsapp.WhatsApp")).toBe("WhatsApp");
+    expect(appFromBundleId("com.example.nope")).toBeNull();
+    expect(detectMeeting({ micConsumers: [{ name: "net.whatsapp.WhatsApp", path: "/Applications/WhatsApp.app/Contents/MacOS/WhatsApp" }] }))
+      .toMatchObject({ app: "WhatsApp", service: "WhatsApp", source: "mic" });
+    expect(detectMeeting({ micConsumers: [{ name: "com.google.Chrome.helper", path: "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper" }] }))
+      .toMatchObject({ app: "Google Chrome", source: "mic" });
+    expect(detectMeeting({ micConsumers: [{ name: "com.apple.FaceTime" }] })).toMatchObject({ app: "FaceTime" });
+  });
+  it("never treats Sutra's own recording as a call", () => {
+    expect(detectMeeting({ micConsumers: [{ name: "app.sutra.desktop", path: "/Applications/Sutra.app/Contents/Frameworks/Sutra Helper.app/Contents/MacOS/Sutra Helper" }] })).toBeNull();
+    expect(detectMeeting({ micConsumers: [{ path: "/Users/me/Sutra/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper" }] })).toBeNull();
+  });
+  it("knows where apps live for their icons", () => {
+    expect(macAppCandidates("Zoom")[0]).toBe("/Applications/zoom.us.app");
+    expect(macAppCandidates("FaceTime")).toContain("/System/Applications/FaceTime.app");
   });
 });
 

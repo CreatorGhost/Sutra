@@ -39,5 +39,15 @@
     "provider": "github",
     "owner": "CreatorGhost",
     "repo": "Sutra"
-  }
+  },
+  "extraResources": [
+    {
+      "from": "electron/native",
+      "to": "native",
+      "filter": [
+        "micwatch",
+        "micwatch.swift"
+      ]
+    }
+  ]
 }

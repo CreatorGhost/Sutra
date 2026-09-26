@@ -61,3 +61,6 @@ screenshots/
 /*.png
 /*.jpeg
 /*.jpg
+
+# Compiled macOS mic watcher (built by scripts/build-mac-helper.mjs)
+frontend/electron/native/micwatch

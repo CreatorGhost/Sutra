@@ -16,8 +16,12 @@ import { app, BrowserWindow, Menu, Tray, desktopCapturer, ipcMain, nativeImage, 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { initDesktopStorage } from "./storage";
+import { userPath } from "./proc";
 import { MeetingDetector } from "./meetingDetector";
-import type { Detection, TrackerUpdate } from "../src/shared/meetingRules";
+import { detectAgents, runAgent } from "./agents";
+import { cancelDownload, deleteModel, downloadModel, sttStatus, transcribeLocal } from "./localStt";
+import { macAppCandidates, type Detection, type TrackerUpdate } from "../src/shared/meetingRules";
+import type { AgentId, AgentRequest } from "../src/shared/agentProtocol";
 
 const isMac = process.platform === "darwin";
 
@@ -349,6 +353,31 @@ function registerIpc(): void {
       }
     }
   });
+  // Real app logos by name (Google Chrome, WhatsApp, Zoom…) for places that only know the app name.
+  ipcMain.handle("sutra:icon", async (_e, name: string) => {
+    if (typeof name !== "string" || !name || name.length > 80) return null;
+    if (detection.active?.app === name && detection.active.icon) return detection.active.icon;
+    if (!isMac) return null;
+    const p = macAppCandidates(name).find((c) => existsSync(c));
+    return (await appIcon(p)) ?? null;
+  });
+
+  // Local AI agents (Claude Code / Codex / Cursor Agent) as the text engine.
+  ipcMain.handle("sutra:ai:detect", () => detectAgents());
+  ipcMain.handle("sutra:ai:run", (_e, id: AgentId, req: AgentRequest) => {
+    if (!["claude", "codex", "cursor"].includes(id)) throw new Error("unknown agent");
+    return runAgent(id, { system: String(req?.system ?? ""), user: String(req?.user ?? ""), schema: req?.schema, model: req?.model ?? null });
+  });
+
+  // Local speech-to-text (whisper.cpp).
+  ipcMain.handle("sutra:stt:status", () => sttStatus());
+  ipcMain.handle("sutra:stt:download", (e, id: string) =>
+    downloadModel(String(id), (p) => { if (!e.sender.isDestroyed()) e.sender.send("sutra:stt:progress", p); }));
+  ipcMain.handle("sutra:stt:cancel", () => cancelDownload());
+  ipcMain.handle("sutra:stt:delete", (_e, id: string) => deleteModel(String(id)));
+  ipcMain.handle("sutra:stt:transcribe", (_e, wav: ArrayBuffer, opts: { model: string; language?: string | null }) =>
+    transcribeLocal(wav, { model: String(opts?.model ?? ""), language: opts?.language ?? null }));
+
   ipcMain.handle("sutra:permissions:get", () => ({
     microphone: isMac || process.platform === "win32" ? systemPreferences.getMediaAccessStatus("microphone") : "granted",
     screen: isMac ? systemPreferences.getMediaAccessStatus("screen") : "granted",
@@ -381,6 +410,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === "media"));
     loadPrefs();
+    void userPath(); // resolve the login-shell PATH once, up front, so Record never waits on it
     initDesktopStorage();
     registerIpc();
     createMainWindow();
