@@ -39,19 +39,43 @@ function provisionKey(): string {
 }
 
 let storage: StorageProvider | null = null;
+let openError: string | null = null;
 
-/** Open the encrypted desktop DB once and register the IPC handlers the renderer proxy calls. Safe to
- *  call multiple times (idempotent). Invoked from electron/main.ts on app.whenReady(). */
-export function initDesktopStorage(): void {
-  if (storage) return;
-  storage = openDesktopStorage({
-    filename: join(app.getPath("userData"), DB_FILE),
-    key: provisionKey(),
-  });
+/** Marker the renderer recognises to show a precise "rebuild the database engine" message. */
+export const DB_UNAVAILABLE = "SUTRA_DB_UNAVAILABLE";
+
+/** Human fix for the most common failure: the native module was compiled for Node, not Electron
+ *  (e.g. `npm install` ran without the postinstall rebuild). */
+function describe(e: unknown): string {
+  const msg = String((e as any)?.message ?? e);
+  if (/NODE_MODULE_VERSION|compiled against a different Node\.js version|was compiled against/i.test(msg)) {
+    return "The local database engine was built for Node.js instead of Electron. In the frontend folder run: npm run rebuild:electron — then restart Sutra.";
+  }
+  if (/Cannot find module|could not locate the bindings/i.test(msg)) {
+    return "The local database engine isn't installed. In the frontend folder run: npm install && npm run rebuild:electron — then restart Sutra.";
+  }
+  return `Sutra couldn't open its local database: ${msg.split("\n")[0]}`;
+}
+
+/** Open the encrypted desktop DB once and register the IPC handler the renderer proxy calls.
+ *  Never throws: on failure the handler answers every query with a clear, actionable error (and the
+ *  returned message is shown once by main.ts), so the window still opens instead of silently dying. */
+export function initDesktopStorage(): string | null {
+  if (storage || openError) return openError;
+  try {
+    storage = openDesktopStorage({
+      filename: join(app.getPath("userData"), DB_FILE),
+      key: provisionKey(),
+    });
+  } catch (e) {
+    openError = describe(e);
+    console.error("[sutra] database unavailable:", e);
+  }
 
   // One typed channel; the renderer never sees the key, only rows. Errors are surfaced as rejections.
   ipcMain.handle("sutra:db", async (_e, op: string, sql: string, params: any[]) => {
-    const s = storage!;
+    const s = storage;
+    if (!s) throw new Error(`${DB_UNAVAILABLE}: ${openError}`);
     switch (op) {
       case "q":
         return s.q(sql, params);
@@ -65,4 +89,5 @@ export function initDesktopStorage(): void {
         throw new Error(`unknown sutra:db op: ${op}`);
     }
   });
+  return openError;
 }

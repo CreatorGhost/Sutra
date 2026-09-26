@@ -12,7 +12,9 @@
     "build:desktop": "npm run typecheck && node scripts/build-mac-helper.mjs && electron-vite build && electron-builder --config electron-builder.json",
     "typecheck": "tsc -b && tsc -p tsconfig.electron.json",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "electron-builder install-app-deps",
+    "rebuild:electron": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^6.0.2",

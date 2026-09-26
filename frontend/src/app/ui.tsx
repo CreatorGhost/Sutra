@@ -61,6 +61,8 @@ export function Switch({ checked, onChange, label }: { checked: boolean; onChang
 /** Friendly error text: never leak raw SQL/engine errors. */
 export function friendlyError(e: unknown): string {
   const raw = String((e as any)?.message ?? e ?? "").replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, "");
+  const dbDown = raw.match(/SUTRA_DB_UNAVAILABLE:\s*(.*)$/s);
+  if (dbDown) return dbDown[1].trim();
   if (/executesql|no such (module|table|column)|sqlite|sql logic|fts5|datatype mismatch|near "/i.test(raw)) {
     console.error("[sutra]", raw);
     return "Something went wrong reading your notes. Try restarting Sutra.";
