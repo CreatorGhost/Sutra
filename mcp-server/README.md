@@ -1,8 +1,9 @@
 # sutra-mcp
 
 A small, **read-only** MCP server that exposes your Sutra memory to AI tools you run on your own
-computer. It speaks the Model Context Protocol over stdio (for any MCP client) and bridges to the
-Sutra app on your phone over a local, token-paired WebSocket. Nothing is shared until you turn it on
+computer (Claude Code, Codex, Cursor, Gemini CLI, Claude Desktop, …). It speaks the Model Context
+Protocol over stdio (for any MCP client) and bridges to the Sutra app — the desktop app on the same
+computer, or the phone app — over a local, token-paired WebSocket. Nothing is shared until you turn it on
 in Sutra and pair this server with the pairing token — and audio never exists to share.
 
 Privacy posture (unchanged from the app): your memory stays on your device. Data leaves the phone
@@ -37,14 +38,35 @@ All of it is read-only. This server cannot change anything in your memory.
 
 ```sh
 npm install
-npm run build      # tsc → dist/
+npm run build      # tsc → dist/*.js, plus the single-file bundle dist/sutra-mcp.cjs
+npm test           # bridge unit test (primary + peers + takeover)
 ```
+
+`dist/sutra-mcp.cjs` has no runtime dependencies; the desktop app ships it (electron-builder
+`extraResources` → `<resources>/mcp-server/sutra-mcp.cjs`) and runs it with its own binary in Node
+mode (`ELECTRON_RUN_AS_NODE=1`), so users don't need Node installed. Build it before packaging.
 
 Develop without a build with `npm run dev` (runs `src/index.ts` via tsx).
 
+## Desktop app: one click
+
+In the Sutra desktop app, open **Settings → Connections**, turn on **Share with AI tools**, and press
+**Connect** next to Claude Code, Codex, Cursor, Gemini CLI or Claude Desktop. Sutra adds itself to
+that tool's config (`claude mcp add -s user`, `~/.codex/config.toml`, `~/.cursor/mcp.json`,
+`~/.gemini/settings.json`, `claude_desktop_config.json`), merging with what's there and keeping a
+`.sutra-backup-<time>` copy of the file. **Show setup** shows the exact snippet for doing it by hand.
+The app dials the server at `ws://localhost:8765` directly — no forwarding needed.
+
+## Several AI tools at once
+
+Every tool launches its own copy of this server, but only one can own the port. The first copy is
+the primary; later copies join it as peers (same token handshake) and relay through it. When the
+primary's tool quits, a peer takes the port over and the app reconnects within a second or two. A
+copy started with an outdated token is refused — reconnect that tool from Settings → Connections.
+
 ## Pairing token
 
-1. In Sutra, open **Settings → External access** and turn on sharing.
+1. In Sutra, open **Settings → Connections** and turn on **Share with AI tools**.
 2. Reveal the **pairing token** and copy it.
 3. Give that token to this server as the `SUTRA_MCP_TOKEN` environment variable (see configs below).
 
@@ -66,7 +88,7 @@ adb reverse tcp:8765 tcp:8765
 Leave the bridge URL in Sutra at its default `ws://localhost:8765`. Re-run `adb reverse` after each
 reconnect or reboot of the phone.
 
-**LAN (no USB):** set the bridge URL in Sutra's External access section to this machine's LAN address,
+**LAN (no USB):** set the connection address in Sutra's Settings → Connections to this machine's LAN address,
 e.g. `ws://192.168.1.50:8765`, and start the server bound to all interfaces:
 
 ```sh
