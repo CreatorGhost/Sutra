@@ -1,10 +1,10 @@
 // Typed renderer-side view of the Electron preload bridge (electron/preload.ts). Every accessor is
 // optional-chained so the same UI runs in the browser / on Android where the bridge is absent.
 import type { Detection } from "../shared/meetingRules";
-import type { AgentId, AgentRequest } from "../shared/agentProtocol";
+import type { AgentId, AgentRequest, AgentStatus } from "../shared/agentProtocol";
 import type { LocalSegment } from "../shared/localModels";
 
-export interface AgentStatus { id: AgentId; label: string; path: string | null; version: string | null; install: string }
+export type { AgentStatus };
 export interface SttStatus { binary: string | null; installed: string[]; downloading: { id: string; received: number; total: number } | null }
 export interface SttProgress { id: string; received: number; total: number; done?: boolean; error?: string }
 
@@ -39,7 +39,7 @@ export interface DesktopBridge {
   permissions: { get(): Promise<{ microphone: string; screen: string }>; request(kind: "microphone" | "screen"): Promise<boolean> };
   onNavigate(cb: (path: string) => void): Unsub;
   icon(appName: string): Promise<string | null>;
-  ai: { detect(): Promise<AgentStatus[]>; run(id: AgentId, req: AgentRequest): Promise<{ text: string; json?: unknown }> };
+  ai: { detect(refresh?: boolean): Promise<AgentStatus[]>; run(id: AgentId, req: AgentRequest): Promise<{ text: string; json?: unknown }> };
   stt: {
     status(): Promise<SttStatus>;
     download(id: string): Promise<void>;

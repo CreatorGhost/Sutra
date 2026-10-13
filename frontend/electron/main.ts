@@ -21,7 +21,7 @@ import { MeetingDetector } from "./meetingDetector";
 import { detectAgents, runAgent } from "./agents";
 import { cancelDownload, deleteModel, downloadModel, sttStatus, transcribeLocal } from "./localStt";
 import { macAppCandidates, type Detection, type TrackerUpdate } from "../src/shared/meetingRules";
-import type { AgentId, AgentRequest } from "../src/shared/agentProtocol";
+import { isAgentId, type AgentId, type AgentRequest } from "../src/shared/agentProtocol";
 
 const isMac = process.platform === "darwin";
 
@@ -370,11 +370,12 @@ function registerIpc(): void {
     return (await appIcon(p)) ?? null;
   });
 
-  // Local AI agents (Claude Code / Codex / Cursor Agent) as the text engine.
-  ipcMain.handle("sutra:ai:detect", () => detectAgents());
+  // The user's AI agent CLIs (Claude Code, Codex, Cursor, Gemini, Grok, Droid, Command Code) as the text engine.
+  ipcMain.handle("sutra:ai:detect", (_e, refresh?: boolean) => detectAgents(refresh === true));
   ipcMain.handle("sutra:ai:run", (_e, id: AgentId, req: AgentRequest) => {
-    if (!["claude", "codex", "cursor"].includes(id)) throw new Error("unknown agent");
-    return runAgent(id, { system: String(req?.system ?? ""), user: String(req?.user ?? ""), schema: req?.schema, model: req?.model ?? null });
+    if (!isAgentId(id)) throw new Error("unknown AI engine");
+    const schema = req?.schema && typeof req.schema === "object" ? req.schema : undefined;
+    return runAgent(id, { system: String(req?.system ?? ""), user: String(req?.user ?? ""), schema, model: typeof req?.model === "string" ? req.model : null });
   });
 
   // Local speech-to-text (whisper.cpp).
