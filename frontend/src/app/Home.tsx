@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { AudioLines } from "lucide-react";
+import { AudioLines, Sparkles } from "lucide-react";
 import { api } from "../local/sutra";
-import { desktop } from "../desktop/bridge";
+import { desktop, type AgentStatus } from "../desktop/bridge";
+import { isAgentId } from "../shared/agentProtocol";
 import { useRecorder } from "./recorder";
 import { notifyDataChanged } from "./events";
-import { Intelligence } from "./Intelligence";
+import { EngineSettings, autoEngine } from "./EngineSettings";
+import { SpeechSettings } from "./SpeechSettings";
 import { friendlyError } from "./ui";
 
 /** Nothing selected: a calm welcome, plus a one-time "what should we call you?" so notes say
@@ -32,23 +34,8 @@ export function Home() {
     );
   }
 
-  // First run on desktop: ask where transcription and notes should run before anything else.
-  if (desktop && settings && !settings["setup_engines"]) {
-    return (
-      <div className="scroll">
-        <div className="setup">
-          <div className="hero-mark"><AudioLines size={24} /></div>
-          <p className="hero-title">Choose how Sutra thinks</p>
-          <p className="hero-text">Transcribe on this computer with Whisper or in the cloud, and write notes with Sutra cloud or the AI agent you already use. You can change this any time in Settings.</p>
-          <Intelligence settings={settings} onChange={put} />
-          <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 24 }}>
-            <button className="btn" onClick={() => void put({ setup_engines: true, stt_engine: "cloud", ai_engine: "cloud" })}>Skip for now</button>
-            <button className="btn primary" onClick={() => void put({ setup_engines: true })}>Continue</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // First run on desktop: pick the AI you already use, then where transcription runs.
+  if (desktop && settings && !settings["setup_engines"]) return <EngineSetup settings={settings} put={put} />;
 
   const saveName = async () => {
     const n = name.trim();
@@ -78,6 +65,49 @@ export function Home() {
           </form>
         ) : (
           <button className="btn" onClick={() => void start()}>Start recording</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** First-run setup, two steps: "Which AI do you use?" (detected agent CLIs) → "Transcription". Skip
+ *  keeps the defaults (the first ready engine, cloud transcription); both stay in Settings. */
+function EngineSetup({ settings, put }: { settings: Record<string, unknown>; put: (patch: Record<string, unknown>) => Promise<void> }) {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [detected, setDetected] = useState<AgentStatus[] | null>(null);
+  const done = () => void put({ setup_engines: true });
+  // Continuing without touching the list keeps the engine Sutra picked for them — make it explicit.
+  const next = async () => {
+    const pick = autoEngine(detected);
+    if (!isAgentId(settings["ai_engine"]) && pick) await put({ ai_engine: pick.id });
+    setStep(2);
+  };
+  return (
+    <div className="scroll">
+      <div className="setup">
+        <div className="setup-steps" aria-label={`Step ${step} of 2`}><i className={step === 1 ? "on" : ""} /><i className={step === 2 ? "on" : ""} /></div>
+        <div className="hero-mark">{step === 1 ? <Sparkles size={24} /> : <AudioLines size={24} />}</div>
+        {step === 1 ? (
+          <>
+            <p className="hero-title">Which AI do you use?</p>
+            <p className="hero-text">Sutra writes your notes and answers with the AI you already pay for. No API keys, nothing extra to buy.</p>
+            <EngineSettings settings={settings} onChange={put} variant="setup" onStatus={setDetected} />
+            <div className="setup-actions">
+              <button className="btn" onClick={done}>Skip for now</button>
+              <button className="btn primary" onClick={() => void next()}>Continue</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="hero-title">Transcription</p>
+            <p className="hero-text">Choose where speech becomes text. You can change this any time in Settings.</p>
+            <SpeechSettings settings={settings} onChange={put} />
+            <div className="setup-actions">
+              <button className="btn" onClick={() => setStep(1)}>Back</button>
+              <button className="btn primary" onClick={done}>Done</button>
+            </div>
+          </>
         )}
       </div>
     </div>

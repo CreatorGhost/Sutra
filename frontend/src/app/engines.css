@@ -1,0 +1,38 @@
+/* AI engine list + first-run setup. Only tokens from styles.css; quiet by design (status is a dot + text). */
+.eng-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.eng-head .set-label { margin-bottom: 8px; }
+.eng-refresh {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0 2px 8px 0; padding: 3px 8px; border: 0; border-radius: 999px;
+  background: none; color: var(--text-3); font-size: 12.5px; font-weight: 600;
+}
+.eng-refresh:hover:not(:disabled) { color: var(--text); background: var(--surface-2); }
+.eng-refresh:disabled { cursor: default; }
+.eng-refresh .spin { animation: spin 0.9s linear infinite; }
+
+.set-row.engine { align-items: flex-start; padding-top: 14px; padding-bottom: 14px; }
+.set-row.engine .radio { margin-top: 5px; }
+.eng-glyph {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--text-2);
+  font-size: 11.5px; font-weight: 650; letter-spacing: 0.02em;
+}
+.set-row.engine.active .eng-glyph { color: var(--text); }
+.eng-vendor { font-weight: 400; font-size: 12.5px; color: var(--text-3); }
+.eng-status { display: flex; align-items: center; gap: 7px; min-width: 0; overflow-wrap: anywhere; }
+.eng-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
+.eng-dot.ready { background: var(--ok); }
+.eng-dot.signin { background: var(--warn); }
+.eng-dot.missing { background: transparent; box-shadow: inset 0 0 0 1px var(--text-3); }
+.eng-dot.checking { animation: pulse 1.4s ease-in-out infinite; }
+.eng-link { border: 0; background: none; padding: 0; margin-left: 4px; color: var(--text-3); font-size: 13px; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--line-2); }
+.eng-link:hover { color: var(--text); }
+.engine .install .cmd { margin: 8px 0 0; }
+.engine .install .icon-btn { margin-top: 8px; color: var(--text-3); }
+.engine .model-input input { width: 220px; max-width: 100%; }
+.eng-foot { font-size: 13px; color: var(--text-2); margin: 10px 2px 0; line-height: 1.45; }
+
+/* first-run setup */
+.setup-steps { display: flex; justify-content: center; gap: 6px; margin: 0 0 14px; }
+.setup-steps i { width: 18px; height: 4px; border-radius: 4px; background: var(--surface-3); }
+.setup-steps i.on { background: var(--text-2); }
+.setup-actions { display: flex; justify-content: center; gap: 10px; margin-top: 26px; }
