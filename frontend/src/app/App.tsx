@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
@@ -10,10 +10,15 @@ import { AskAll } from "./AskAll";
 import { Home } from "./Home";
 import { LiveView } from "./LiveView";
 import { MeetingView } from "./MeetingView";
+import { ProjectPage } from "./projects/ProjectPage";
+import { ProjectsPage } from "./projects/ProjectsPage";
 import { RecorderProvider, useRecorder } from "./recorder";
 import { SettingsSheet } from "./SettingsSheet";
 import { Sidebar } from "./Sidebar";
 import { useToast } from "./ui";
+
+// The force-graph canvas is heavy; load it only when the Graph is opened.
+const GraphPage = lazy(() => import("./graph/GraphPage").then((m) => ({ default: m.GraphPage })));
 
 export default function App() {
   return (
@@ -81,6 +86,9 @@ function Shell() {
           <Route path="/m/:id" element={<MeetingView />} />
           <Route path="/live" element={<LiveView />} />
           <Route path="/ask" element={<AskAll />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/projects/:id" element={<ProjectPage />} />
+          <Route path="/graph" element={<Suspense fallback={null}><GraphPage /></Suspense>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
