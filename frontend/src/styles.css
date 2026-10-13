@@ -657,6 +657,8 @@ html.pill-root, .pill-root body, .pill-root #root { background: transparent !imp
 .radio[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
 .radio:disabled { opacity: .35; cursor: default; }
 .models .model { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; }
+.models .model > .grow { flex: 1; min-width: 0; }
+.menu button .grow { flex: 1; min-width: 0; }
 .models .model + .model { border-top: 1px solid var(--line); }
 .models .t, .engine .t { font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .models .d, .engine .d { font-size: 13px; color: var(--text-2); margin-top: 2px; }

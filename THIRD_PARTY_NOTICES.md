@@ -13,6 +13,7 @@ Ported (logic re-implemented in plain Node/TypeScript, without the Effect librar
 - `frontend/electron/engines.ts`, `frontend/src/shared/agentProtocol.ts` — how Claude Code, Cursor Agent, Grok, Droid and Command Code are invoked and probed (from `textGeneration/*TextGeneration.ts`, `provider/acp/*AcpSupport.ts`, `provider/commandCodeCli.ts`, `provider/Layers/*Provider.ts`).
 - `frontend/src/shared/engineProbes.ts` — `parseCursorAboutOutput`, `parseGrokModelsCliOutput`, `parseDroidModelList`, `parseCommandCodeStatus`, `parseCommandCodeModelList`.
 - `extractJson` in `frontend/src/shared/agentProtocol.ts` — after `extractJsonObject` (`packages/shared/src/schemaJson.ts`).
+- `frontend/src/app/engineLogos.tsx` — the engine marks from `apps/web/src/components/Icons.tsx` (Claude, OpenAI, Cursor, Grok, Droid, Command Code), and the model picker's layout (`EnginePicker.tsx`: engine rail, search, favorites, ⌘1–9) after `ModelPickerContent`, `ModelPickerSidebar` and `ModelListRow`. The logos are their vendors' trademarks, used only to identify each tool.
 
 ```
 MIT License

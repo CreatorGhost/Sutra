@@ -6,6 +6,7 @@ import { api } from "../local/sutra";
 import { desktop, type AgentStatus } from "../desktop/bridge";
 import { AGENTS, AGENT_IDS, agentReady, type AgentId } from "../shared/agentProtocol";
 import { engineChoice } from "../providers";
+import { EngineLogo } from "./engineLogos";
 import "./engines.css";
 
 /** The engine "automatic" lands on: signed in for sure first, then signed in as far as we can tell. */
@@ -100,7 +101,7 @@ function EngineRow({ st, id, active, model, onPick, onModel }: {
       <button className="radio" aria-pressed={active} aria-label={`Use ${info.label}`} disabled={!st?.installed} onClick={onPick}>
         {active ? <Check size={13} strokeWidth={3} /> : null}
       </button>
-      <span className="eng-glyph" aria-hidden="true">{info.initials}</span>
+      <span className="eng-glyph" aria-hidden="true"><EngineLogo id={id} size={17} /></span>
       <div className="grow">
         <div className="t">{info.label}{info.vendor !== info.label && <span className="eng-vendor">{info.vendor}</span>}</div>
         <div className="d eng-status">
