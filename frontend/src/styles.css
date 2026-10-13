@@ -679,3 +679,6 @@ html.pill-root, .pill-root body, .pill-root #root { background: transparent !imp
 .app-inline { display: inline-flex; align-items: center; gap: 6px; }
 .app-inline img { width: 16px; height: 16px; border-radius: 4px; }
 @media (max-width: 820px) { .choice-row { grid-template-columns: 1fr; } .setup { padding: 20px; } }
+
+/* Windows/Linux desktop: the OS window buttons overlay the top-right corner (titleBarOverlay). */
+.win-desktop .pane-top { padding-right: 150px; }

@@ -31,6 +31,8 @@ const isMac = process.platform === "darwin";
 // name); the packaged app is "Sutra".
 const legacyUserData = join(app.getPath("appData"), "sutra-frontend");
 app.setName("Sutra");
+// Windows: notifications and taskbar grouping are keyed by the AppUserModelID (must match electron-builder appId).
+if (process.platform === "win32") app.setAppUserModelId("app.sutra.desktop");
 // Dev builds used to store data under the package name; keep using it so nothing is orphaned.
 if (existsSync(legacyUserData) && !existsSync(join(app.getPath("appData"), "Sutra"))) app.setPath("userData", legacyUserData);
 
@@ -132,7 +134,13 @@ function createMainWindow(): void {
     backgroundColor: isMac ? "#00000000" : "#111113",
     ...(isMac
       ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 18, y: 20 }, vibrancy: "sidebar" as const, visualEffectState: "active" as const }
-      : { autoHideMenuBar: true }),
+      : {
+          // Windows/Linux: hide the title bar and let the OS draw only its window buttons over the top-right
+          // corner (the sidebar and pane tops are drag regions), matching the frameless macOS look.
+          autoHideMenuBar: true,
+          titleBarStyle: "hidden" as const,
+          titleBarOverlay: { color: "#00000000", symbolColor: "#a2a2aa", height: 44 },
+        }),
     webPreferences: {
       preload: join(__dirname, "../preload/preload.cjs"),
       contextIsolation: true,
