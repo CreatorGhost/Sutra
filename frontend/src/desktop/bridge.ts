@@ -2,11 +2,11 @@
 // optional-chained so the same UI runs in the browser / on Android where the bridge is absent.
 import type { Detection } from "../shared/meetingRules";
 import type { AgentId, AgentRequest } from "../shared/agentProtocol";
-import type { LocalSegment } from "../shared/localModels";
+import type { LocalTranscription, SpeechProgress, SpeechStatus, SpeechTranscribeOpts } from "../shared/speechModels";
 
 export interface AgentStatus { id: AgentId; label: string; path: string | null; version: string | null; install: string }
-export interface SttStatus { binary: string | null; installed: string[]; downloading: { id: string; received: number; total: number } | null }
-export interface SttProgress { id: string; received: number; total: number; done?: boolean; error?: string }
+export type SttStatus = SpeechStatus;
+export type SttProgress = SpeechProgress;
 
 export type DetectionState = { active: (Detection & { icon?: string }) | null; visible: boolean };
 export interface DesktopPrefs { detectMeetings: boolean; autoStop: boolean }
@@ -45,7 +45,7 @@ export interface DesktopBridge {
     download(id: string): Promise<void>;
     cancel(): Promise<void>;
     remove(id: string): Promise<void>;
-    transcribe(wav: ArrayBuffer, opts: { model: string; language?: string | null }): Promise<{ text: string; duration: number; segments: LocalSegment[] }>;
+    transcribe(wav: ArrayBuffer, opts: SpeechTranscribeOpts): Promise<LocalTranscription>;
     onProgress(cb: (p: SttProgress) => void): Unsub;
   };
 }
