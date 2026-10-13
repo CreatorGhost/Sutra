@@ -6,10 +6,17 @@
 // The file is PLAINTEXT (the export is the decrypted contents) — the UI warns that anyone holding it
 // can read it. We don't re-encrypt: a backup the user can't open after a reinstall is worthless, and
 // the device's at-rest encryption (SQLCipher) is a separate concern from a file the user exports.
+//
+// Desktop (Electron) has no Capacitor plugin: the DB is better-sqlite3 in the main process, reached
+// through db.ts's q/exec bridge. There we dump every user table with plain SQL into the SAME
+// JsonSQLite-shaped envelope (tables[] of {name, schema, values}), so a phone backup restores on the
+// desktop too, and restore is a validated wipe-and-replace in ONE transaction (one exec script).
 import { Capacitor } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
-import { DB_NAME, getConnection, getSqlite, openDb, persist, resetConnectionCache } from "../local/db";
+import { DB_NAME, exec, getConnection, getSqlite, openDb, persist, q, resetConnectionCache } from "../local/db";
+import { SCHEMA_VERSION } from "../local/schema";
+import { desktop } from "../desktop/bridge";
 
 const ENVELOPE_APP = "sutra";
 
@@ -76,8 +83,19 @@ async function userVersion(): Promise<number> {
   }
 }
 
-/** Dump the whole DB to a single JSON file. Native → write to Cache + Share sheet; web → download. */
-export async function exportBackup(): Promise<{ filename: string; bytes: number; uri?: string }> {
+/** Dump the whole DB to a single JSON file. Native → write to Cache + Share sheet; desktop → native
+ *  save dialog; web → download. Resolves null when the user cancels the desktop save dialog. */
+export async function exportBackup(): Promise<{ filename: string; bytes: number; uri?: string } | null> {
+  if (desktop) {
+    const json = JSON.stringify(await buildSqlDump());
+    const filename = `sutra-backup-${yyyymmdd()}.json`;
+    if (desktop.backup) {
+      const path = await desktop.backup.save(json, filename);
+      return path ? { filename, bytes: json.length, uri: path } : null;
+    }
+    download(json, filename);
+    return { filename, bytes: json.length };
+  }
   const conn = await getConnection();
   // 'full' mode dumps schema + every row (vs 'partial', which only emits rows changed since the last
   // export). encrypted defaults false → the export is plaintext JSON, intentionally portable.
@@ -117,13 +135,17 @@ export async function exportBackup(): Promise<{ filename: string; bytes: number;
   }
 
   // Web: download a file.
+  download(json, filename);
+  return { filename, bytes };
+}
+
+function download(json: string, filename: string): void {
   const blob = new Blob([json], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   a.click();
   URL.revokeObjectURL(a.href);
-  return { filename, bytes };
 }
 
 /** Read a File or raw string into the parsed, validated envelope. Throws a human-readable message. */
@@ -151,6 +173,7 @@ async function readEnvelope(file: File | string): Promise<Envelope> {
  */
 export async function importBackup(file: File | string): Promise<{ changes: number }> {
   const envelope = await readEnvelope(file);
+  if (desktop) return restoreSqlDump(envelope);
   // Force a clean full overwrite into the SAME db name regardless of what flags the file carried:
   // mode 'full' (re-create schema + all rows) + overwrite (drop the existing DB first). We keep the
   // exported database name as-is so it lands on "sutra". Re-run sanitize defensively so older backup
@@ -205,7 +228,8 @@ async function rebuildFts(): Promise<void> {
       "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(" +
         "title, summary, facts, content='', tokenize='unicode61 remove_diacritics 2');"
     );
-    await conn.execute("DELETE FROM memories_fts;");
+    // Contentless FTS5 rejects a plain DELETE; 'delete-all' is its way to empty the index.
+    await conn.execute("INSERT INTO memories_fts(memories_fts) VALUES('delete-all');");
     const rows = (await conn.query("SELECT id, title, summary, facts FROM memories")).values ?? [];
     for (const m of rows as any[]) {
       let facts = "";
@@ -218,4 +242,120 @@ async function rebuildFts(): Promise<void> {
     // re-indexes as memories are next written.
     console.warn("FTS rebuild after import failed (search will re-index lazily):", e);
   }
+}
+
+// ---- Desktop: SQL dump / restore over db.ts (better-sqlite3 in the main process) -----------------
+
+type Row = Record<string, unknown>;
+
+/** The user's tables as the live DB has them (no sqlite_* internals, no FTS mirror/shadow tables). */
+async function userTables(): Promise<string[]> {
+  const rows = await q<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
+  return rows.map((r) => r.name).filter((n) => !DROPPED_TABLES.has(n));
+}
+
+const ident = (name: string) => `"${name.replace(/"/g, '""')}"`;
+
+/** BLOBs arrive over IPC as Uint8Array; JSON carries them as byte arrays (the JsonSQLite convention). */
+function toJsonValue(v: unknown): unknown {
+  if (v instanceof Uint8Array) return Array.from(v);
+  if (typeof v === "bigint") return Number(v);
+  return v;
+}
+
+/** Dump every user table into a JsonSQLite-shaped envelope (same file format as the phone's). */
+export async function buildSqlDump(): Promise<Envelope> {
+  const tables = [];
+  for (const name of await userTables()) {
+    const cols = await q<{ name: string; type: string; notnull: number; dflt_value: string | null; pk: number }>(`PRAGMA table_info(${ident(name)})`);
+    const rows = await q<Row>(`SELECT * FROM ${ident(name)}`);
+    tables.push({
+      name,
+      schema: cols.map((c) => ({
+        column: c.name,
+        value: [c.type || "TEXT", c.pk ? "PRIMARY KEY" : "", c.notnull ? "NOT NULL" : "", c.dflt_value != null ? `DEFAULT ${c.dflt_value}` : ""].filter(Boolean).join(" "),
+      })),
+      values: rows.map((r) => cols.map((c) => toJsonValue(r[c.name]))),
+    });
+  }
+  const version = Number((await q<{ user_version: number }>("PRAGMA user_version"))[0]?.user_version ?? SCHEMA_VERSION);
+  return {
+    app: ENVELOPE_APP,
+    schema_version: version,
+    exported_at: new Date().toISOString(),
+    data: { database: DB_NAME, version, encrypted: false, mode: "full", tables },
+  };
+}
+
+/** One SQL literal. Strings are single-quoted (NULs dropped: they'd end the exec'd script early). */
+function literal(v: unknown): string {
+  if (v == null) return "NULL";
+  if (typeof v === "number") return Number.isFinite(v) ? String(v) : "NULL";
+  if (typeof v === "boolean") return v ? "1" : "0";
+  if (Array.isArray(v) && v.every((b) => Number.isInteger(b) && b >= 0 && b < 256)) {
+    return `X'${v.map((b) => b.toString(16).padStart(2, "0")).join("")}'`;
+  }
+  const s = typeof v === "string" ? v : JSON.stringify(v);
+  return `'${s.replace(/\0/g, "").replace(/'/g, "''")}'`;
+}
+
+/**
+ * Validated wipe-and-replace of the desktop DB from a backup envelope (desktop- or phone-made).
+ * Validation happens before anything is touched; the replace itself is ONE exec'd script inside a
+ * transaction, so a failure rolls back and leaves the current data exactly as it was. Tables or
+ * columns this version doesn't have are skipped (an older app reading a newer file stays safe only
+ * up to the schema guard below); the search index is rebuilt from the restored memories.
+ */
+export async function restoreSqlDump(input: Envelope | File | string): Promise<{ changes: number; tables: number }> {
+  const envelope = typeof input === "object" && "app" in input ? input : await readEnvelope(input as File | string);
+  if (Number(envelope.schema_version) > SCHEMA_VERSION) {
+    throw new Error("This backup was made by a newer version of Sutra. Update Sutra, then restore it.");
+  }
+  const tables = (envelope.data as any)?.tables;
+  if (!Array.isArray(tables)) throw new Error("Backup file is missing its tables.");
+
+  const live = new Set(await userTables());
+  const statements: string[] = [];
+  let changes = 0;
+  let restored = 0;
+  for (const t of tables) {
+    if (!t || typeof t.name !== "string" || DROPPED_TABLES.has(t.name) || !live.has(t.name)) continue;
+    const cols: string[] = (Array.isArray(t.schema) ? t.schema : []).filter(isRenderableSchemaEntry)
+      .filter((s: any) => typeof s.column === "string" && s.column).map((s: any) => s.column);
+    const values = t.values ?? [];
+    if (!Array.isArray(values) || !cols.length) throw new Error(`Backup table "${t.name}" is malformed.`);
+    const liveCols = new Set((await q<{ name: string }>(`PRAGMA table_info(${ident(t.name)})`)).map((c) => c.name));
+    const keep = cols.map((c, i) => [c, i] as const).filter(([c]) => liveCols.has(c));
+    if (!keep.length) continue;
+    restored++;
+    const head = `INSERT INTO ${ident(t.name)}(${keep.map(([c]) => ident(c)).join(",")}) VALUES`;
+    for (const row of values) {
+      if (!Array.isArray(row) || row.length !== cols.length) throw new Error(`Backup table "${t.name}" has a row that doesn't match its columns.`);
+      statements.push(`${head}(${keep.map(([, i]) => literal(row[i])).join(",")});`);
+      changes++;
+    }
+  }
+  if (!restored) throw new Error("That backup has no data Sutra recognizes.");
+
+  // foreign_keys can't change inside a transaction, so it's switched off around it: rows land in file
+  // order, not dependency order. Every live table is emptied first — restore means "exactly the file".
+  const script = [
+    "PRAGMA foreign_keys=OFF;",
+    "BEGIN;",
+    ...[...live].map((n) => `DELETE FROM ${ident(n)};`),
+    ...statements,
+    "INSERT INTO memories_fts(memories_fts) VALUES('delete-all');",
+    "INSERT INTO memories_fts(rowid,title,summary,facts) SELECT id, COALESCE(title,''), COALESCE(summary,''), " +
+      "COALESCE((SELECT group_concat(value,' ') FROM json_each(CASE WHEN json_valid(facts) AND json_type(facts)='array' THEN facts ELSE '[]' END)),'') FROM memories;",
+    "COMMIT;",
+    "PRAGMA foreign_keys=ON;",
+  ].join("\n");
+  try {
+    await exec(script);
+  } catch (e) {
+    try { await exec("ROLLBACK;"); } catch { /* the failed statement may already have ended it */ }
+    try { await exec("PRAGMA foreign_keys=ON;"); } catch { /* best-effort */ }
+    throw new Error(`Restore failed and nothing was changed: ${String((e as any)?.message ?? e).split("\n")[0]}`);
+  }
+  return { changes, tables: restored };
 }

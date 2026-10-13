@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Bridge } from "./bridge.js";
 
 const UNREACHABLE =
-  "Phone unreachable. Open Sutra, enable External access in Settings, and connect the device (USB: adb reverse tcp:8765 tcp:8765, or set the bridge URL to this machine's LAN address).";
+  "Sutra unreachable. Open the Sutra app and turn on Settings → Connections → \"Share with AI tools\". For the phone app, also connect the device (USB: adb reverse tcp:8765 tcp:8765, or set its connection address to this machine's LAN address).";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 

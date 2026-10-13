@@ -10,7 +10,7 @@ async function main(): Promise<void> {
   if (!token) {
     console.error(
       "[sutra-mcp] SUTRA_MCP_TOKEN is required.\n" +
-        "  1. In Sutra, open Settings → External access and enable sharing.\n" +
+        "  1. In Sutra, open Settings → Connections and turn on \"Share with AI tools\".\n" +
         "  2. Reveal the pairing token and copy it.\n" +
         "  3. Run this server with SUTRA_MCP_TOKEN set to that token, e.g.\n" +
         "       SUTRA_MCP_TOKEN=<token> sutra-mcp\n" +

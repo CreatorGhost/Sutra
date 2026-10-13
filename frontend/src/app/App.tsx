@@ -3,10 +3,10 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 import { api } from "../local/sutra";
-import { initDailyRecap } from "../lib/recapScheduler";
 import { AUTH_EXPIRED_EVENT } from "../providers/cloudProvider";
 import { desktop } from "../desktop/bridge";
 import { AskAll } from "./AskAll";
+import { useIntegrations } from "./integrations";
 import { Home } from "./Home";
 import { LiveView } from "./LiveView";
 import { MeetingView } from "./MeetingView";
@@ -47,7 +47,8 @@ function Shell() {
   }, []);
 
   // Phone: daily recap notification (native only; no-op elsewhere).
-  useEffect(() => { void initDailyRecap().catch(() => {}); }, []);
+  // MCP bridge (when sharing with AI tools is on) + daily recap (phone notification / desktop reminder).
+  useIntegrations();
 
   useEffect(() => {
     const onExpired = () => showToast("Your Sutra session expired");
