@@ -7,7 +7,14 @@ import { attributeSegments } from "./channelAttribution";
 /** Diarize a window and persist turns. The audio Blob is used in-flight only and never stored.
  *  P2: speaker identity = the per-call diarization label; cross-session identity comes from manual
  *  "this is me" labeling (auto ECAPA voiceprint is Phase 3). */
-export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: number, provider: Provider, filename?: string, windowStartMs?: number, requestMultichannel?: boolean) {
+/** How a window's audio maps to speakers. `multichannel` asks the STT provider to split a stereo file
+ *  itself (not every provider can); `channel` says the (mono) blob IS one known channel — 0 = the owner's
+ *  mic, 1 = the meeting's system audio — which works with every provider (see MeetingController). */
+export interface IngestChannelOpts { multichannel?: boolean; channel?: 0 | 1 }
+
+export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: number, provider: Provider, filename?: string, windowStartMs?: number, channelOpts?: boolean | IngestChannelOpts) {
+  const opts: IngestChannelOpts = typeof channelOpts === "boolean" ? { multichannel: channelOpts } : (channelOpts ?? {});
+  const requestMultichannel = !!opts.multichannel;
   const sess = await repo.getSession(sessionId);
   if (!sess) throw new Error("session not found");
   // Honor the user's transcription-language choice (onboarding/Settings → transcript_lang setting).
@@ -17,7 +24,8 @@ export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: n
   const langCfg = LANGS[transcriptLang] ?? LANGS.english;
   // Speaker-ID is a HYBRID feature: only the cloud provider has the proxy voiceprint endpoint. In
   // on-device mode (provider.id !== "cloud") we don't request voiceprints — speaker-ID is "coming soon".
-  const wantVoiceprints = provider.id === "cloud";
+  const sttCloud = (provider.sttId ?? provider.id) === "cloud";
+  const wantVoiceprints = sttCloud;
   // Use the caller-derived filename (correct extension for the actual codec — low-bitrate Opus in
   // an ogg container, or webm/mp4 where ogg isn't supported). Fall back only if none was provided;
   // match the fallback to the blob's own type so the extension stays consistent with the content.
@@ -25,13 +33,18 @@ export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: n
   // Online-meeting capture sends two-channel WAV windows and asks for per-channel diarization so the
   // owner (mic, ch0) and remotes (system, ch1) are tagged at the source (F4 attribution then applies).
   // Ambient capture leaves multichannel undefined → the opt is omitted and the request is unchanged.
+  // The owner's own mic channel never needs voiceprints (it is always "Me").
   const tr = await provider.transcribeDiarize(blob, filename ?? `window-${windowIndex}.${fallbackExt}`,
-    { prompt: langCfg.prompt, voiceprints: wantVoiceprints, multichannel: requestMultichannel || undefined });
+    { prompt: langCfg.prompt, voiceprints: wantVoiceprints && opts.channel !== 0, multichannel: requestMultichannel || undefined, language: transcriptLang });
+  // A known-channel mono window: tag every segment so attribution treats it exactly like a provider-split
+  // multichannel response (channel 0 → "Me", channel 1 → remotes, diarized among themselves).
+  if (opts.channel != null) for (const s of tr.segments as any[]) { s.channel = opts.channel; s.is_me = opts.channel === 0; }
   const started: string | null = sess.started_at ?? null;
   // English mode (degrade-safe): when the user picked "english" we translate segment texts to English
   // in ONE batched call (cloud only — on-device has no translate endpoint). On ANY failure we keep the
   // original text so ingest never blocks. Non-English modes (hinglish/devanagari/verbatim) skip this.
-  if (langCfg.translate && provider.id === "cloud" && tr.segments.length) {
+  // (Local whisper translates itself with -tr, so this pass is cloud-STT only.)
+  if (langCfg.translate && sttCloud && tr.segments.length) {
     try {
       const en = await provider.translate(tr.segments.map((s: any) => s.text));
       if (Array.isArray(en) && en.length === tr.segments.length) {

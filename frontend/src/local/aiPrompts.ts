@@ -1,6 +1,6 @@
 // Mirrors backend/app/services/extraction.py + chat.py prompts/schemas (kept in sync; client owns the
 // prompt, the proxy is a thin OpenAI wrapper). PROMPT_VERSION is stamped on captured training samples.
-export const PROMPT_VERSION = "extract-v5"; // v5: + is_meeting flag (drives Minutes-of-Meeting generation)
+export const PROMPT_VERSION = "extract-v6"; // v6: is_meeting (drives Minutes) + subtitle + open_questions
 
 const obj = (props: object, required: string[]) =>
   ({ type: "object", properties: props, required, additionalProperties: false });
@@ -30,7 +30,11 @@ export const EXTRACT_SYSTEM =
   "extract times actually mentioned; never invent. " +
   "Also set is_meeting: true if this transcript is a MEETING or working discussion — two or more people " +
   "talking through agenda items, updates, decisions, or assigned tasks (standup, sync, call, review, " +
-  "planning) — and false for casual chat, a monologue/voice-note, or ambient one-sided audio.";
+  "planning) — and false for casual chat, a monologue/voice-note, or ambient one-sided audio. " +
+  "Also fill subtitle: ONE short sentence (max ~15 words) giving the gist, e.g. 'Team synced on monitoring " +
+  "setup, findings visibility problems, and demo user access bugs.' The title is a short, specific headline " +
+  "(3-7 words, no quotes, no trailing period). Also fill open_questions: questions raised but NOT resolved " +
+  "in the conversation, phrased as questions; empty list if none.";
 
 const ENTITY_TYPES = ["person", "project", "topic", "org", "place", "event", "commitment"];
 
@@ -39,6 +43,7 @@ export const EXTRACTION_JSON_SCHEMA = {
   strict: true,
   schema: obj({
     title: { type: "string" },
+    subtitle: { type: "string" },
     summary: { type: "string" },
     participants: { type: "array", items: { type: "string" } },
     facts: { type: "array", items: { type: "string" } },
@@ -47,6 +52,7 @@ export const EXTRACTION_JSON_SCHEMA = {
         steps: { type: "array", items: { type: "string" } } },
       ["text", "owner", "due", "steps"]) },
     decisions: { type: "array", items: { type: "string" } },
+    open_questions: { type: "array", items: { type: "string" } },
     entities: { type: "array", items: obj(
       { name: { type: "string" }, type: { type: "string", enum: ENTITY_TYPES }, description: { type: ["string", "null"] } },
       ["name", "type", "description"]) },
@@ -65,7 +71,7 @@ export const EXTRACTION_JSON_SCHEMA = {
         kind: { type: "string", enum: ["meeting", "call", "deadline", "reminder", "other"] } },
       ["title", "when", "datetime", "kind"]) },
     is_meeting: { type: "boolean" },
-  }, ["title", "summary", "participants", "facts", "action_items", "decisions", "entities", "relations", "importance_score", "type_tags", "speaker_names", "events", "is_meeting"]),
+  }, ["title", "subtitle", "summary", "participants", "facts", "action_items", "decisions", "open_questions", "entities", "relations", "importance_score", "type_tags", "speaker_names", "events", "is_meeting"]),
 };
 
 // ---- Minutes of Meeting ----
@@ -98,6 +104,7 @@ export const MINUTES_JSON_SCHEMA = {
       ["task", "owner", "due"]) },
     next_steps: { type: "array", items: { type: "string" } },
   }, ["title", "summary", "attendees", "agenda", "discussion", "decisions", "action_items", "next_steps"]),
+
 };
 
 export const CHAT_SYSTEM =
@@ -117,4 +124,40 @@ export const ANSWER_SCHEMA = {
     supported: { type: "boolean" },
     citation_conversation_ids: { type: "array", items: { type: "integer" } },
   }, ["answer", "supported", "citation_conversation_ids"]),
+};
+
+// ---- Meeting notes (Detailed style) + per-meeting Q&A --------------------------------------------
+// "Brief" notes need no extra call — they are the extraction above (summary, decisions, action items,
+// open questions). "Detailed" is generated on demand and cached in the notes table.
+
+export const NOTES_DETAILED_SYSTEM =
+  "You write thorough, well-structured meeting notes from a transcript. The transcript may be Hindi-English " +
+  "code-switched; write the notes in clear English, keeping names and product terms as spoken. Group the " +
+  "discussion into topics in the order they came up; each topic gets a short heading and 2-6 concise bullet " +
+  "points with the concrete details (numbers, names, reasons, blockers). Then list decisions, action items " +
+  "(owner = the person responsible, or null), open questions and next steps. Only use what is in the " +
+  "transcript — never invent. Use empty lists when a section has nothing.";
+
+export const NOTES_DETAILED_SCHEMA = {
+  name: "detailed_notes",
+  strict: true,
+  schema: obj({
+    overview: { type: "string" },
+    topics: { type: "array", items: obj({ heading: { type: "string" }, points: { type: "array", items: { type: "string" } } }, ["heading", "points"]) },
+    decisions: { type: "array", items: { type: "string" } },
+    action_items: { type: "array", items: obj({ text: { type: "string" }, owner: { type: ["string", "null"] } }, ["text", "owner"]) },
+    open_questions: { type: "array", items: { type: "string" } },
+    next_steps: { type: "array", items: { type: "string" } },
+  }, ["overview", "topics", "decisions", "action_items", "open_questions", "next_steps"]),
+};
+
+export const ASK_MEETING_SYSTEM =
+  "You answer questions about ONE meeting using only its notes and transcript below. Be direct and brief " +
+  "(1-4 sentences or a short list). Quote who said what when it helps. If the meeting doesn't cover it, say " +
+  "so plainly — never invent. Answer in the language of the question.";
+
+export const ASK_MEETING_SCHEMA = {
+  name: "meeting_answer",
+  strict: true,
+  schema: obj({ answer: { type: "string" } }, ["answer"]),
 };

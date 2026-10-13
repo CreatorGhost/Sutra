@@ -1,55 +1,52 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter, HashRouter } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
-import { defineCustomElements as jeepSqlite } from "jeep-sqlite/loader";
-import App from "./App";
-import "./index.css";
-import { syncNativeChrome } from "./lib/nativeChrome";
+import "./styles.css";
+import { applyTheme } from "./app/theme";
+import { desktop } from "./desktop/bridge";
 
-// Apply the saved appearance choice before first paint so there's no theme flash.
-// Stored value is "system" | "dark" | "light"; unset/anything else => dark (the default).
-// "system" follows the OS preference via matchMedia; dark stays the default when no light pref.
-function applyTheme(choice?: string | null) {
-  const root = document.documentElement;
-  const resolved =
-    choice === "light"
-      ? "light"
-      : choice === "system"
-        ? (window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark")
-        : "dark";
-  if (resolved === "light") root.setAttribute("data-theme", "light");
-  else root.removeAttribute("data-theme");
-}
+// Theme before first paint (no flash).
+applyTheme();
+if (desktop?.platform === "darwin") document.documentElement.classList.add("mac-desktop");
 
-const storedTheme = (() => {
-  try { return localStorage.getItem("sutra_theme"); } catch { return null; }
-})();
-applyTheme(storedTheme);
-void syncNativeChrome();
-// When the choice is "system", keep tracking live OS changes for the session.
-if (storedTheme === "system" && window.matchMedia) {
-  window.matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", () => {
-    applyTheme("system");
-    void syncNativeChrome();
-  });
-}
+const view = new URLSearchParams(window.location.search).get("view");
+const root = ReactDOM.createRoot(document.getElementById("root")!);
 
 async function bootstrap() {
-  // Web dev/validation fallback: @capacitor-community/sqlite needs the jeep-sqlite web component
-  // (native Android uses real SQLite — no jeep-sqlite). The SQLCipher key path is native-only.
-  if (Capacitor.getPlatform() === "web") {
-    jeepSqlite(window);
-    const el = document.createElement("jeep-sqlite");
-    document.body.appendChild(el);
+  // The always-on-top pill is its own tiny window: no router, no database.
+  if (view === "pill") {
+    document.documentElement.classList.add("pill-root");
+    const { Pill } = await import("./app/Pill");
+    root.render(<React.StrictMode><Pill /></React.StrictMode>);
+    return;
+  }
+
+  // Web dev/validation: @capacitor-community/sqlite needs the jeep-sqlite element (native uses real
+  // SQLite; the desktop app uses the main-process DB and never touches this).
+  if (!desktop && Capacitor.getPlatform() === "web") {
+    const { defineCustomElements } = await import("jeep-sqlite/loader");
+    defineCustomElements(window);
+    document.body.appendChild(document.createElement("jeep-sqlite"));
     await customElements.whenDefined("jeep-sqlite");
   }
-  ReactDOM.createRoot(document.getElementById("root")!).render(
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { StatusBar, Style } = await import("@capacitor/status-bar");
+      const light = document.documentElement.getAttribute("data-theme") === "light";
+      await StatusBar.setStyle({ style: light ? Style.Light : Style.Dark });
+    } catch { /* plugin unavailable */ }
+  }
+
+  const { default: App } = await import("./app/App");
+  // The packaged desktop app loads from file://, where path-based routing breaks — use hash routing there.
+  const Router = window.location.protocol === "file:" ? HashRouter : BrowserRouter;
+  root.render(
     <React.StrictMode>
-      <BrowserRouter>
+      <Router>
         <App />
-      </BrowserRouter>
-    </React.StrictMode>
+      </Router>
+    </React.StrictMode>,
   );
 }
 

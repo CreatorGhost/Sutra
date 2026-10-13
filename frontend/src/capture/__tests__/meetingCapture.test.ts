@@ -73,8 +73,19 @@ describe("MeetingController — start wiring", () => {
   });
 });
 
-describe("MeetingController — window → multichannel WAV ingest", () => {
-  it("wraps a window into a 2-channel audio/wav Blob (44-byte header) and ingests it multichannel", async () => {
+/** One second of a 440 Hz tone on the chosen channels (silence elsewhere), interleaved stereo. */
+function voicedWindow(index: number, channels: (0 | 1)[], seconds = 1): CaptureWindow {
+  const frames = 48000 * seconds;
+  const pcm = new Int16Array(frames * 2);
+  for (let i = 0; i < frames; i++) {
+    const v = Math.round(Math.sin((2 * Math.PI * 440 * i) / 48000) * 8000);
+    for (const c of channels) pcm[i * 2 + c] = v;
+  }
+  return { pcm, sampleRate: 48000, channels: 2, index };
+}
+
+describe("MeetingController — window → per-channel ingest (split, default)", () => {
+  it("transcribes each voiced channel as a mono 16 kHz WAV tagged with its channel", async () => {
     const p = makeProvider();
     const api = makeApi();
     const inflight: number[] = [];
@@ -85,26 +96,65 @@ describe("MeetingController — window → multichannel WAV ingest", () => {
     });
     await ctrl.start();
 
-    const w = makeWindow(3, 4);
-    p.emitWindow(w);
-    // inflight bumped synchronously to 1…
-    expect(inflight.at(-1)).toBe(1);
-    // windows counter incremented by one.
+    p.emitWindow(voicedWindow(3, [0, 1]));
+    expect(inflight.at(-1)).toBe(2); // one upload per channel, bumped synchronously
     expect(windows.at(-1)).toBe(1);
 
-    await vi.waitFor(() => expect(api.ingestWindow).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(api.ingestWindow).toHaveBeenCalledTimes(2));
+    const byChannel = Object.fromEntries(api.ingestArgs.map((a) => [a[5].channel, a]));
+    for (const ch of [0, 1]) {
+      const [sid, blob, index, filename, startMs] = byChannel[ch];
+      expect(sid).toBe(42);
+      expect((blob as Blob).type).toBe("audio/wav");
+      expect((blob as Blob).size).toBe(WAV_HEADER_BYTES + 16000 * 2); // 1 s mono @16 kHz
+      expect(index).toBe(3);
+      expect(String(filename)).toMatch(ch === 0 ? /-me\.wav$/ : /-them\.wav$/);
+      expect(typeof startMs).toBe("number");
+    }
+    await vi.waitFor(() => expect(inflight.at(-1)).toBe(0));
+  });
 
+  it("skips a silent channel entirely (no transcription call for it)", async () => {
+    const p = makeProvider();
+    const api = makeApi();
+    const ctrl = new MeetingController({ provider: p.provider, api });
+    await ctrl.start();
+    p.emitWindow(voicedWindow(0, [1])); // only the meeting side talks
+    await vi.waitFor(() => expect(api.ingestWindow).toHaveBeenCalledTimes(1));
+    expect(api.ingestArgs[0][5]).toEqual({ channel: 1 });
+    p.emitWindow(makeWindow(1)); // near-silence on both
+    await ctrl.stop();
+    expect(api.ingestWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("stamps each window with when it was SPOKEN (capture start + audio offset)", async () => {
+    const p = makeProvider();
+    const api = makeApi();
+    const ctrl = new MeetingController({ provider: p.provider, api });
+    await ctrl.start();
+    p.emitWindow(voicedWindow(0, [0], 2));
+    p.emitWindow(voicedWindow(1, [0], 1));
+    await vi.waitFor(() => expect(api.ingestWindow).toHaveBeenCalledTimes(2));
+    const [first, second] = api.ingestArgs.map((a) => a[4] as number);
+    expect(second - first).toBe(2000);
+  });
+});
+
+describe("MeetingController — stereo mode (provider splits channels)", () => {
+  it("wraps a window into one 2-channel WAV and ingests it multichannel", async () => {
+    const p = makeProvider();
+    const api = makeApi();
+    const ctrl = new MeetingController({ provider: p.provider, api, channelMode: "stereo" });
+    await ctrl.start();
+    const w = makeWindow(3, 4);
+    p.emitWindow(w);
+    await vi.waitFor(() => expect(api.ingestWindow).toHaveBeenCalledTimes(1));
     const [sid, blob, index, filename, , multichannel] = api.ingestArgs[0];
     expect(sid).toBe(42);
-    expect(blob).toBeInstanceOf(Blob);
-    expect((blob as Blob).type).toBe("audio/wav");
     expect((blob as Blob).size).toBe(WAV_HEADER_BYTES + w.pcm.length * 2);
     expect(index).toBe(3);
     expect(String(filename).endsWith(".wav")).toBe(true);
     expect(multichannel).toBe(true);
-
-    // …then back down to 0 after settle.
-    await vi.waitFor(() => expect(inflight.at(-1)).toBe(0));
   });
 });
 
@@ -114,7 +164,7 @@ describe("MeetingController — stop mirrors Capture.tsx", () => {
     const api = makeApi();
     const ctrl = new MeetingController({ provider: p.provider, api });
     await ctrl.start();
-    p.emitWindow(makeWindow(0));
+    p.emitWindow(voicedWindow(0, [0]));
 
     await ctrl.stop();
 

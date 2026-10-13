@@ -23,8 +23,9 @@ export async function extractConversation(convId: number, provider: Provider) {
   const turnIds = turns.flatMap((t: any) => t.member_ids ?? [t.id]);
   // Show the model clean "Speaker N" (not raw cluster ids "c1") for unnamed speakers, preferring the
   // enrolled person_name. We invert this map below to translate the model's returned label back to cN.
+  // The meeting-capture owner channel ("me") is always "Me".
   const display = buildSpeakerDisplay(turns);
-  const transcript = turns.map((t) => `${t.person_name || display.get(t.session_speaker_label) || "Speaker"}: ${t.text}`).join("\n");
+  const transcript = turns.map((t) => `${t.person_name || (t.session_speaker_label === "me" ? "Me" : display.get(t.session_speaker_label)) || "Speaker"}: ${t.text}`).join("\n");
 
   // Give the model the conversation's date so it can resolve relative times ("kal 11 baje" -> ISO datetime).
   const convDate = String((detail as any)?.conversation?.started_at ?? "").slice(0, 10);
@@ -35,12 +36,17 @@ export async function extractConversation(convId: number, provider: Provider) {
   const summary = data.summary ?? "";
   // Never embed the literal "(empty)" (it pollutes semantic search) — fall back to title/first fact.
   const seed = summary.trim() || String(data.title ?? "").trim() || String(data.facts?.[0] ?? "").trim() || "conversation";
-  const vecs = await provider.embed([seed, ...entTexts]);
+  // Embeddings power semantic search; engines that can't embed (local agents) fall back to keywords.
+  let vecs: number[][] = [];
+  if (provider.canEmbed !== false) {
+    try { vecs = await provider.embed([seed, ...entTexts]); } catch (e) { console.warn("embeddings skipped", e); }
+  }
   const memVec = vecs[0], entVecs = vecs.slice(1);
 
   const memId = await repo.upsertMemory({
-    conversation_id: convId, title: data.title ?? "Untitled", summary,
+    conversation_id: convId, title: data.title ?? "Untitled", subtitle: data.subtitle ?? null, summary,
     facts: data.facts ?? [], action_items: data.action_items ?? [], decisions: data.decisions ?? [],
+    open_questions: data.open_questions ?? [],
     importance: clamp(data.importance_score), type_tags: data.type_tags ?? [], embed_model: provider.id,
   }, memVec);
   await repo.setConversationTitle(convId, data.title ?? "Untitled conversation");
@@ -115,8 +121,11 @@ export async function extractConversation(convId: number, provider: Provider) {
     await repo.insertAction({ text: a.text, owner: a.owner, due: a.due, source_conversation: convId });
   }
   // Meeting detection: flag drives the "Meeting" chip + (optional) auto Minutes-of-Meeting generation.
-  const isMeeting = !!data.is_meeting;
+  // A recording made with meeting capture is always a meeting, whatever the model says.
+  const isMeeting = !!data.is_meeting || !!(detail as any)?.conversation?.is_meeting;
   try { await repo.setConversationMeeting(convId, isMeeting); } catch (e) { console.warn("meeting flag skipped", convId, e); }
+  // Notes derived from the old extraction (e.g. a cached Detailed style) are stale now.
+  await repo.clearNotes(convId);
   await repo.setConversationStatus(convId, "done");
   return { conversation_id: convId, memory_id: memId, title: data.title, entities: Object.keys(nameToId).length,
            action_items: (data.action_items ?? []).length, importance: clamp(data.importance_score), is_meeting: isMeeting };

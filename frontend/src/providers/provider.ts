@@ -11,7 +11,7 @@ export interface Transcription { text: string; duration: number; segments: Diari
  *  primes the ASR for the chosen script/language; `""` means "no prompt" (Verbatim, no normalization).
  *  `translate` selects English mode, which runs a real text→text translation pass (Provider.translate)
  *  after transcription. `voiceprints` asks the proxy for per-turn ECAPA embeddings (hybrid-only speaker-ID). */
-export interface TranscribeOpts { prompt?: string; translate?: boolean; voiceprints?: boolean; multichannel?: boolean }
+export interface TranscribeOpts { prompt?: string; translate?: boolean; voiceprints?: boolean; multichannel?: boolean; language?: string }
 
 /** Cleanup options. `mode` picks English-translate vs keep-script. The optional project-context fields are
  *  user-authored grounding: `glossary` is a canonical-spelling line (spelling correction ONLY) and `brief`/
@@ -40,4 +40,9 @@ export interface Provider {
   /** Grounded chat answer against a strict JSON schema. Text only. */
   chat(jsonSchema: object, system: string, user: string): Promise<any>;
   readonly id: string;
+  /** Which engine transcribes, when it differs from `id` ("cloud" | "local"). Voiceprints and the
+   *  English translate pass only exist on the cloud path. */
+  readonly sttId?: string;
+  /** False when this engine can't embed text (local agents): search falls back to keywords only. */
+  readonly canEmbed?: boolean;
 }

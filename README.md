@@ -50,6 +50,29 @@ The `main.py` + Postgres stack is retained solely so the existing test/eval suit
 
 ## Build the app
 
+## Desktop app (macOS / Windows / Linux)
+A minimal meeting-notes app in the spirit of Aside:
+- **It notices your calls.** When Google Meet, Zoom, Teams, Slack huddles and similar are in progress, a small pill appears at the top of the screen: *"Google Chrome in call · ● Record ×"*.
+- **No bot joins.** Sutra records your mic and the call's audio as two channels and transcribes each separately, so "you" and "everyone else" are always attributed correctly.
+- **Notes when you stop.** You get Summary, Decisions, Action items (with checkboxes) and Open questions. There's also a *Detailed* style, the transcript with speakers you can rename, and **Ask about this meeting…**.
+
+```bash
+cd frontend && npm install   # postinstall rebuilds the SQLite engine for Electron
+npm run dev            # desktop app (electron-vite)
+# If Electron reports NODE_MODULE_VERSION mismatch: npm run rebuild:electron
+npm run dev:web        # same UI in the browser (Chrome/Edge for meeting capture)
+npm test && npm run typecheck
+npm run build:desktop  # packaged app (dmg / nsis / AppImage)
+```
+See [`docs/AUDIT-2026-09.md`](docs/AUDIT-2026-09.md) for the audit and macOS permissions, and [`docs/LOCAL-AI.md`](docs/LOCAL-AI.md) for local transcription models (whisper.cpp) and running notes/Q&A through Claude Code, Codex or Cursor Agent.
+
+## Stack
+- **Backend:** Python + FastAPI (async), Postgres + `pgvector`.
+- **AI (OpenAI):** `gpt-4o-transcribe-diarize` (diarized STT) · `gpt-5.4-mini` (extraction, Structured Outputs)
+  · `gpt-5.4-nano` (LLM rerank) · `text-embedding-3-large`@1536 · SpeechBrain **ECAPA-TDNN** voiceprints.
+- **Frontend:** React + Vite + TypeScript **PWA**, hand-crafted calm-dark design, `react-force-graph` graph.
+- See [`docs/M0-research-and-plan.md`](docs/M0-research-and-plan.md) for the verified API research and every decision.
+
 ```bash
 npm --prefix frontend run build     # tsc + vite; catches type errors and produces the web build
 ```

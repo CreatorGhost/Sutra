@@ -81,6 +81,7 @@ export function openDesktopStorage(options: DesktopStorageOptions): StorageProvi
     exec: (sql) => db.exec(sql),
     getUserVersion: () => Number(db.pragma("user_version", { simple: true })),
     setUserVersion: (v) => db.exec(`PRAGMA user_version=${v};`),
+    columns: (t) => (db.prepare(`PRAGMA table_info(${t})`).all() as any[]).map((r) => String(r.name)),
   };
   runMigrations(driver);
 

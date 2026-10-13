@@ -1,7 +1,20 @@
 // On-device SQLite schema (port of the Postgres schema.sql). Transcripts only — no audio columns.
 // pgvector vector(N) -> embedding BLOB (Float32) + dim; jsonb -> TEXT (JSON1); arrays -> JSON text.
 // Bi-temporal edges (valid_from/valid_to/ingested_at) baked in from day one.
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
+
+/** Tables added after v9 (meeting notes cache), plus `minutes` again as a safety net. Declared before
+ *  MIGRATIONS (which interpolates it) and re-run idempotently by ensureSchema on every open. */
+const TABLES_ENSURED = `
+CREATE TABLE IF NOT EXISTS minutes(
+  conversation_id INTEGER PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  generated_at TEXT NOT NULL DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS notes(
+  conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  style TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}', generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY(conversation_id, style));
+`;
 
 export const MIGRATIONS: Record<number, string> = {
   1: `
@@ -225,4 +238,61 @@ CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id
 ALTER TABLE conversations ADD COLUMN project_auto INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE conversations ADD COLUMN suggested_project_id INTEGER;
 `,
+
+  10: `
+-- Meeting notes cache (Brief comes from the extraction; Detailed is generated on demand per style).
+-- Meeting-capture session metadata (kind, source app), tags, subtitle and open questions are ADDITIVE
+-- columns ensured by ensureSchema() below (SQLite has no ADD COLUMN IF NOT EXISTS).
+${TABLES_ENSURED}
+`,
 };
+
+
+/** Additive columns ensured on EVERY open (not just on a version bump). SQLite has no
+ *  `ADD COLUMN IF NOT EXISTS`, and local databases in the wild were migrated by builds whose
+ *  migrations never landed here (user_version can be AHEAD of SCHEMA_VERSION), so a plain versioned
+ *  migration can't be trusted to have created these. ensureSchema() checks PRAGMA table_info and only
+ *  adds what's missing — idempotent and safe on any prior state. */
+export const ENSURED_COLUMNS: ReadonlyArray<readonly [table: string, column: string, decl: string]> = [
+  ["sessions", "kind", "TEXT"],                 // 'meeting' (two-channel, one conversation) | 'ambient'
+  ["sessions", "source_app", "TEXT"],           // detected meeting app, e.g. "Google Chrome"
+  ["turns", "text_clean", "TEXT"],
+  ["conversations", "status", "TEXT NOT NULL DEFAULT 'pending'"],
+  ["conversations", "refined", "INTEGER NOT NULL DEFAULT 0"],
+  ["conversations", "is_meeting", "INTEGER NOT NULL DEFAULT 0"],
+  ["conversations", "source_app", "TEXT"],
+  ["conversations", "tags", "TEXT NOT NULL DEFAULT '[]'"],
+  ["conversations", "project_id", "INTEGER"],
+  ["conversations", "project_auto", "INTEGER NOT NULL DEFAULT 0"],
+  ["conversations", "suggested_project_id", "INTEGER"],
+  ["memories", "subtitle", "TEXT"],
+  ["memories", "open_questions", "TEXT NOT NULL DEFAULT '[]'"],
+];
+
+/** Minimal driver ensureSchema needs; both db.ts (Capacitor/sql.js) and the desktop adapter supply one. */
+export interface EnsureDriver {
+  exec(sql: string): Promise<void> | void;
+  columns(table: string): Promise<string[]> | string[];
+}
+
+/** Idempotently create the v5 tables and add any ENSURED_COLUMNS that are missing. Run after migrations. */
+export async function ensureSchema(d: EnsureDriver): Promise<void> {
+  await d.exec(TABLES_ENSURED);
+  const cache = new Map<string, Set<string>>();
+  for (const [table, column, decl] of ENSURED_COLUMNS) {
+    if (!cache.has(table)) cache.set(table, new Set((await d.columns(table)).map((c) => c.toLowerCase())));
+    const cols = cache.get(table)!;
+    if (cols.has(column)) continue;
+    await d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl};`);
+    cols.add(column);
+  }
+}
+
+/** Synchronous twin of ensureSchema for the better-sqlite3 desktop adapter (its driver is sync). */
+export function ensureSchemaSync(d: { exec(sql: string): void; columns(table: string): string[] }): void {
+  d.exec(TABLES_ENSURED);
+  for (const [table, column, decl] of ENSURED_COLUMNS) {
+    if (d.columns(table).some((c) => c.toLowerCase() === column)) continue;
+    d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl};`);
+  }
+}

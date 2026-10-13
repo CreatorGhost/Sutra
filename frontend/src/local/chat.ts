@@ -8,8 +8,10 @@ export async function chat(message: string, provider: Provider, history: { role:
   message = (message || "").trim();
   if (!message) return { answer: "Please ask a question.", supported: false, citations: [], retrieved: [] };
   const memories = await searchMemories(message, provider, 8) as any[];
-  const [qvec] = await provider.embed([message]);
-  const seeds = await nearestEntities(qvec, 5);
+  let seeds: number[] = [];
+  if (provider.canEmbed !== false) {
+    try { const [qvec] = await provider.embed([message]); seeds = await nearestEntities(qvec, 5); } catch { /* keyword-only */ }
+  }
   const sub = await expand(seeds, 2, 40);
 
   // "Your Context": the user's standing priors (people/projects/role) — beliefs, NON-CITABLE, may be
