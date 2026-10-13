@@ -1,4 +1,5 @@
 import type { Provider } from "../providers/provider";
+import { isFullTextEngine } from "../providers";
 import { ANSWER_SCHEMA, CHAT_SYSTEM } from "./aiPrompts";
 import { expand, nearestEntities } from "./graph";
 import { getSettings, topPriors } from "./repo";
@@ -19,7 +20,9 @@ export async function chat(message: string, provider: Provider, history: { role:
   // along. Prepended BEFORE the memories so the model uses it only to resolve who/what the user means.
   const settings = await getSettings();
   const contextEnabled = settings["context_enabled"] !== false;
-  const cloudMode = provider.id === "cloud";
+  // An agent engine sends the prompt off this device too (to the agent's vendor), so it gets the same
+  // share_cloud filter as the Sutra cloud.
+  const cloudMode = isFullTextEngine(provider);
   let priorsBlock = "";
   if (contextEnabled) {
     try {
