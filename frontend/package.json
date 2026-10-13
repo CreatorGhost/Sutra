@@ -44,14 +44,18 @@
     "react-dom": "^19.0.0",
     "react-force-graph-2d": "^1.27.0",
     "react-router-dom": "^7.1.0",
+    "sherpa-onnx-node": "1.13.8",
     "sql.js": "^1.11.0",
-    "three": "^0.184.0"
+    "tar": "^7.5.22",
+    "three": "^0.184.0",
+    "unbzip2-stream": "^1.4.3"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.2.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/unbzip2-stream": "^1.4.3",
     "@vitejs/plugin-react": "^4.3.4",
     "better-sqlite3": "^11.10.0",
     "electron": "^33.4.11",

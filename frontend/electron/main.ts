@@ -19,8 +19,8 @@ import { initDesktopStorage } from "./storage";
 import { userPath } from "./proc";
 import { MeetingDetector } from "./meetingDetector";
 import { detectAgents, runAgent } from "./agents";
-import { cancelDownload, deleteModel, downloadModel, sttStatus, transcribeLocal } from "./localStt";
 import { mcpInstall, mcpRemove, mcpSnippet, mcpStatus, type McpClientId } from "./mcpConnect";
+import { cancelSpeechDownload, deleteSpeechModel, downloadSpeechModel, speechStatus, transcribeSpeech } from "./speech/service";
 import { macAppCandidates, type Detection, type TrackerUpdate } from "../src/shared/meetingRules";
 import type { AgentId, AgentRequest } from "../src/shared/agentProtocol";
 
@@ -378,14 +378,14 @@ function registerIpc(): void {
     return runAgent(id, { system: String(req?.system ?? ""), user: String(req?.user ?? ""), schema: req?.schema, model: req?.model ?? null });
   });
 
-  // Local speech-to-text (whisper.cpp).
-  ipcMain.handle("sutra:stt:status", () => sttStatus());
+  // On-device speech: transcription + speaker separation (electron/speech/*, runs in a utility process).
+  ipcMain.handle("sutra:stt:status", () => speechStatus());
   ipcMain.handle("sutra:stt:download", (e, id: string) =>
-    downloadModel(String(id), (p) => { if (!e.sender.isDestroyed()) e.sender.send("sutra:stt:progress", p); }));
-  ipcMain.handle("sutra:stt:cancel", () => cancelDownload());
-  ipcMain.handle("sutra:stt:delete", (_e, id: string) => deleteModel(String(id)));
-  ipcMain.handle("sutra:stt:transcribe", (_e, wav: ArrayBuffer, opts: { model: string; language?: string | null }) =>
-    transcribeLocal(wav, { model: String(opts?.model ?? ""), language: opts?.language ?? null }));
+    downloadSpeechModel(String(id), (p) => { if (!e.sender.isDestroyed()) e.sender.send("sutra:stt:progress", p); }));
+  ipcMain.handle("sutra:stt:cancel", () => cancelSpeechDownload());
+  ipcMain.handle("sutra:stt:delete", (_e, id: string) => deleteSpeechModel(String(id)));
+  ipcMain.handle("sutra:stt:transcribe", (_e, wav: ArrayBuffer, opts: { model?: unknown; language?: unknown; speakers?: unknown }) =>
+    transcribeSpeech(wav, { model: String(opts?.model ?? ""), language: typeof opts?.language === "string" ? opts.language : null, speakers: opts?.speakers !== false }));
 
   ipcMain.handle("sutra:permissions:get", () => ({
     microphone: isMac || process.platform === "win32" ? systemPreferences.getMediaAccessStatus("microphone") : "granted",

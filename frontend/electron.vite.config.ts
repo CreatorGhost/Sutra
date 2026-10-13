@@ -13,9 +13,10 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     build: {
-      lib: { entry: resolve(__dirname, "electron/main.ts"), formats: ["cjs"] },
+      // speechWorker = the on-device speech utility process (electron/speech/worker.ts), forked by main.
+      lib: { entry: { main: resolve(__dirname, "electron/main.ts"), speechWorker: resolve(__dirname, "electron/speech/worker.ts") }, formats: ["cjs"] },
       rollupOptions: {
-        output: { dir: resolve(__dirname, "out/main"), entryFileNames: "main.cjs" },
+        output: { dir: resolve(__dirname, "out/main"), entryFileNames: "[name].cjs" },
       },
     },
   },

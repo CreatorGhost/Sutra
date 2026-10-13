@@ -2,9 +2,9 @@ import type { Provider } from "./provider";
 import { CloudProvider } from "./cloudProvider";
 import { OnDeviceProvider } from "./ondeviceProvider";
 import { AgentProvider } from "./agentProvider";
-import { ComposedProvider, LocalWhisperProvider } from "./localSttProvider";
+import { ComposedProvider, LocalSpeechProvider } from "./localSttProvider";
 import { desktop } from "../desktop/bridge";
-import { DEFAULT_WHISPER_MODEL } from "../shared/localModels";
+import { DEFAULT_SPEECH_MODEL } from "../shared/speechModels";
 import { safeModel, type AgentId } from "../shared/agentProtocol";
 
 export const PROXY_BASE =
@@ -68,19 +68,20 @@ export function getProvider(mode: Mode = "hybrid"): Provider {
 }
 
 /** Where each job runs, from Settings:
- *    stt_engine: "cloud" (Sutra service) | "local" (whisper.cpp on this computer, desktop only)
+ *    stt: always "local" in the desktop app (on-device transcription + speaker separation; the old
+ *         stt_engine setting is ignored there), "cloud" everywhere else
  *    ai_engine:  "cloud" | "claude" | "codex" | "cursor" (local agent CLIs, desktop only)
  *  Outside the desktop app both fall back to the cloud. */
 export type SttEngine = "cloud" | "local";
 export type AiEngine = "cloud" | AgentId;
 
 export function engineChoice(s: Record<string, unknown>): { stt: SttEngine; ai: AiEngine; sttModel: string; aiModel: string | null } {
-  const stt: SttEngine = desktop && s["stt_engine"] === "local" ? "local" : "cloud";
+  const stt: SttEngine = desktop ? "local" : "cloud";
   const aiRaw = String(s["ai_engine"] ?? "cloud");
   const ai: AiEngine = desktop && (aiRaw === "claude" || aiRaw === "codex" || aiRaw === "cursor") ? aiRaw : "cloud";
   return {
     stt, ai,
-    sttModel: String(s["stt_model"] || DEFAULT_WHISPER_MODEL),
+    sttModel: String(s["stt_model"] || DEFAULT_SPEECH_MODEL),
     aiModel: ai === "cloud" ? null : safeModel(s[`ai_model_${ai}`]),
   };
 }
@@ -95,7 +96,7 @@ export function resolveProvider(s: Record<string, unknown>): Provider {
   let p = composed.get(key);
   if (!p) {
     const text = c.ai === "cloud" ? getProvider("hybrid") : new AgentProvider(c.ai, c.aiModel);
-    const stt = c.stt === "local" ? new LocalWhisperProvider(c.sttModel) : getProvider("hybrid");
+    const stt = c.stt === "local" ? new LocalSpeechProvider(c.sttModel) : getProvider("hybrid");
     p = new ComposedProvider(stt, text);
     composed.set(key, p);
   }
