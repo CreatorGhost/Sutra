@@ -11,6 +11,7 @@ import { AppIcon, Popover, friendlyError, useAppIcon, useToast } from "./ui";
 import { MinutesNotes } from "./meeting/Minutes";
 import { ProjectChip, useProjects } from "./meeting/ProjectChip";
 import { projectName } from "./projects/model";
+import { EnginePicker } from "./EnginePicker";
 import "./features.css";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof api.conversation>>>;
@@ -512,6 +513,7 @@ function AskBar({ cid, onCopy, onExport, onDelete }: { cid: number; onCopy: () =
         <form className="ask-input" onSubmit={(e) => { e.preventDefault(); void ask(); }}>
           <Sparkles size={17} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask about this meeting…" aria-label="Ask about this meeting" />
+          <EnginePicker />
         </form>
         <div className="ask-actions">
           <button className="icon-btn" onClick={onCopy} aria-label="Copy notes" title="Copy notes"><Copy size={17} /></button>

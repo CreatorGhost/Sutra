@@ -13,7 +13,7 @@ import { MeetingView } from "./MeetingView";
 import { ProjectPage } from "./projects/ProjectPage";
 import { ProjectsPage } from "./projects/ProjectsPage";
 import { RecorderProvider, useRecorder } from "./recorder";
-import { SettingsSheet } from "./SettingsSheet";
+import { SettingsSheet, type SectionId } from "./SettingsSheet";
 import { Sidebar } from "./Sidebar";
 import { useToast } from "./ui";
 
@@ -33,6 +33,13 @@ function Shell() {
   const nav = useNavigate();
   const { state: rec, stop } = useRecorder();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined);
+  // Anything can open a specific Settings section (e.g. the Ask bar's "Manage engines…").
+  useEffect(() => {
+    const on = (e: Event) => { setSettingsSection((e as CustomEvent<SectionId | undefined>).detail); setSettingsOpen(true); };
+    window.addEventListener("sutra:open-settings", on);
+    return () => window.removeEventListener("sutra:open-settings", on);
+  }, []);
   const [toast, showToast] = useToast();
   const detail = pathname !== "/";
 
@@ -80,7 +87,7 @@ function Shell() {
 
   return (
     <div className={`shell${detail ? " detail" : ""}`}>
-      <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
+      <Sidebar onOpenSettings={() => { setSettingsSection(undefined); setSettingsOpen(true); }} />
       <main className="pane">
         <Routes>
           <Route path="/" element={<Home />} />
@@ -93,7 +100,7 @@ function Shell() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-      {settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsSheet initialSection={settingsSection} onClose={() => setSettingsOpen(false)} />}
       {toast}
     </div>
   );

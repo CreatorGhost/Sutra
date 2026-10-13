@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { api } from "../local/sutra";
 import { shortDate } from "./format";
 import { friendlyError } from "./ui";
+import { EnginePicker } from "./EnginePicker";
 
 interface Turn { q: string; a?: string; supported?: boolean; citations?: { conversation_id: number; title: string; date: string | null }[] }
 
@@ -64,6 +65,7 @@ export function AskAll() {
         <form className="ask-input" onSubmit={(e) => { e.preventDefault(); const v = q; setQ(""); if (!turns.length) setParams({ q: v }); else void ask(v); }}>
           <Sparkles size={17} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask anything about your meetings…" aria-label="Ask Sutra" autoFocus={!initial} />
+          <EnginePicker />
         </form>
       </div>
     </>

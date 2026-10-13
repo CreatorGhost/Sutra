@@ -19,7 +19,7 @@ function IntelligenceSection({ settings, put }: SectionProps) {
   return <Intelligence settings={settings} onChange={(p) => put({ ...p, setup_engines: true })} />;
 }
 
-type SectionId = "general" | "intelligence" | "people" | "context" | "connections" | "backup" | "recap" | "advanced" | "account";
+export type SectionId = "general" | "intelligence" | "people" | "context" | "connections" | "backup" | "recap" | "advanced" | "account";
 const SECTIONS: { id: SectionId; label: string; icon: ComponentType<{ size?: number }>; view: ComponentType<SectionProps> }[] = [
   { id: "general", label: "General", icon: Settings2, view: GeneralSection },
   { id: "intelligence", label: "Intelligence", icon: Sparkles, view: IntelligenceSection },

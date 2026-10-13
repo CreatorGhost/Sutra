@@ -165,7 +165,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
       <div className="side-bottom">
         <button className="icon-btn" onClick={onOpenSettings} aria-label="Settings"><Gear size={18} /></button>
         {recording ? (
-          <button className="record-btn live" onClick={() => void stop()} disabled={rec.status === "starting"}>
+          <button className="record-btn is-recording" onClick={() => void stop()} disabled={rec.status === "starting"}>
             {rec.status === "starting" ? <Loader2 size={16} className="spin" /> : <Square size={14} fill="currentColor" />}
             {rec.status === "starting" ? "Starting…" : <>Stop <span className="timer">{rec.startedAt ? clock(now - rec.startedAt) : ""}</span></>}
           </button>
