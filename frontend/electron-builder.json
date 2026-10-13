@@ -48,6 +48,13 @@
         "micwatch",
         "micwatch.swift"
       ]
+    },
+    {
+      "from": "../mcp-server/dist",
+      "to": "mcp-server",
+      "filter": [
+        "sutra-mcp.cjs"
+      ]
     }
   ]
 }

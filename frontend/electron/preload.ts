@@ -51,6 +51,16 @@ contextBridge.exposeInMainWorld(
       transcribe: (wav: ArrayBuffer, opts: unknown) => ipcRenderer.invoke("sutra:stt:transcribe", wav, opts),
       onProgress: (cb: (p: unknown) => void) => listen("sutra:stt:progress", cb),
     }),
+    mcp: Object.freeze({
+      status: (token: string) => ipcRenderer.invoke("sutra:mcp:status", token),
+      snippet: (id: string, token: string, url?: string) => ipcRenderer.invoke("sutra:mcp:snippet", id, token, url),
+      install: (id: string, token: string, url?: string) => ipcRenderer.invoke("sutra:mcp:install", id, token, url),
+      remove: (id: string) => ipcRenderer.invoke("sutra:mcp:remove", id),
+      reveal: (path: string) => ipcRenderer.invoke("sutra:mcp:reveal", path),
+    }),
+    backup: Object.freeze({
+      save: (json: string, filename: string) => ipcRenderer.invoke("sutra:backup:save", json, filename),
+    }),
     onNavigate: (cb: (path: string) => void) => listen("sutra:navigate", cb),
   }),
 );

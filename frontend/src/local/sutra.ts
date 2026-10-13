@@ -4,7 +4,7 @@ import { Capacitor } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 import { MODE_COPY, resolveProvider, type Mode } from "../providers";
-import { q } from "./db";
+import { persist, q, run } from "./db";
 import * as chatSvc from "./chat";
 import * as extractSvc from "./extraction";
 import { expand, graphOverview } from "./graph";
@@ -220,6 +220,22 @@ export const api = {
       return { lines };
     },
   },
+
+  // ---- C2: settings features ----
+  /** Rename a person in place (enroll() would create a second row). Naming a provisional speaker
+   *  makes it a real person. */
+  renamePerson: async (pid: number, name: string) => {
+    const n = name.trim();
+    if (!n) throw new Error("A name can't be empty.");
+    await run("UPDATE people SET canonical_name=?, provisional=0 WHERE id=?", [n, pid]);
+    await persist();
+  },
+  /** Mark exactly one person as "me" (the device owner whose lines are channel 0 / "You"). */
+  setMe: async (pid: number) => {
+    await run("UPDATE people SET is_me=CASE WHEN id=? THEN 1 ELSE 0 END", [pid]);
+    await persist();
+  },
+  // ---- end C2 ----
 };
 
 // Debug hook: expose the local API on window so on-device issues can be inspected/repaired live via

@@ -20,6 +20,7 @@ import { userPath } from "./proc";
 import { MeetingDetector } from "./meetingDetector";
 import { detectAgents, runAgent } from "./agents";
 import { cancelDownload, deleteModel, downloadModel, sttStatus, transcribeLocal } from "./localStt";
+import { mcpInstall, mcpRemove, mcpSnippet, mcpStatus, type McpClientId } from "./mcpConnect";
 import { macAppCandidates, type Detection, type TrackerUpdate } from "../src/shared/meetingRules";
 import type { AgentId, AgentRequest } from "../src/shared/agentProtocol";
 
@@ -397,6 +398,30 @@ function registerIpc(): void {
     return false;
   });
 }
+
+// ---- settings: AI-tool connections (sutra:mcp:*) + backup files (sutra:backup:*) ------------------------
+// Registered at load (ipcMain works before `ready`). The pairing token comes from the renderer, which
+// owns it in the local DB; it's only used to write the configs the user asked for.
+
+function registerMcpAndBackupIpc(): void {
+  const tok = (t: unknown) => String(t ?? "");
+  ipcMain.handle("sutra:mcp:status", (_e, token: string) => mcpStatus(tok(token)));
+  ipcMain.handle("sutra:mcp:snippet", (_e, id: McpClientId | "other", token: string, url?: string) => mcpSnippet(id, tok(token), url));
+  ipcMain.handle("sutra:mcp:install", (_e, id: McpClientId, token: string, url?: string) => mcpInstall(id, tok(token), url));
+  ipcMain.handle("sutra:mcp:remove", (_e, id: McpClientId) => mcpRemove(id));
+  ipcMain.handle("sutra:mcp:reveal", (_e, path: string) => { if (existsSync(String(path))) shell.showItemInFolder(String(path)); });
+
+  // The backup is plaintext (it's the decrypted DB), so it's written 0600 to a place the user picks.
+  ipcMain.handle("sutra:backup:save", async (e, json: string, filename: string) => {
+    const owner = BrowserWindow.fromWebContents(e.sender) ?? undefined;
+    const opts = { defaultPath: join(app.getPath("documents"), String(filename || "sutra-backup.json")), filters: [{ name: "Sutra backup", extensions: ["json"] }] };
+    const r = owner ? await dialog.showSaveDialog(owner, opts) : await dialog.showSaveDialog(opts);
+    if (r.canceled || !r.filePath) return null;
+    writeFileSync(r.filePath, String(json), { mode: 0o600 });
+    return r.filePath;
+  });
+}
+registerMcpAndBackupIpc();
 
 // ---- lifecycle -----------------------------------------------------------------------------------------
 

@@ -28,6 +28,20 @@ export interface PillState {
   conversationId?: number | null;
 }
 
+export type McpClientId = "claude-code" | "codex" | "cursor" | "gemini" | "claude-desktop";
+export interface McpClientStatus {
+  id: McpClientId;
+  label: string;
+  format: "claude-cli" | "toml" | "json";
+  detected: boolean;
+  /** "stale" = set up, but with an older pairing token. */
+  configured: "no" | "yes" | "stale";
+  configPath: string;
+  install: string;
+}
+export interface McpServerStatus { ready: boolean; script: string | null; hint: string | null }
+export interface McpWriteResult { path: string; backup: string | null; written: string; message: string }
+
 type Unsub = () => void;
 export interface DesktopBridge {
   isDesktop: true;
@@ -48,6 +62,16 @@ export interface DesktopBridge {
     transcribe(wav: ArrayBuffer, opts: { model: string; language?: string | null }): Promise<{ text: string; duration: number; segments: LocalSegment[] }>;
     onProgress(cb: (p: SttProgress) => void): Unsub;
   };
+  /** Connect Sutra's MCP server to the user's AI tools (electron/mcpConnect.ts). */
+  mcp?: {
+    status(token: string): Promise<{ server: McpServerStatus; clients: McpClientStatus[] }>;
+    snippet(id: McpClientId | "other", token: string, url?: string): Promise<string>;
+    install(id: McpClientId, token: string, url?: string): Promise<McpWriteResult>;
+    remove(id: McpClientId): Promise<McpWriteResult>;
+    reveal(path: string): Promise<void>;
+  };
+  /** Save a backup file via the native save dialog; null when cancelled. */
+  backup?: { save(json: string, filename: string): Promise<string | null> };
 }
 
 export const desktop: DesktopBridge | null =
