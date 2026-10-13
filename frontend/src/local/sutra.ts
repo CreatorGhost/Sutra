@@ -220,6 +220,29 @@ export const api = {
       return { lines };
     },
   },
+
+  // ---- C1: meeting features ----
+  /** One graph entity for the Graph side card: its description, the entities it links to, and the
+   *  meetings it appears in (edge evidence first, then memories that mention it by name). */
+  entityDetail: async (id: number) => {
+    const e = (await q("SELECT id,type,canonical_name,attrs,mention_count,first_seen,last_seen FROM entities WHERE id=?", [id]))[0] as any;
+    if (!e) return null;
+    let description = "";
+    try { description = String(JSON.parse(e.attrs || "{}").description ?? ""); } catch { /* malformed attrs */ }
+    const links = await q(
+      `SELECT ed.relation, CASE WHEN ed.src_entity=? THEN 'out' ELSE 'in' END dir, n.id, n.type, n.canonical_name
+       FROM edges ed JOIN entities n ON n.id = CASE WHEN ed.src_entity=? THEN ed.dst_entity ELSE ed.src_entity END
+       WHERE ed.src_entity=? OR ed.dst_entity=? ORDER BY ed.weight DESC LIMIT 40`, [id, id, id, id]);
+    const name = `%${String(e.canonical_name).toLowerCase()}%`;
+    const meetings = await q(
+      `SELECT c.id, COALESCE(m.title, c.title) title, COALESCE(c.started_at, c.created_at) started_at
+       FROM conversations c LEFT JOIN memories m ON m.conversation_id=c.id
+       WHERE c.id IN (SELECT json_extract(j.value,'$.conversation_id') FROM edges ed, json_each(ed.evidence) j
+                      WHERE ed.src_entity=? OR ed.dst_entity=?)
+          OR lower(COALESCE(m.title,'') || ' ' || COALESCE(m.summary,'') || ' ' || COALESCE(m.facts,'')) LIKE ?
+       ORDER BY COALESCE(c.started_at, c.created_at) DESC LIMIT 20`, [id, id, name]);
+    return { ...e, attrs: undefined, description, links, meetings };
+  },
 };
 
 // Debug hook: expose the local API on window so on-device issues can be inspected/repaired live via
