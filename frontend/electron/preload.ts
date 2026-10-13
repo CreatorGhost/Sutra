@@ -40,7 +40,7 @@ contextBridge.exposeInMainWorld(
     }),
     icon: (appName: string) => ipcRenderer.invoke("sutra:icon", appName),
     ai: Object.freeze({
-      detect: () => ipcRenderer.invoke("sutra:ai:detect"),
+      detect: (refresh?: boolean) => ipcRenderer.invoke("sutra:ai:detect", refresh === true),
       run: (id: string, req: unknown) => ipcRenderer.invoke("sutra:ai:run", id, req),
     }),
     stt: Object.freeze({

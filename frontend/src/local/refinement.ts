@@ -1,5 +1,5 @@
 // Transcript refinement service. Non-destructive: raw turns.text stays the source of truth; cleaned
-// text lands in turns.text_clean and conversations.refined decides which is used. Cloud-only — the
+// text lands in turns.text_clean and conversations.refined decides which is used. Cloud or agent engine — the
 // on-device provider's refine() is a no-op, so we bail before touching anything. Idempotent: re-running
 // just re-cleans the same rows. A per-batch failure leaves that batch's raw text untouched.
 import * as repo from "./repo";
@@ -7,6 +7,7 @@ import { extractConversation } from "./extraction";
 import { assembleProjectContext } from "./projectContext";
 import { clampBrief, BRIEF_CAP } from "./repo";
 import type { Provider, RefineOpts } from "../providers/provider";
+import { isFullTextEngine } from "../providers";
 
 const BATCH = 30; // 30 turns is ample local context for a conservative cleanup pass; no cross-batch state.
 
@@ -16,7 +17,7 @@ export async function cleanConversation(
   convId: number,
   provider: Provider,
 ): Promise<{ ok: boolean; refinedTurns?: number; reason?: string }> {
-  if (provider.id !== "cloud") return { ok: false, reason: "cloud-only" };
+  if (!isFullTextEngine(provider)) return { ok: false, reason: "cloud-only" };
   try {
     const lang = String((await repo.getSettings()).transcript_lang ?? "english");
     const mode = lang === "english" ? "english" : "other";

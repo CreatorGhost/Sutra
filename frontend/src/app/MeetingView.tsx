@@ -274,7 +274,7 @@ function Failed({ cid, onDone }: { cid: number; onDone: () => void }) {
     <div className="notice err">
       <div className="grow">
         <div style={{ fontWeight: 600 }}>Couldn't write notes for this meeting</div>
-        <div className="muted">{err ?? "The transcript is safe. Try again when you're online."}</div>
+        <div className="muted">{err ?? "The transcript is safe. Check your AI engine in Settings → Intelligence, then retry."}</div>
       </div>
       <button className="btn" onClick={retry} disabled={busy}>{busy ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />} Retry</button>
     </div>
@@ -373,7 +373,7 @@ function TranscriptTools({ cid, conversation: c, glossaryFrom, toast }: { cid: n
     try {
       const r = await api.cleanConversation(cid);
       if (r.ok) { toast("Transcript cleaned · notes updated"); notifyDataChanged(); }
-      else setErr(r.reason === "cloud-only" ? "Clean-up runs on Sutra cloud. Switch notes to Sutra cloud in Settings to use it."
+      else setErr(r.reason === "cloud-only" ? "Clean-up needs an AI engine — connect one in Settings → Intelligence."
         : r.reason === "empty" ? "There's no transcript to clean yet." : "Couldn't clean the transcript — try again.");
     } catch (e) { setErr(friendlyError(e)); }
     finally { setBusy(null); }
@@ -384,7 +384,7 @@ function TranscriptTools({ cid, conversation: c, glossaryFrom, toast }: { cid: n
     if (cleaned === !!c.refined) return;
     setBusy(cleaned ? "cleaned" : "raw"); setErr(null);
     try { await api.setConversationRefined(cid, cleaned); }
-    catch { toast("Switched — notes will refresh when you're online"); }
+    catch { toast("Switched — notes will refresh once your AI engine is available"); }
     finally { setBusy(null); notifyDataChanged(); }
   };
   return (

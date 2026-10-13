@@ -1,71 +1,133 @@
-// AI engine settings: which engine writes summaries, notes, minutes, clean-ups and answers.
+// AI engine settings: which of the user's own agent CLIs writes summaries, notes, minutes, clean-ups,
+// translations and answers. Detection (installed / signed in / models) comes from the main process.
 import { useEffect, useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, RotateCw } from "lucide-react";
 import { api } from "../local/sutra";
 import { desktop, type AgentStatus } from "../desktop/bridge";
-import { AGENTS, type AgentId } from "../shared/agentProtocol";
+import { AGENTS, AGENT_IDS, agentReady, type AgentId } from "../shared/agentProtocol";
 import { engineChoice } from "../providers";
+import "./engines.css";
 
-export function EngineSettings({ settings, onChange }: { settings: Record<string, unknown>; onChange: (patch: Record<string, unknown>) => Promise<void> }) {
+/** The engine "automatic" lands on: signed in for sure first, then signed in as far as we can tell. */
+export function autoEngine(list: AgentStatus[] | null): AgentStatus | null {
+  return list?.find((s) => s.installed && s.signedIn === true) ?? list?.find(agentReady) ?? null;
+}
+
+const rank = (s: AgentStatus) => (agentReady(s) ? 0 : s.installed ? 1 : 2);
+
+export function EngineSettings({ settings, onChange, variant = "settings", onStatus }: {
+  settings: Record<string, unknown>;
+  onChange: (patch: Record<string, unknown>) => Promise<void>;
+  variant?: "settings" | "setup";
+  onStatus?: (list: AgentStatus[]) => void;
+}) {
   const choice = engineChoice(settings);
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
-  useEffect(() => {
+  const [busy, setBusy] = useState(false);
+
+  const load = async (refresh: boolean) => {
     if (!desktop) return;
-    void desktop.ai.detect().then(setAgents).catch(() => setAgents([]));
-  }, []);
+    setBusy(true);
+    try {
+      const list = await desktop.ai.detect(refresh);
+      setAgents(list);
+      onStatus?.(list);
+    } catch {
+      setAgents([]);
+    } finally {
+      setBusy(false);
+    }
+  };
+  useEffect(() => { void load(false); }, []);
+
   if (!desktop) {
-    return <p className="muted" style={{ fontSize: 14 }}>Local AI agents (Claude Code, Codex, Cursor…) are available in the desktop app.</p>;
+    return <p className="muted" style={{ fontSize: 14 }}>AI engines (Claude Code, Codex, Cursor, Gemini…) are available in the desktop app.</p>;
   }
-  const copy = (t: string) => void api.copyText(t);
+
+  const auto = autoEngine(agents);
+  const active: AgentId | null = choice.ai !== "auto" && choice.ai !== "cloud" ? choice.ai : auto?.id ?? null;
+  const rows: AgentStatus[] = agents
+    ? [...agents].sort((a, b) => rank(a) - rank(b))
+    : AGENT_IDS.map((id) => ({ id, label: AGENTS[id].label } as AgentStatus));
+  const activeInfo = active ? agents?.find((a) => a.id === active) : null;
 
   return (
     <div className="intel">
-      <div className="set-label">Notes & questions</div>
-      <div className="set-card">
-        <EngineRow id="cloud" active={choice.ai === "cloud"} title="Sutra cloud" detail="Fastest. Also powers semantic search." onPick={() => void onChange({ ai_engine: "cloud" })} />
-        {(Object.keys(AGENTS) as AgentId[]).map((id) => {
-          const st = agents?.find((a) => a.id === id);
-          return (
-            <EngineRow key={id} id={id} active={choice.ai === id} title={AGENTS[id].label}
-              detail={agents === null ? "Checking…" : st?.path ? `Installed${st.version ? ` · ${st.version}` : ""}` : "Not found"}
-              disabled={!st?.path} onPick={() => void onChange({ ai_engine: id })}>
-              {!st?.path && agents !== null && (
-                <>
-                  <div className="install"><code className="cmd">{AGENTS[id].install}</code><button className="icon-btn sm ghost" onClick={() => copy(AGENTS[id].install)} aria-label="Copy install command"><Copy size={13} /></button></div>
-                  <div className="d">{AGENTS[id].signIn}</div>
-                </>
-              )}
-              {choice.ai === id && st?.path && (
-                <label className="model-input">Model
-                  <input list={`models-${id}`} defaultValue={String(settings[`ai_model_${id}`] ?? "")} placeholder="default"
-                    onBlur={(e) => void onChange({ [`ai_model_${id}`]: e.target.value.trim() })} />
-                  <datalist id={`models-${id}`}>{AGENTS[id].models.map((m) => <option key={m} value={m} />)}</datalist>
-                </label>
-              )}
-            </EngineRow>
-          );
-        })}
+      <div className="eng-head">
+        <div className="set-label">{variant === "setup" ? "On this computer" : "Notes & questions"}</div>
+        <button className="eng-refresh" onClick={() => void load(true)} disabled={busy} aria-label="Check again">
+          <RotateCw size={13} className={busy ? "spin" : ""} /> {busy ? "Checking…" : "Refresh"}
+        </button>
       </div>
-      {choice.ai !== "cloud" && (
-        <p className="muted" style={{ fontSize: 13, margin: "8px 2px 0" }}>
-          Uses your own {AGENTS[choice.ai as AgentId].label} sign-in, with tools off, in an empty folder. Search uses keywords with a local agent.
+      <div className="set-card">
+        {rows.map((st) => (
+          <EngineRow key={st.id} st={agents ? st : null} id={st.id} active={active === st.id}
+            model={String(settings[`ai_model_${st.id}`] ?? "")}
+            onPick={() => void onChange({ ai_engine: st.id })}
+            onModel={(m) => void onChange({ [`ai_model_${st.id}`]: m })} />
+        ))}
+      </div>
+      {agents && !auto && choice.ai === "auto" ? (
+        <p className="eng-foot">Install one of these and sign in, then press Refresh. Until then Sutra can record and transcribe, but can't write notes.</p>
+      ) : activeInfo ? (
+        <p className="eng-foot">
+          {choice.ai === "auto" ? `Using ${activeInfo.label} — the first one that's ready. ` : ""}
+          Runs with your own {activeInfo.label} sign-in, tools off, in an empty folder. Nothing goes through Sutra's servers. Search uses keywords.
         </p>
-      )}
+      ) : null}
     </div>
   );
 }
 
-function EngineRow({ active, title, detail, disabled, onPick, children }: {
-  id: string; active: boolean; title: string; detail: string; disabled?: boolean; onPick: () => void; children?: React.ReactNode;
+function EngineRow({ st, id, active, model, onPick, onModel }: {
+  st: AgentStatus | null; id: AgentId; active: boolean; model: string; onPick: () => void; onModel: (m: string) => void;
 }) {
+  const info = AGENTS[id];
+  const copy = (t: string) => void api.copyText(t);
+  // Install commands stay folded: most people use one or two of these, the rest is noise.
+  const [showInstall, setShowInstall] = useState(false);
+  const ready = !!st && agentReady(st);
+  const state = !st ? "checking" : ready ? "ready" : st.installed ? "signin" : "missing";
+  const status = {
+    checking: "Checking…",
+    ready: [st?.signedIn ? "Ready" : "Installed", st?.account, st?.version].filter(Boolean).join(" · "),
+    signin: ["Sign in needed", st?.version].filter(Boolean).join(" · "),
+    missing: "Not installed",
+  }[state];
+
   return (
     <div className={`set-row engine${active ? " active" : ""}`}>
-      <button className="radio" aria-pressed={active} aria-label={`Use ${title}`} disabled={disabled} onClick={onPick}>{active ? <Check size={13} strokeWidth={3} /> : null}</button>
+      <button className="radio" aria-pressed={active} aria-label={`Use ${info.label}`} disabled={!st?.installed} onClick={onPick}>
+        {active ? <Check size={13} strokeWidth={3} /> : null}
+      </button>
+      <span className="eng-glyph" aria-hidden="true">{info.initials}</span>
       <div className="grow">
-        <div className="t">{title}</div>
-        <div className="d">{detail}</div>
-        {children}
+        <div className="t">{info.label}{info.vendor !== info.label && <span className="eng-vendor">{info.vendor}</span>}</div>
+        <div className="d eng-status">
+          <i className={`eng-dot ${state}`} />{status}
+          {state === "missing" && (
+            <button className="eng-link" aria-expanded={showInstall} onClick={() => setShowInstall((v) => !v)}>{showInstall ? "Hide" : "How to install"}</button>
+          )}
+        </div>
+        {st && state === "missing" && showInstall && <Cmd text={st.install} label="install" onCopy={copy} />}
+        {st && state === "signin" && <Cmd text={st.signIn} label="sign-in" onCopy={copy} />}
+        {st && active && st.installed && (
+          <label className="model-input">Model
+            <input key={id} list={`models-${id}`} defaultValue={model} placeholder={st.defaultModel ? `default (${st.defaultModel})` : "default"}
+              spellCheck={false} onBlur={(e) => { const v = e.target.value.trim(); if (v !== model) onModel(v); }} />
+            <datalist id={`models-${id}`}>{st.models.map((m) => <option key={m} value={m} />)}</datalist>
+          </label>
+        )}
       </div>
+    </div>
+  );
+}
+
+function Cmd({ text, label, onCopy }: { text: string; label: string; onCopy: (t: string) => void }) {
+  return (
+    <div className="install">
+      <code className="cmd">{text}</code>
+      <button className="icon-btn sm ghost" onClick={() => onCopy(text)} aria-label={`Copy ${label} command`} title="Copy"><Copy size={13} /></button>
     </div>
   );
 }

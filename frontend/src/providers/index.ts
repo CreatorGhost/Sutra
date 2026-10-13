@@ -5,7 +5,7 @@ import { AgentProvider } from "./agentProvider";
 import { ComposedProvider, LocalSpeechProvider } from "./localSttProvider";
 import { desktop } from "../desktop/bridge";
 import { DEFAULT_SPEECH_MODEL } from "../shared/speechModels";
-import { safeModel, type AgentId } from "../shared/agentProtocol";
+import { AGENT_IDS, isAgentId, safeModel, type AgentId } from "../shared/agentProtocol";
 
 export const PROXY_BASE =
   import.meta.env.VITE_PROXY_URL || "http://localhost:8787";
@@ -70,32 +70,41 @@ export function getProvider(mode: Mode = "hybrid"): Provider {
 /** Where each job runs, from Settings:
  *    stt: always "local" in the desktop app (on-device transcription + speaker separation; the old
  *         stt_engine setting is ignored there), "cloud" everywhere else
- *    ai_engine:  "cloud" | "claude" | "codex" | "cursor" (local agent CLIs, desktop only)
- *  Outside the desktop app both fall back to the cloud. */
+ *    ai_engine:  one of the agent CLIs (claude, codex, cursor, gemini, grok, droid, commandcode);
+ *                ai_model_<id> picks its model.
+ *  On desktop ALL AI (notes, minutes, clean-up, translation, Q&A, Ask Sutra) runs through the user's own
+ *  agent CLI — never the Sutra cloud. No explicit choice ("auto") = the first installed, signed-in engine.
+ *  Outside the desktop app (web/Android) there are no agent CLIs, so both fall back to the cloud. */
 export type SttEngine = "cloud" | "local";
-export type AiEngine = "cloud" | AgentId;
+export type AiEngine = "cloud" | "auto" | AgentId;
 
 export function engineChoice(s: Record<string, unknown>): { stt: SttEngine; ai: AiEngine; sttModel: string; aiModel: string | null } {
   const stt: SttEngine = desktop ? "local" : "cloud";
-  const aiRaw = String(s["ai_engine"] ?? "cloud");
-  const ai: AiEngine = desktop && (aiRaw === "claude" || aiRaw === "codex" || aiRaw === "cursor") ? aiRaw : "cloud";
+  const aiRaw = s["ai_engine"];
+  const ai: AiEngine = !desktop ? "cloud" : isAgentId(aiRaw) ? aiRaw : "auto";
   return {
     stt, ai,
     sttModel: String(s["stt_model"] || DEFAULT_SPEECH_MODEL),
-    aiModel: ai === "cloud" ? null : safeModel(s[`ai_model_${ai}`]),
+    aiModel: ai === "cloud" || ai === "auto" ? null : safeModel(s[`ai_model_${ai}`]),
   };
 }
+
+/** Engines that write full notes (the cloud, or an agent CLI) — unlike the on-device stub. Gates the
+ *  extra passes (auto minutes, transcript clean-up, Your Context) that used to be cloud-only. */
+export const isFullTextEngine = (p: Pick<Provider, "id">) => p.id === "cloud" || p.id.startsWith("agent:");
 
 const composed = new Map<string, Provider>();
 
 export function resolveProvider(s: Record<string, unknown>): Provider {
-  if (s["mode"] === "ondevice") return getProvider("ondevice");
+  if (!desktop && s["mode"] === "ondevice") return getProvider("ondevice");
   const c = engineChoice(s);
   if (c.stt === "cloud" && c.ai === "cloud") return getProvider("hybrid");
-  const key = `${c.stt}:${c.sttModel}|${c.ai}:${c.aiModel ?? ""}`;
+  // Every engine's chosen model, so "auto" uses the right one for whichever engine it lands on.
+  const models = Object.fromEntries(AGENT_IDS.map((id) => [id, safeModel(s[`ai_model_${id}`])])) as Record<AgentId, string | null>;
+  const key = `${c.stt}:${c.sttModel}|${c.ai}|${JSON.stringify(models)}`;
   let p = composed.get(key);
   if (!p) {
-    const text = c.ai === "cloud" ? getProvider("hybrid") : new AgentProvider(c.ai, c.aiModel);
+    const text = c.ai === "cloud" ? getProvider("hybrid") : new AgentProvider(c.ai === "auto" ? null : c.ai, (id) => models[id] ?? null);
     const stt = c.stt === "local" ? new LocalSpeechProvider(c.sttModel) : getProvider("hybrid");
     p = new ComposedProvider(stt, text);
     composed.set(key, p);

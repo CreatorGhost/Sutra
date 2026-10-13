@@ -1,4 +1,5 @@
 import type { Provider } from "../providers/provider";
+import { isFullTextEngine } from "../providers";
 import { EXTRACTION_JSON_SCHEMA, EXTRACT_SYSTEM } from "./aiPrompts";
 import * as graph from "./graph";
 import * as people from "./people";
@@ -194,11 +195,11 @@ export async function processSession(sessionId: number, provider: Provider) {
     await autoMapConversation(r.conversation_id);
   }
   // Auto Minutes-of-Meeting: for conversations the extractor flagged as meetings, generate minutes
-  // unless the user turned auto-generation off (default ON). Cloud-only (on-device extract isn't tuned
+  // unless the user turned auto-generation off (default ON). Cloud or an agent engine (on-device extract isn't tuned
   // for the minutes schema; manual generation stays available everywhere). Best-effort — never fails processing.
   try {
     const autoMinutes = (await repo.getSettings()).auto_minutes !== false;
-    if (autoMinutes && provider.id === "cloud") {
+    if (autoMinutes && isFullTextEngine(provider)) {
       for (const r of extracted) {
         if (!r?.is_meeting) continue;
         try { await generateMinutes(r.conversation_id, provider); }
@@ -207,12 +208,12 @@ export async function processSession(sessionId: number, provider: Provider) {
     }
   } catch (e) { console.warn("auto minutes pass skipped", e); }
   // "Your Context" derivation: distill this session's freshly-written graph into the user's standing
-  // priors. Rule-based, ZERO extra LLM calls, idempotent, non-destructive. Cloud-only (mirrors the
+  // priors. Rule-based, ZERO extra LLM calls, idempotent, non-destructive. Cloud or agent engine (mirrors the
   // auto-minutes gate — on-device extraction doesn't populate the graph the same way) and gated on the
   // context_enabled master toggle (default ON). Best-effort — must NEVER fail session processing.
   try {
     const contextEnabled = (await repo.getSettings()).context_enabled !== false;
-    if (contextEnabled && provider.id === "cloud") {
+    if (contextEnabled && isFullTextEngine(provider)) {
       try { await deriveSessionPriors(sessionId, provider); }
       catch (e) { console.warn("derive priors skipped", sessionId, e); }
     }

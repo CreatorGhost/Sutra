@@ -1,6 +1,6 @@
 import { findPersonByName, getSettings, insertPerson, minutesFor, relabelSpeaker as repoRelabel, sessionConversationIds, setConversationProject, turnVoiceprintsForLabel, upsertPersonVoiceprint } from "./repo";
 import { meanVector } from "./util";
-import { getProvider, type Mode } from "../providers";
+import { isFullTextEngine, resolveProvider } from "../providers";
 import { generateMinutes } from "./minutes";
 
 /** "This is me" / name labeling. Maps a session's speaker (cloud label or voiceprint cluster) to a
@@ -31,10 +31,11 @@ export async function relabelSpeaker(sessionId: number, label: string, opts: { p
  *  the manual Regenerate button is unaffected. Best-effort — swallows every error. */
 async function regenerateMinutesAfterNaming(sessionId: number): Promise<void> {
   try {
-    if ((await getSettings()).auto_minutes === false) return;
-    const mode = String((await getSettings())["mode"] ?? "hybrid") as Mode;
-    const provider = getProvider(mode);
-    if (provider.id !== "cloud") return;
+    const settings = await getSettings();
+    if (settings.auto_minutes === false) return;
+    // The same engine the rest of the app uses (the user's AI agent on desktop), not a fixed cloud one.
+    const provider = resolveProvider(settings);
+    if (!isFullTextEngine(provider)) return;
     for (const cid of await sessionConversationIds(sessionId)) {
       try { if (await minutesFor(cid)) await generateMinutes(cid, provider); }
       catch (e) { console.warn("minutes regen-on-name skipped", cid, e); }
@@ -57,10 +58,10 @@ export async function setProjectForConversation(convId: number, projectId: numbe
  *  grounding context. */
 async function regenerateMinutesForConversation(convId: number): Promise<void> {
   try {
-    if ((await getSettings()).auto_minutes === false) return;
-    const mode = String((await getSettings())["mode"] ?? "hybrid") as Mode;
-    const provider = getProvider(mode);
-    if (provider.id !== "cloud") return;
+    const settings = await getSettings();
+    if (settings.auto_minutes === false) return;
+    const provider = resolveProvider(settings);
+    if (!isFullTextEngine(provider)) return;
     if (await minutesFor(convId)) await generateMinutes(convId, provider);
   } catch (e) { console.warn("minutes regen-on-remap skipped", convId, e); }
 }
