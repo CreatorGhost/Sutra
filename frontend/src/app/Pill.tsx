@@ -123,15 +123,16 @@ function NotchIsland({ st, notch }: { st: PillState; notch: { width: number; hei
   const s = shown ?? st;
   const now = useNow(s.mode === "recording", 500);
   const expanded = open && (hover || peek);
-  const wing = s.mode === "recording" ? 66 : 38;
+  // Hug the camera: just enough beside it for an icon, or the dot + timer while recording.
+  const started = s.recorder.startedAt ?? null;
+  const time = started ? clock(now - started) : "0:00";
+  const wing = s.mode === "recording" ? (time.length > 5 ? 66 : 56) : 30;
   const size = !open
     ? { width: notch.width, height: notch.height }
     : expanded
-      ? { width: Math.max(notch.width + 165, 350), height: notch.height + 58 }
+      ? { width: Math.max(notch.width + 145, 330), height: notch.height + 50 }
       : { width: notch.width + wing * 2, height: notch.height };
   const enter = (on: boolean) => { setHover(on); desktop?.pill.hover(on); };
-  const started = s.recorder.startedAt ?? null;
-  const time = started ? clock(now - started) : "0:00";
 
   let left: React.ReactNode = null, right: React.ReactNode = null, title = "", sub = "", actions: React.ReactNode = null, lead: React.ReactNode = null;
   if (s.mode === "detected") {

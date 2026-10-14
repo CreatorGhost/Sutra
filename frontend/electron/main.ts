@@ -280,8 +280,10 @@ function placePill(): void {
   const n = notchOf(display), bar = pillNotch(display);
   if (n && bar) {
     // Flush with the top edge, centred on the camera.
-    const x = Math.round(display.bounds.x + n.left + n.width / 2 - NOTCH_STAGE.width / 2);
-    pillWin.setBounds({ x, y: display.bounds.y, ...NOTCH_STAGE });
+    // Stage width shares the notch's parity, so the island lands on whole pixels (no soft grey edges).
+    const width = NOTCH_STAGE.width + (Math.round(n.width) % 2);
+    const x = Math.round(display.bounds.x + n.left + n.width / 2 - width / 2);
+    pillWin.setBounds({ x, y: display.bounds.y, width, height: NOTCH_STAGE.height });
     pillWin.setIgnoreMouseEvents(true, { forward: true });
     return;
   }

@@ -665,19 +665,23 @@ html.pill-root, .pill-root body, .pill-root #root { background: transparent !imp
 .ni::before { left: calc(var(--ear) * -1); background: radial-gradient(circle at 0 100%, transparent var(--ear), #000 calc(var(--ear) + 0.5px)); }
 .ni::after { right: calc(var(--ear) * -1); background: radial-gradient(circle at 100% 100%, transparent var(--ear), #000 calc(var(--ear) + 0.5px)); }
 .ni-row { display: grid; align-items: center; flex: 0 0 auto; }
-.ni-wing { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; padding: 0 10px; opacity: 0; transition: opacity 0.2s; }
+.ni-wing { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; padding: 0 7px; opacity: 0; transition: opacity 0.2s; }
 .ni.open .ni-wing { opacity: 1; transition-delay: 0.12s; }
 .ni.expanded .ni-wing { opacity: 0; transition-delay: 0s; } /* the panel below says it in full */
 .ni-wing.r { justify-content: flex-end; }
 .ni-wing .app-icon { width: 16px; height: 16px; border-radius: 4px; }
 .ni-wing .bars { height: 14px; }
-.ni-clock { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.ni-wing > * { flex-shrink: 0; }
+.ni-wing .live-dot { width: 7px; height: 7px; margin-right: 0; vertical-align: 0; }
+/* Tucked behind the camera: no flares, so nothing shows around the notch. */
+.ni:not(.open)::before, .ni:not(.open)::after { width: 0; height: 0; }
+.ni-clock { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
 .ni-dim { color: #8a8a93; }
 .ni-pulse { width: 9px; height: 9px; border-radius: 50%; background: #ff453a; animation: ni-pulse 1.6s ease-in-out infinite; }
 @keyframes ni-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.55); } 50% { box-shadow: 0 0 0 5px rgba(255, 69, 58, 0); } }
 
 .ni-panel {
-  flex: 1; min-height: 0; display: flex; align-items: center; gap: 10px; padding: 0 10px 4px 14px;
+  flex: 1; min-height: 0; display: flex; align-items: center; gap: 10px; padding: 0 10px 6px 12px;
   opacity: 0; transform: translateY(-6px) scale(0.98); transition: opacity 0.18s, transform 0.3s var(--ease); pointer-events: none;
 }
 .ni.expanded .ni-panel { opacity: 1; transform: none; transition-delay: 0.14s; pointer-events: auto; }
@@ -697,8 +701,9 @@ html.pill-root, .pill-root body, .pill-root #root { background: transparent !imp
 .ni-btn:active { transform: scale(0.96); }
 .ni-btn.rec { background: #ff453a; color: #fff; }
 .ni-btn.rec:hover { background: #ff5a50; }
-.ni-btn.rec .rec-ring { border-color: #fff; width: 12px; height: 12px; border-width: 1.5px; }
-.ni-btn.rec .rec-ring::after { background: #fff; width: 5px; height: 5px; }
+/* Even sizes so the dot sits dead centre in the ring (10 inner, 4 dot → 3 px each side). */
+.ni-btn.rec .rec-ring { box-sizing: content-box; border-color: #fff; width: 10px; height: 10px; border-width: 2px; }
+.ni-btn.rec .rec-ring::after { background: #fff; width: 4px; height: 4px; }
 .ni-icon { width: 26px; height: 26px; border-radius: 50%; border: 0; display: grid; place-items: center; background: #1c1c1f; color: #c7c7cc; }
 .ni-icon:hover { background: #2a2a2e; color: #fff; }
 @media (prefers-reduced-motion: reduce) { .ni, .ni-panel, .ni-wing { transition-duration: 0.01s !important; } }
