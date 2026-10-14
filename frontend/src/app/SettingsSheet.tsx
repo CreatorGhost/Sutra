@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from "react";
-import { ArrowLeft, Archive, Bell, Brain, ChevronRight, Plug, Settings2, SlidersHorizontal, Sparkles, UserRound, Users, X } from "lucide-react";
+import { ArrowLeft, Archive, Bell, Brain, ChevronRight, Laptop, Plug, Settings2, SlidersHorizontal, Sparkles, UserRound, Users, X } from "lucide-react";
 import { api } from "../local/sutra";
 import { desktop } from "../desktop/bridge";
 import { useToast } from "./ui";
@@ -13,15 +13,18 @@ import { BackupSection } from "./settings/BackupSection";
 import { RecapSection } from "./settings/RecapSection";
 import { AdvancedSection } from "./settings/AdvancedSection";
 import { AccountSection } from "./settings/AccountSection";
+import { MacSection } from "./settings/MacSection";
 import "./settings/settings.css";
 
 function IntelligenceSection({ settings, put }: SectionProps) {
   return <Intelligence settings={settings} onChange={(p) => put({ ...p, setup_engines: true })} />;
 }
 
-export type SectionId = "general" | "intelligence" | "people" | "context" | "connections" | "backup" | "recap" | "advanced" | "account";
+export type SectionId = "general" | "mac" | "intelligence" | "people" | "context" | "connections" | "backup" | "recap" | "advanced" | "account";
 const SECTIONS: { id: SectionId; label: string; icon: ComponentType<{ size?: number }>; view: ComponentType<SectionProps> }[] = [
   { id: "general", label: "General", icon: Settings2, view: GeneralSection },
+  // Phone/web: pair with Sutra on a Mac, which then transcribes and writes the notes.
+  ...(desktop ? [] : [{ id: "mac" as const, label: "Your Mac", icon: Laptop, view: MacSection }]),
   { id: "intelligence", label: "Intelligence", icon: Sparkles, view: IntelligenceSection },
   { id: "people", label: "People", icon: Users, view: PeopleSection },
   { id: "context", label: "Your context", icon: Brain, view: ContextSection },
