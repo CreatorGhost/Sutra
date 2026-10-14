@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "icon-192.png", "icon-512.png"],
+      includeAssets: ["favicon.png", "icon-192.png", "icon-512.png"],
       manifest: {
         name: "Sutra — Ambient Memory",
         short_name: "Sutra",

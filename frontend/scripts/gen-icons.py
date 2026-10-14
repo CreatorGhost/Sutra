@@ -1,5 +1,5 @@
-# Regenerates every app icon / splash from build/icon.svg (the master logo):
-#   qlmanage -t -s 1254 -o /tmp build/icon.svg && uv run --with pillow scripts/gen-icons.py /tmp/icon.svg.png
+# Regenerates every app icon / splash from one square master image.
+#   uv run --with pillow scripts/gen-icons.py path/to/sutra.png
 from pathlib import Path
 import sys
 from PIL import Image, ImageDraw, ImageFilter
@@ -31,6 +31,7 @@ mask.paste(glyph, ((side - glyph.width) // 2, (side - glyph.height) // 2))
 save(sized(192), "public/icon-192.png")
 save(sized(512), "public/icon-512.png")
 save(sized(1024), "build/icon.png")
+save(sized(64), "public/favicon.png")
 for name, colour in (("trayTemplate", (0, 0, 0)), ("tray-light", (255, 255, 255))):
     for scale, suffix in ((1, ""), (2, "@2x")):
         n = 18 * scale
