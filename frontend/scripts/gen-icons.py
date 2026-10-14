@@ -10,8 +10,8 @@ res = root / "android/app/src/main/res"
 BG = src.getpixel((4, 4))  # the master's own backdrop colour
 
 
-def sized(n):
-    return src.resize((n, n), Image.LANCZOS)
+def sized(n, img=None):
+    return (img or tight).resize((n, n), Image.LANCZOS)
 
 
 def save(img, rel):
@@ -27,9 +27,17 @@ side = max(glyph.size) * 112 // 100
 mask = Image.new("L", (side, side))
 mask.paste(glyph, ((side - glyph.width) // 2, (side - glyph.height) // 2))
 
+# Square crop with the mark filling ~74% — the master's wide margin makes it look small as an icon.
+# Masked shapes (Android adaptive, PWA maskable) keep the full master so the mark stays in their safe zone.
+x0, y0, x1, y1 = g.getbbox()
+half = (y1 - y0) * 100 // 74 // 2
+cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+tight = src.crop((cx - half, cy - half, cx + half, cy + half))
+
 # Web / PWA / Electron dock + electron-builder (it derives .icns/.ico from build/icon.png)
 save(sized(192), "public/icon-192.png")
 save(sized(512), "public/icon-512.png")
+save(sized(512, src), "public/icon-maskable-512.png")
 save(sized(1024), "build/icon.png")
 save(sized(64), "public/favicon.png")
 for name, colour in (("trayTemplate", (0, 0, 0)), ("tray-light", (255, 255, 255))):
@@ -50,7 +58,7 @@ for d, base in (("mdpi", 48), ("hdpi", 72), ("xhdpi", 96), ("xxhdpi", 144), ("xx
     ImageDraw.Draw(m).ellipse((0, 0, base * 4 - 1, base * 4 - 1), fill=255)
     r.putalpha(m.resize((base, base), Image.LANCZOS))
     save(r, f"{res}/mipmap-{d}/ic_launcher_round.png")
-    save(sized(base * 9 // 4), f"{res}/mipmap-{d}/ic_launcher_foreground.png")
+    save(sized(base * 9 // 4, src), f"{res}/mipmap-{d}/ic_launcher_foreground.png")
 
 
 # Splash screens: logo centred on the backdrop colour, edges feathered so there is no seam.
