@@ -158,23 +158,58 @@ export function parseCommandCodeModelList(out: string): ModelsProbe {
 /** Models an ACP session advertises: Cursor's `cursor/list_available_models` ({models:[{value,name}]}),
  *  else the standard `session/new` result (`models.availableModels` or a `model` config option). */
 export function parseAcpModels(listResponse: unknown, session: any): ModelsProbe {
+  // The session's own list is authoritative: its ids are the exact strings session/set_model and
+  // set_config_option accept. Cursor's cursor/list_available_models is a superset whose values drop
+  // the required config suffix ("…opus-5" vs "…opus-5[context=300k]") and that also lists models the
+  // session rejects, so it is only a fallback.
+  const avail = session?.models?.availableModels;
+  if (Array.isArray(avail) && avail.length) {
+    return { models: avail.map((m: any) => String(m?.modelId ?? "")).filter(Boolean), defaultModel: session.models.currentModelId ?? null };
+  }
+  const opt = acpModelOption(session);
+  if (opt) return { models: optionValues(opt), defaultModel: typeof opt.currentValue === "string" ? opt.currentValue : null };
   const listed = (listResponse as any)?.models;
   if (Array.isArray(listed)) {
     const models = listed.map((m: any) => String(m?.value ?? m?.modelId ?? "").trim()).filter(Boolean);
     if (models.length) return { models: [...new Set(models)], defaultModel: null };
   }
-  const avail = session?.models?.availableModels;
-  if (Array.isArray(avail) && avail.length) {
-    return { models: avail.map((m: any) => String(m?.modelId ?? "")).filter(Boolean), defaultModel: session.models.currentModelId ?? null };
-  }
-  const opt = (session?.configOptions ?? []).find((o: any) => o?.category === "model" || o?.id === "model");
-  if (opt) {
-    const values: string[] = [];
-    for (const o of opt.options ?? []) {
-      if (Array.isArray(o?.options)) o.options.forEach((g: any) => g?.value && values.push(String(g.value)));
-      else if (o?.value) values.push(String(o.value));
-    }
-    return { models: values, defaultModel: typeof opt.currentValue === "string" ? opt.currentValue : null };
-  }
   return { models: [], defaultModel: null };
+}
+
+const acpModelOption = (session: any) =>
+  (Array.isArray(session?.configOptions) ? session.configOptions : []).find((o: any) => o?.category === "model" || o?.id === "model");
+
+function optionValues(opt: any): string[] {
+  const values: string[] = [];
+  for (const o of opt?.options ?? []) {
+    if (Array.isArray(o?.options)) o.options.forEach((g: any) => g?.value && values.push(String(g.value)));
+    else if (o?.value) values.push(String(o.value));
+  }
+  return values;
+}
+
+/** "…opus-5[context=300k]" → "…opus-5". */
+const acpBaseModel = (id: string) => (id.includes("[") ? id.slice(0, id.indexOf("[")) : id).trim().toLowerCase();
+
+/** A saved model id matched against the ids an engine now lists: exact, else the first with the same
+ *  base name (a bare "…opus-5" saved before ids carried their config suffix). Unchanged when nothing
+ *  matches — a missing model is reported when it's used, not silently dropped here. */
+export function upgradeModelId(saved: string, offered: string[]): string {
+  if (!saved || offered.includes(saved)) return saved;
+  return offered.find((id) => acpBaseModel(id) === acpBaseModel(saved)) ?? saved;
+}
+
+/** The exact model id this session accepts for a saved choice. A saved id can be stale or missing its
+ *  config suffix (picked from an older list), so it's matched on its base name and upgraded to the
+ *  session's form — the session's current pick first when several share that base. Returns the saved
+ *  id untouched when the session doesn't list its models, and null when the model is gone. */
+export function resolveAcpModelId(wanted: string, session: any): string | null {
+  const opt = acpModelOption(session);
+  const accepted = opt ? optionValues(opt) : (Array.isArray(session?.models?.availableModels) ? session.models.availableModels : []).map((m: any) => String(m?.modelId ?? "")).filter(Boolean);
+  if (!accepted.length || accepted.includes(wanted)) return wanted;
+  const base = acpBaseModel(wanted);
+  const same = accepted.filter((id: string) => acpBaseModel(id) === base);
+  if (!same.length) return null;
+  const current = opt ? opt.currentValue : session?.models?.currentModelId;
+  return same.includes(current) ? current : same[0];
 }

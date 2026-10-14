@@ -32,11 +32,14 @@ async function handle(msg) {
         sessionId: "s1",
         configOptions: [
           { id: "mode", category: "mode", type: "select", currentValue: "agent", options: [{ value: "agent" }, { value: "ask" }] },
-          { id: "model", category: "model", type: "select", currentValue: "m1", options: [{ value: "m1" }, { value: "m2" }] },
+          mode === "suffixed"
+            // Like cursor-agent: ids carry their config inline and only that exact form is accepted.
+            ? { id: "model", category: "model", type: "select", currentValue: "opus[context=300k]", options: [{ value: "opus[context=300k]" }, { value: "sonnet[context=200k]" }] }
+            : { id: "model", category: "model", type: "select", currentValue: "m1", options: [{ value: "m1" }, { value: "m2" }] },
         ],
       });
     case "session/set_config_option":
-      if (msg.params.configId === "model" && (mode === "refuse-model" || msg.params.value !== "m2")) return fail(`Invalid value ${msg.params.value}`);
+      if (msg.params.configId === "model" && (mode === "refuse-model" || msg.params.value !== (mode === "suffixed" ? "opus[context=300k]" : "m2"))) return fail(`Invalid value ${msg.params.value}`);
       state[msg.params.configId] = msg.params.value;
       return reply({ configOptions: [] });
     case "session/prompt": {

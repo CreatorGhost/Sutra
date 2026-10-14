@@ -11,6 +11,8 @@ import { desktop } from "../desktop/bridge";
 import { initMcpBridge } from "../lib/mcpBridge";
 import { initDailyRecap, rescheduleDailyRecap } from "../lib/recapScheduler";
 import { startHostExecutor } from "./pairing/hostExecutor";
+import { AGENT_IDS } from "../shared/agentProtocol";
+import { upgradeModelId } from "../shared/engineProbes";
 
 /** Whether the daily recap is on. The phone scheduler has always treated "unset" as on; on desktop
  *  it's opt-in (a surprise notification from a notes app is unwelcome). */
@@ -65,12 +67,32 @@ export async function rescheduleRecap(): Promise<void> {
   if (Capacitor.isNativePlatform()) await rescheduleDailyRecap();
 }
 
+let modelsChecked = false;
+/** Desktop, once per launch: rewrite saved engine models to the exact ids the engines list now, so the
+ *  picker doesn't show a stale duplicate (Cursor's bare "…opus-5" vs the "…opus-5[context=300k]" its
+ *  sessions accept). Calls already resolve stale ids on their own; this just tidies Settings. */
+export async function upgradeSavedModels(): Promise<void> {
+  if (!desktop || modelsChecked) return;
+  modelsChecked = true;
+  const [settings, agents] = await Promise.all([api.getSettings(), desktop.ai.detect()]);
+  const patch: Record<string, unknown> = {};
+  for (const id of AGENT_IDS) {
+    const saved = settings[`ai_model_${id}`];
+    const offered = agents.find((a) => a.id === id)?.models ?? [];
+    if (typeof saved !== "string" || !saved || !offered.length) continue;
+    const next = upgradeModelId(saved, offered);
+    if (next !== saved) patch[`ai_model_${id}`] = next;
+  }
+  if (Object.keys(patch).length) await api.putSettings(patch);
+}
+
 /** Start everything once. Idempotent (StrictMode double-mounts): the bridge and timers are singletons. */
 export function useIntegrations(): void {
   useEffect(() => {
     void initMcpBridge().catch(() => {});
     void initDailyRecap().catch(() => {}); // native only; no-op elsewhere
     startHostExecutor(); // desktop only; idempotent
+    void upgradeSavedModels().catch(() => {});
     if (desktop && !desktopTimer) {
       desktopTimer = setInterval(() => { void desktopRecapTick().catch(() => {}); }, 60000);
       void desktopRecapTick().catch(() => {});

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseAcpModels, parseClaudeAuthStatus, parseCodexAuthFile, parseCodexLoginStatus, parseCommandCodeModelList, parseCommandCodeStatus,
+  parseAcpModels, resolveAcpModelId, upgradeModelId, parseClaudeAuthStatus, parseCodexAuthFile, parseCodexLoginStatus, parseCommandCodeModelList, parseCommandCodeStatus,
   parseCursorAbout, parseDroidModelList, parseGeminiAuth, parseGrokModels, parseVersion,
 } from "../engineProbes";
 import { validateJson } from "../jsonSchemaLite";
@@ -65,10 +65,33 @@ describe("engine probes", () => {
 
   it("ACP model discovery", () => {
     expect(parseAcpModels({ models: [{ value: "gpt-5", name: "GPT-5" }, { value: "sonnet-4.5", name: "Sonnet" }] }, null).models).toEqual(["gpt-5", "sonnet-4.5"]);
+    // Cursor: the session's suffixed ids win over list_available_models' bare (and over-promising) ones.
+    const cursor = { models: { currentModelId: "opus-5[context=300k]", availableModels: [{ modelId: "opus-5[context=300k]" }, { modelId: "gpt-5[]" }] } };
+    expect(parseAcpModels({ models: [{ value: "opus-5" }, { value: "gpt-5" }, { value: "only-listed" }] }, cursor))
+      .toEqual({ models: ["opus-5[context=300k]", "gpt-5[]"], defaultModel: "opus-5[context=300k]" });
     expect(parseAcpModels(null, { models: { currentModelId: "b", availableModels: [{ modelId: "a" }, { modelId: "b" }] } })).toEqual({ models: ["a", "b"], defaultModel: "b" });
     expect(parseAcpModels(null, { configOptions: [{ id: "model", category: "model", currentValue: "x", options: [{ value: "x" }, { group: "g", options: [{ value: "y" }] }] }] }))
       .toEqual({ models: ["x", "y"], defaultModel: "x" });
     expect(parseAcpModels(null, {})).toEqual({ models: [], defaultModel: null });
+  });
+
+  it("resolves a saved model id to the form the ACP session accepts", () => {
+    const session = { models: { currentModelId: "opus-5[context=1m]", availableModels: [{ modelId: "opus-5[context=300k]" }, { modelId: "opus-5[context=1m]" }, { modelId: "gpt-5[]" }] } };
+    expect(resolveAcpModelId("gpt-5[]", session)).toBe("gpt-5[]");                    // exact
+    expect(resolveAcpModelId("opus-5", session)).toBe("opus-5[context=1m]");          // bare → the session's current pick
+    expect(resolveAcpModelId("GPT-5", session)).toBe("gpt-5[]");                      // base match ignores case
+    expect(resolveAcpModelId("retired-model", session)).toBeNull();                   // gone
+    expect(resolveAcpModelId("anything", {})).toBe("anything");                       // session doesn't list models
+    const opt = { configOptions: [{ id: "model", category: "model", currentValue: "x[a]", options: [{ value: "x[a]" }, { group: "g", options: [{ value: "y[b]" }] }] }] };
+    expect(resolveAcpModelId("y", opt)).toBe("y[b]");
+  });
+
+  it("upgrades a saved model id to the form the engine lists now", () => {
+    const offered = ["opus-5[context=300k]", "gpt-5[]"];
+    expect(upgradeModelId("opus-5", offered)).toBe("opus-5[context=300k]");
+    expect(upgradeModelId("gpt-5[]", offered)).toBe("gpt-5[]");
+    expect(upgradeModelId("retired", offered)).toBe("retired");      // left for the call to report
+    expect(upgradeModelId("", offered)).toBe("");
   });
 });
 

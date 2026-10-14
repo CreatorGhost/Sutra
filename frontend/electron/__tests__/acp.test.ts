@@ -46,7 +46,13 @@ describe("ACP one-shot runner", () => {
 
   it("surfaces authentication and model errors with the agent's name", async () => {
     await expect(runAcpPrompt(opts("authfail", { authMethodId: "cached_token" }), kill)).rejects.toThrow(/^Fake: Not authenticated/);
-    await expect(runAcpPrompt(opts("ok", { model: "nope" }), kill)).rejects.toThrow(/couldn't switch to the model “nope”/);
+    await expect(runAcpPrompt(opts("ok", { model: "nope" }), kill)).rejects.toThrow(/no longer offers the model “nope”/);
+    await expect(runAcpPrompt(opts("refuse-model", { model: "m2" }), kill)).rejects.toThrow(/couldn't switch to the model “m2”: Invalid value m2/);
+  });
+
+  it("upgrades a saved bare model id to the exact form the session accepts", async () => {
+    const e = echo((await runAcpPrompt(opts("suffixed", { model: "opus" }), kill)).text);
+    expect(e.state.model).toBe("opus[context=300k]");
   });
 
   it("reports the agent's stderr when it dies, and times out a hung agent", async () => {

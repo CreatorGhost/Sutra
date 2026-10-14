@@ -10,6 +10,7 @@
 // AcpSessionRuntime / AcpTextGeneration (T3 Code fork, MIT, © T3 Tools Inc.) without the Effect library;
 // see THIRD_PARTY_NOTICES.md.
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { resolveAcpModelId } from "../src/shared/engineProbes";
 
 export interface AcpOptions {
   /** Starts the agent (already resolved binary + args, cwd and env applied). */
@@ -144,12 +145,15 @@ async function configure(o: AcpOptions, conn: AcpConnection, session: any, sessi
     } catch { /* read-only mode is a nicety; the empty cwd + refused permissions still apply */ }
   }
   if (o.model) {
+    // A saved id may be stale or lack the session's config suffix; send the form the session accepts.
+    const model = resolveAcpModelId(o.model, session);
+    if (!model) throw new AcpError(`${o.label} no longer offers the model “${o.model}”. Pick another model in Settings → Intelligence.`);
     const modelOpt = findConfig(session, "model");
     try {
-      if (modelOpt) await conn.request("session/set_config_option", { sessionId, configId: modelOpt.id, value: o.model });
-      else await conn.request("session/set_model", { sessionId, modelId: o.model });
+      if (modelOpt) await conn.request("session/set_config_option", { sessionId, configId: modelOpt.id, value: model });
+      else await conn.request("session/set_model", { sessionId, modelId: model });
     } catch (e: any) {
-      throw new AcpError(`${o.label} couldn't switch to the model “${o.model}”: ${e?.message ?? e}. Pick another model in Settings → Intelligence.`);
+      throw new AcpError(`${o.label} couldn't switch to the model “${model}”: ${e?.message ?? e}. Pick another model in Settings → Intelligence.`);
     }
   }
 }
