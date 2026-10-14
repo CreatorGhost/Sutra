@@ -39,6 +39,9 @@ export default defineConfig({
       outDir: resolve(__dirname, "out/renderer"),
       rollupOptions: { input: { main: resolve(__dirname, "index.html") } },
     },
-    server: { port: 5173 },
+    // Its own port, on one address, and fail loudly if it's taken: with a bare `port` Vite could share
+    // 5173 with another project on the other address family (::1 vs 127.0.0.1) and the window might
+    // load that app instead. (The web build keeps 5173 — vite.config.ts — which the backend's CORS allows.)
+    server: { host: "127.0.0.1", port: 5199, strictPort: true },
   },
 });

@@ -39,7 +39,8 @@ describe("model archives", () => {
     writeFileSync(join(src, "encoder.int8.onnx"), Buffer.alloc(200_000, 7));
     writeFileSync(join(src, "tokenizer", "vocab.json"), "{}");
     const archive = join(root, "m.tar.bz2");
-    execFileSync("tar", ["-cjf", archive, "-C", join(root, "src"), "sherpa-onnx-test-model"]);
+    // COPYFILE_DISABLE: macOS tar would otherwise add AppleDouble "._*" entries to the fixture.
+    execFileSync("tar", ["-cjf", archive, "-C", join(root, "src"), "sherpa-onnx-test-model"], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
     const out = join(root, "out");
     mkdirSync(out);
     await jsExtract(archive, out);
