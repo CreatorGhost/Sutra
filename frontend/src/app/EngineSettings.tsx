@@ -4,15 +4,12 @@ import { useEffect, useState } from "react";
 import { Check, Copy, RotateCw } from "lucide-react";
 import { api } from "../local/sutra";
 import { desktop, type AgentStatus } from "../desktop/bridge";
-import { AGENTS, AGENT_IDS, agentReady, type AgentId } from "../shared/agentProtocol";
+import { AGENTS, AGENT_IDS, agentReady, autoEngine, type AgentId } from "../shared/agentProtocol";
 import { engineChoice } from "../providers";
 import { EngineLogo } from "./engineLogos";
 import "./engines.css";
 
-/** The engine "automatic" lands on: signed in for sure first, then signed in as far as we can tell. */
-export function autoEngine(list: AgentStatus[] | null): AgentStatus | null {
-  return list?.find((s) => s.installed && s.signedIn === true) ?? list?.find(agentReady) ?? null;
-}
+export { autoEngine };
 
 const rank = (s: AgentStatus) => (agentReady(s) ? 0 : s.installed ? 1 : 2);
 

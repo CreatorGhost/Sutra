@@ -122,6 +122,11 @@ export interface AgentStatus {
 /** Usable now: installed and not known to be signed out. */
 export const agentReady = (s: Pick<AgentStatus, "installed" | "signedIn">) => s.installed && s.signedIn !== false;
 
+/** The engine "automatic" lands on: signed in for sure first, then signed in as far as we can tell. */
+export function autoEngine(list: AgentStatus[] | null): AgentStatus | null {
+  return list?.find((s) => s.installed && s.signedIn === true) ?? list?.find(agentReady) ?? null;
+}
+
 /** A model name from Settings goes on a command line — keep it to a safe charset. */
 export function safeModel(m: unknown): string | null {
   const s = String(m ?? "").trim();

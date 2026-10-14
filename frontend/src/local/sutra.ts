@@ -23,11 +23,18 @@ async function currentMode(): Promise<Mode> {
 }
 async function provider() { return resolveProvider(await repo.getSettings()); }
 
+/** Window event after settings are saved; `detail` = the keys that changed. */
+export const SETTINGS_CHANGED_EVENT = "sutra:settings";
+
 export const api = {
   health: async () => ({ status: "ok", mode: await currentMode(), privacy: MODE_COPY[await currentMode()].audio }),
   modeCopy: () => MODE_COPY,
   getSettings: () => repo.getSettings(),
-  putSettings: (data: Record<string, unknown>) => repo.putSettings(data),
+  putSettings: async (data: Record<string, unknown>) => {
+    const next = await repo.putSettings(data);
+    try { window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, { detail: Object.keys(data) })); } catch { /* non-DOM */ }
+    return next;
+  },
 
   createSession: (device?: string, kind?: repo.SessionKind, sourceApp?: string | null) => repo.createSession(device, kind, sourceApp),
   listSessions: () => repo.listSessions(),
