@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1254 1254">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.47" r="0.7">
+      <stop offset="0" stop-color="#03232b"/>
+      <stop offset="1" stop-color="#01070b"/>
+    </radialGradient>
+    <linearGradient id="band" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6ffcff"/>
+      <stop offset="1" stop-color="#14e4ee"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2ff3fb"/>
+      <stop offset="1" stop-color="#0aa9b4"/>
+    </linearGradient>
+    <linearGradient id="lens" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#05353d"/>
+      <stop offset="1" stop-color="#021a20"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+    <filter id="lift" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="0" stdDeviation="16" flood-color="#001419" flood-opacity="0.85"/>
+    </filter>
+  </defs>
+  <rect width="1254" height="1254" fill="url(#bg)"/>
+
+  <g fill="none" stroke-width="140" stroke-linecap="round">
+    <!-- Glow behind the whole mark -->
+    <g stroke="#12e8f2" opacity="0.6" filter="url(#glow)">
+      <path d="M772 282 L486 418 C360 478 400 590 560 588 L700 598 C860 606 890 700 768 706 L486 842"/>
+    </g>
+    <!-- The fold: left turn, middle, right turn — sits behind the two bands -->
+    <path stroke="url(#fold)" d="M520 402 C370 470 400 590 560 588 L700 598 C870 606 880 712 740 718"/>
+    <!-- Top and bottom bands, lifted over the fold -->
+    <g stroke="url(#band)" filter="url(#lift)">
+      <path d="M772 282 L486 418"/>
+      <path d="M770 704 L486 842"/>
+    </g>
+  </g>
+
+  <!-- The lens with a voice waveform -->
+  <path d="M424 588 Q628 448 842 600 Q628 742 424 588 Z" fill="url(#lens)" stroke="#6ffcff" stroke-opacity="0.5" stroke-width="5"/>
+  <g stroke="#3ff6ff" stroke-width="26" stroke-linecap="round">
+    <line x1="507" y1="590" x2="507" y2="606"/>
+    <line x1="567" y1="562" x2="567" y2="634"/>
+    <line x1="627" y1="540" x2="627" y2="656"/>
+    <line x1="687" y1="564" x2="687" y2="636"/>
+    <line x1="747" y1="592" x2="747" y2="608"/>
+  </g>
+</svg>
