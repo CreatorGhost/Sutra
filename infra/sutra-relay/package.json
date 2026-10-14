@@ -1,0 +1,25 @@
+{
+  "name": "sutra-relay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Your own Cloudflare relay so a paired phone can reach Sutra on your Mac from anywhere.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "node scripts/e2e.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261006.1",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vitest": "4.1.11",
+    "wrangler": "4.149.0"
+  },
+  "overrides": {
+    "vite": "$vite"
+  }
+}

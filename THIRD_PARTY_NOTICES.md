@@ -14,6 +14,7 @@ Ported (logic re-implemented in plain Node/TypeScript, without the Effect librar
 - `frontend/src/shared/engineProbes.ts` — `parseCursorAboutOutput`, `parseGrokModelsCliOutput`, `parseDroidModelList`, `parseCommandCodeStatus`, `parseCommandCodeModelList`.
 - `extractJson` in `frontend/src/shared/agentProtocol.ts` — after `extractJsonObject` (`packages/shared/src/schemaJson.ts`).
 - `frontend/src/app/engineLogos.tsx` — the engine marks from `apps/web/src/components/Icons.tsx` (Claude, OpenAI, Cursor, Grok, Droid, Command Code), and the model picker's layout (`EnginePicker.tsx`: engine rail, search, favorites, ⌘1–9) after `ModelPickerContent`, `ModelPickerSidebar` and `ModelListRow`. The logos are their vendors' trademarks, used only to identify each tool.
+- `infra/sutra-relay/` — the self-hosted Cloudflare relay for phones is modelled on `infra/viewcode-relay`: its package layout and `wrangler.jsonc`, the bearer host secret compared as SHA-256 digests in constant time (`isHostAuthorized`, `timingSafeEqualBytes`), a newer host connection replacing the old one, routing kept free of Workers APIs for Node tests, and the hibernation handlers (`sendableCloseCode`, skipping stream ids held by surviving sockets).
 
 ```
 MIT License
