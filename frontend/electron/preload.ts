@@ -58,6 +58,23 @@ contextBridge.exposeInMainWorld(
       remove: (id: string) => ipcRenderer.invoke("sutra:mcp:remove", id),
       reveal: (path: string) => ipcRenderer.invoke("sutra:mcp:reveal", path),
     }),
+    pairing: Object.freeze({
+      status: () => ipcRenderer.invoke("sutra:pair:status"),
+      newOffer: () => ipcRenderer.invoke("sutra:pair:newOffer"),
+      cancelOffer: () => ipcRenderer.invoke("sutra:pair:cancelOffer"),
+      removeDevice: (id: string) => ipcRenderer.invoke("sutra:pair:removeDevice", id),
+      setRelay: (p: unknown) => ipcRenderer.invoke("sutra:pair:setRelay", p),
+      setLan: (on: boolean) => ipcRenderer.invoke("sutra:pair:setLan", on === true),
+      onChange: (cb: (u: unknown) => void) => listen("sutra:pair:changed", cb),
+      // The host side of phone requests (src/app/pairing/hostExecutor.ts).
+      serve: (cb: (req: unknown) => void) => {
+        const off = listen("sutra:pair:exec", cb);
+        ipcRenderer.send("sutra:pair:ready");
+        return off;
+      },
+      result: (r: unknown) => ipcRenderer.send("sutra:pair:result", r),
+      hostChanged: () => ipcRenderer.send("sutra:pair:hostChanged"),
+    }),
     backup: Object.freeze({
       save: (json: string, filename: string) => ipcRenderer.invoke("sutra:backup:save", json, filename),
     }),

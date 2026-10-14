@@ -21,6 +21,7 @@ import { MeetingDetector } from "./meetingDetector";
 import { detectAgents, runAgent } from "./agents";
 import { mcpInstall, mcpRemove, mcpSnippet, mcpStatus, type McpClientId } from "./mcpConnect";
 import { cancelSpeechDownload, deleteSpeechModel, downloadSpeechModel, speechStatus, transcribeSpeech } from "./speech/service";
+import { initPairing, stopPairing } from "./pairing";
 import { macAppCandidates, type Detection, type TrackerUpdate } from "../src/shared/meetingRules";
 import { isAgentId, type AgentId, type AgentRequest } from "../src/shared/agentProtocol";
 
@@ -460,6 +461,8 @@ if (!app.requestSingleInstanceLock()) {
       if (existsSync(icon)) app.dock?.setIcon(nativeImage.createFromPath(icon));
     }
     registerIpc();
+    // Phones paired in Settings → Phones send audio and AI jobs here (electron/pairing/*).
+    initPairing(() => mainWin);
     createMainWindow();
     createPillWindow();
     tray = new Tray(trayImage());
@@ -485,6 +488,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     quitting = true;
     detector.stop();
+    void stopPairing();
   });
   app.on("window-all-closed", () => {
     // Windows are hidden, not closed, until quit — nothing to do here.
