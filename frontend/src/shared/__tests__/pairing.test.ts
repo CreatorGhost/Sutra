@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   b64u, deriveLinkKey, deriveSessionKeys, FrameCipher, fromB64u, generateIdentity, newStorageKey, openAtRest,
   openPairBox, randomBytes, sealAtRest, sealPairBox, utf8,
@@ -121,8 +121,7 @@ describe("secure link", () => {
     const events: string[] = [];
     phone.link.onEvent((e) => events.push(e));
     await host.link.emit("host.changed");
-    await new Promise((r) => setTimeout(r, 10));
-    expect(events).toEqual(["host.changed"]);
+    await vi.waitFor(() => expect(events).toEqual(["host.changed"]));
     phone.link.close();
 
     // Second connection: no code, just the stored link key.
