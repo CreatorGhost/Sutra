@@ -22,6 +22,8 @@ Status key: ✅ verified here · 🧪 built and unit-tested, needs a real Mac/Wi
 | **People** | Rename, "This is me", voice-linked badge | ✅ |
 | **AI engines** | Claude Code, Codex, Cursor Agent, Gemini CLI, Grok, Droid, Command Code, with detection of whether each is installed, signed in, and which account and models it has | ✅ Claude end to end · 🧪 others (sign-in errors verified) |
 | **MCP** | One-click "Connect" for Claude Code, Codex, Cursor, Gemini CLI and Claude Desktop, so your own agent sessions can read your Sutra memory | ✅ end to end with real MCP clients · 🧪 inside the packaged app |
+| **Pair your phone** | Scan a QR on the Mac (Settings → Phones) with the phone (Settings → Your Mac). The phone records; the Mac transcribes with its local model and writes the notes with your AI engine; finished meetings appear on both. End-to-end encrypted. If the Mac can't be reached, recordings wait on the phone, encrypted, and are deleted once transcribed. | ✅ full stack in the sandbox (real Mac host + real relay under wrangler dev + real phone code; web phone paired over the LAN) · 🧪 Android build, camera scan, your Mac |
+| **Reach your Mac from anywhere** | Your own Cloudflare relay (`infra/sutra-relay`, guide in `docs/RELAY.md`); it only forwards encrypted frames | ✅ wrangler dev · 🧪 a real Cloudflare deploy |
 | **Backup & restore** | Export or import everything as one file (works on desktop and phone) | ✅ |
 | **Daily recap** | Desktop notification at the time you choose; on the phone it's a native notification | 🧪 |
 | **Accounts / cloud sync** | Hidden on desktop; available in the phone and web app | ✅ |
