@@ -297,9 +297,11 @@ function placePill(): void {
 }
 
 type PillMode = "hidden" | "detected" | "recording" | "processing" | "done";
-function pillState(): { mode: PillMode; app?: string | null; service?: string; icon?: string; recorder: RecorderSnapshot; conversationId?: number | null; notch: { width: number; height: number } | null } {
-  const base = { recorder, app: detection.active?.app ?? recorder.app, service: detection.active?.service, icon: detection.active?.icon, notch: pillNotch() };
-  if (pillHidden && recorder.status !== "idle") return { ...base, mode: "hidden" };
+function pillState(): { mode: PillMode; app?: string | null; service?: string; icon?: string; recorder: RecorderSnapshot; conversationId?: number | null; notch: { width: number; height: number } | null; tucked: boolean } {
+  const base = { recorder, app: detection.active?.app ?? recorder.app, service: detection.active?.service, icon: detection.active?.icon, notch: pillNotch(),
+    tucked: pillHidden && recorder.status !== "idle" };
+  // Hidden: on the notch the island tucks behind the camera (hovering it still opens Stop); elsewhere it hides.
+  if (pillHidden && recorder.status !== "idle" && !base.notch) return { ...base, mode: "hidden" };
   if (recorder.status === "recording" || recorder.status === "starting") return { ...base, mode: "recording", app: recorder.app ?? base.app };
   if (recorder.status === "processing") return { ...base, mode: "processing", app: recorder.app ?? base.app };
   if (doneFlash && doneFlash.until > Date.now()) return { ...base, mode: "done", conversationId: doneFlash.conversationId };
@@ -343,7 +345,6 @@ function recorderCall(method: "start" | "stop", arg?: unknown): void {
 }
 
 function startRecording(): void {
-  autoStop.recording(detection.active ?? null);
   recorderCall("start", { app: detection.active?.app ?? null });
 }
 function stopRecording(): void {
@@ -360,7 +361,11 @@ function onRecorderState(snap: RecorderSnapshot): void {
     if (doneTimer) clearTimeout(doneTimer);
     doneTimer = setTimeout(() => { doneFlash = null; pushPill(); }, 9100);
   }
-  if (snap.status !== "recording" && snap.status !== "starting") autoStop.idle();
+  const capturing = (s: string) => s === "recording" || s === "starting";
+  // Any recording (island, tray or the app window) follows the call it's for — the one detected now,
+  // or the first one detected while it runs.
+  if (capturing(snap.status) && !capturing(prev)) autoStop.recording(detection.active ?? null);
+  if (!capturing(snap.status)) autoStop.idle();
   pushPill();
   if (quitAfterStop && snap.status === "idle") { quitting = true; app.quit(); }
 }

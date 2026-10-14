@@ -38,6 +38,8 @@ export interface PillState {
   conversationId?: number | null;
   /** Set on a MacBook's notched screen: the pill becomes an island around the camera. */
   notch?: { width: number; height: number } | null;
+  /** Hidden by the user while recording: tucked behind the camera; hovering the notch still opens it. */
+  tucked?: boolean;
 }
 
 export type McpClientId = "claude-code" | "codex" | "cursor" | "gemini" | "claude-desktop";
