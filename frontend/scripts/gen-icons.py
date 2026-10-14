@@ -1,8 +1,8 @@
-# Regenerates every app icon / splash from one square master image.
-#   uv run --with pillow scripts/gen-icons.py path/to/sutra.png
+# Regenerates every app icon / splash from build/icon.svg (the master logo):
+#   qlmanage -t -s 1254 -o /tmp build/icon.svg && uv run --with pillow scripts/gen-icons.py /tmp/icon.svg.png
 from pathlib import Path
 import sys
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw
 
 src = Image.open(sys.argv[1]).convert("RGB")
 root = Path(__file__).resolve().parent.parent
@@ -39,7 +39,6 @@ save(sized(192), "public/icon-192.png")
 save(sized(512), "public/icon-512.png")
 save(sized(512, src), "public/icon-maskable-512.png")
 save(sized(1024), "build/icon.png")
-save(sized(64), "public/favicon.png")
 for name, colour in (("trayTemplate", (0, 0, 0)), ("tray-light", (255, 255, 255))):
     for scale, suffix in ((1, ""), (2, "@2x")):
         n = 18 * scale
@@ -61,13 +60,11 @@ for d, base in (("mdpi", 48), ("hdpi", 72), ("xhdpi", 96), ("xxhdpi", 144), ("xx
     save(sized(base * 9 // 4, src), f"{res}/mipmap-{d}/ic_launcher_foreground.png")
 
 
-# Splash screens: logo centred on the backdrop colour, edges feathered so there is no seam.
+# Splash screens: logo centred on the backdrop colour (the master's background is flat, so no seam).
 def splash(w, h):
     out = Image.new("RGB", (w, h), BG)
     n = min(w, h) * 6 // 10
-    feather = Image.new("L", (n, n))
-    ImageDraw.Draw(feather).ellipse((n // 10, n // 10, n * 9 // 10, n * 9 // 10), fill=255)
-    out.paste(sized(n), ((w - n) // 2, (h - n) // 2), feather.filter(ImageFilter.GaussianBlur(n // 12)))
+    out.paste(sized(n), ((w - n) // 2, (h - n) // 2))
     return out
 
 
