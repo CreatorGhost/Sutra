@@ -184,12 +184,14 @@ export function agentInvocation(id: AgentId, req: AgentRequest, tmp: string, sep
   const ws = req.workspace ?? [];
   switch (id) {
     case "claude": {
-      // Tools, slash commands/skills, hooks and session files all off: a pure text completion. Asking about
-      // a project's code: only the read-only tools (read, search, list), pre-approved, in its folders.
+      // Tools, slash commands/skills, hooks, MCP servers and session files all off: a pure text completion.
+      // Asking about a project's code: only the read-only tools (read, search, list), pre-approved, with its
+      // folders added — the run itself stays in the private temp dir, so the project's own .mcp.json /
+      // .claude settings never load (--strict-mcp-config: no MCP servers but the ones we pass, i.e. none).
       const tools = ws.length ? READ_ONLY_CLAUDE_TOOLS : "";
       const args = ["-p", "--output-format", "json", "--tools", tools, ...(ws.length ? ["--allowedTools", tools] : []), "--disable-slash-commands",
-        "--permission-mode", "dontAsk", "--settings", JSON.stringify({ disableAllHooks: true }), "--no-session-persistence"];
-      for (const dir of ws.slice(1)) args.push("--add-dir", dir);
+        "--permission-mode", "dontAsk", "--settings", JSON.stringify({ disableAllHooks: true }), "--strict-mcp-config", "--no-session-persistence"];
+      for (const dir of ws) args.push("--add-dir", dir);
       if (model) args.push("--model", model);
       if (req.schema) args.push("--json-schema", JSON.stringify(req.schema));
       return { args };
@@ -197,9 +199,9 @@ export function agentInvocation(id: AgentId, req: AgentRequest, tmp: string, sep
     case "codex": {
       const outFile = `${tmp}${sep}last-message.txt`;
       const schemaFile = req.schema ? `${tmp}${sep}schema.json` : undefined;
-      // Read-only sandbox: it may read (a project's folder too, when asked about one) but never write.
+      // Read-only sandbox: it may read (a project's folder too, by absolute path, when asked about one) but
+      // never write. It runs in the private temp dir, never rooted in the project, so no project config loads.
       const args = ["exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "--color", "never", "-o", outFile];
-      if (ws.length) args.push("-C", ws[0]);
       if (schemaFile) args.push("--output-schema", schemaFile);
       if (model) args.push("-m", model);
       args.push("-");
@@ -207,8 +209,10 @@ export function agentInvocation(id: AgentId, req: AgentRequest, tmp: string, sep
     }
     case "gemini": {
       // `-p ""` = headless; the real prompt comes on stdin. Plan mode is Gemini's read-only mode.
+      // --skip-trust only ever applies to the private empty temp dir the run starts in; a project's folders
+      // are added for reading, so their .gemini/settings.json (MCP servers, hooks) is never loaded.
       const args = ["-p", "", "--output-format", "json", "--approval-mode", "plan", "--skip-trust"];
-      if (ws.length > 1) args.push("--include-directories", ws.slice(1).join(","));
+      if (ws.length) args.push("--include-directories", ws.join(","));
       if (model && model !== "auto") args.push("-m", model);
       return { args };
     }

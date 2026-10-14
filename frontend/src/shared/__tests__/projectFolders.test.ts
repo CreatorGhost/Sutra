@@ -94,23 +94,25 @@ describe("Ask inside a project folder", () => {
     expect(buildAgentPrompt({ system: "s", user: "u" }, false)).toContain("Do not use tools");
   });
 
-  it("Claude Code gets only read/search tools, pre-approved, with the extra folders added", () => {
+  it("Claude Code gets only read/search tools, pre-approved, with every folder added and no project MCP", () => {
     const a = agentInvocation("claude", req, "/tmp/x").args;
     expect(a[a.indexOf("--tools") + 1]).toBe(READ_ONLY_CLAUDE_TOOLS);
     expect(a[a.indexOf("--allowedTools") + 1]).toBe("Read,Grep,Glob");
-    expect(a[a.indexOf("--add-dir") + 1]).toBe("/code/acme-api");
+    expect(a.filter((_, i) => a[i - 1] === "--add-dir")).toEqual(["/code/acme", "/code/acme-api"]);
+    expect(a).toContain("--strict-mcp-config");
     expect(a).toContain("dontAsk");
     const plain = agentInvocation("claude", { system: "s", user: "u" }, "/tmp/x").args;
     expect(plain[plain.indexOf("--tools") + 1]).toBe("");
     expect(plain).not.toContain("--allowedTools");
   });
 
-  it("Codex stays in its read-only sandbox, rooted in the folder; Gemini stays in plan mode", () => {
+  it("Codex stays in its read-only sandbox, never rooted in the folder; Gemini stays in plan mode", () => {
     const c = agentInvocation("codex", req, "/tmp/x").args;
     expect(c.slice(c.indexOf("-s"), c.indexOf("-s") + 2)).toEqual(["-s", "read-only"]);
-    expect(c[c.indexOf("-C") + 1]).toBe("/code/acme");
+    // Rooting Codex in the project (-C) would load that project's own config.
+    expect(c).not.toContain("-C");
     const g = agentInvocation("gemini", req, "/tmp/x").args;
     expect(g[g.indexOf("--approval-mode") + 1]).toBe("plan");
-    expect(g[g.indexOf("--include-directories") + 1]).toBe("/code/acme-api");
+    expect(g[g.indexOf("--include-directories") + 1]).toBe("/code/acme,/code/acme-api");
   });
 });

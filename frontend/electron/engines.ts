@@ -101,7 +101,8 @@ export const probeEngine = (id: AgentId, bin: string) => PROBES[id](bin);
 
 /** Run one prompt through an engine in `dir` (a private empty temp dir) and return the raw reply text,
  *  plus the structured output when the CLI enforced the schema itself. */
-export async function runEngine(id: AgentId, bin: string, req: AgentRequest, prompt: string, dir: string, timeoutMs: number, cwd = dir): Promise<{ text: string; structured?: unknown }> {
+export async function runEngine(id: AgentId, bin: string, req: AgentRequest, prompt: string, dir: string, timeoutMs: number): Promise<{ text: string; structured?: unknown }> {
+  const cwd = dir;
   const info = AGENTS[id];
   if (info.protocol === "acp") {
     const inv = acpInvocation(id, req.model, process.env);

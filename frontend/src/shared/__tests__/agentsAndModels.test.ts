@@ -33,7 +33,7 @@ describe("agent invocations", () => {
   it("claude: print mode, JSON envelope, tools/slash commands/hooks off, schema enforced by the CLI", () => {
     const inv = agentInvocation("claude", { system: "s", user: "u", schema, model: "sonnet" }, "/tmp/x");
     expect(inv.args).toEqual(["-p", "--output-format", "json", "--tools", "", "--disable-slash-commands", "--permission-mode", "dontAsk",
-      "--settings", '{"disableAllHooks":true}', "--no-session-persistence", "--model", "sonnet", "--json-schema", JSON.stringify(schema)]);
+      "--settings", '{"disableAllHooks":true}', "--strict-mcp-config", "--no-session-persistence", "--model", "sonnet", "--json-schema", JSON.stringify(schema)]);
   });
   it("codex: exec, read-only sandbox, schema + last-message files, prompt on stdin", () => {
     const inv = agentInvocation("codex", { system: "s", user: "u", schema }, "/tmp/x");
