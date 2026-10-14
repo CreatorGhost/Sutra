@@ -1,7 +1,8 @@
 // The recorder: ONE place that owns "are we recording?" for the whole app — the sidebar button, the
 // live view, the tray and the pill all read/drive this. It picks the capture path from the runtime:
 //   • desktop app / Chrome-Edge → meeting capture (your mic + the call's audio, two channels)
-//   • phone / other browsers    → mic-only ambient capture (VAD-cut windows)
+//   • phone / other browsers    → mic-only ambient capture (VAD-cut windows); on a phone paired with a
+//                                  Mac, each window is saved (encrypted) first and sent when the Mac is reachable
 // Every state change is published to the Electron main process (pill + tray) when running on desktop,
 // and window.__sutraRecorder lets the main process start/stop with a user gesture (see electron/main.ts).
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -15,6 +16,8 @@ import { desktop, type RecorderSnapshot } from "../desktop/bridge";
 import { notifyDataChanged } from "./events";
 import { friendlyError } from "./ui";
 import { localSttReady } from "./Intelligence";
+import { pairingActive } from "../pairing/model";
+import { outbox } from "../pairing/runtime";
 
 export type RecStatus = RecorderSnapshot["status"];
 
@@ -28,6 +31,8 @@ export interface RecorderState {
   turns: any[];
   inflight: number;
   error: string | null;
+  /** Something worth saying that isn't an error (e.g. the recording is waiting on the phone for the Mac). */
+  notice: string | null;
   sessionId: number | null;
   /** The conversation the most recent recording produced. */
   lastConversationId: number | null;
@@ -44,8 +49,11 @@ interface ActiveSession { stop(): Promise<void>; teardown(): void }
 
 const INITIAL: RecorderState = {
   status: "idle", startedAt: null, app: null, mode: null, level: 0, turns: [], inflight: 0,
-  error: null, sessionId: null, lastConversationId: null,
+  error: null, notice: null, sessionId: null, lastConversationId: null,
 };
+
+export const SAVED_FOR_MAC = "Saved on your phone — it'll be transcribed when your Mac is reachable.";
+const PART_FAILED = "Part of this recording couldn't be transcribed. It's kept on your phone — retry it in Settings → Your Mac.";
 
 const Ctx = createContext<Recorder | null>(null);
 
@@ -112,11 +120,26 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     const uploads: Promise<unknown>[] = [];
     let inflight = 0;
     let lastCut = Date.now();
+    // Paired with a Mac: windows go to the phone's encrypted queue, and the Mac's transcript comes back
+    // through it whenever the Mac is reachable.
+    const queue = !desktop && pairingActive(await api.getSettings()) ? outbox() : null;
+    queue?.begin(s.id);
+    const unsubscribe = queue?.subscribe((e) => {
+      if ((e.t !== "ingested" && e.t !== "failed") || e.sessionId !== s.id) return;
+      patch({ inflight: --inflight });
+      if (e.t === "failed") patch({ error: PART_FAILED });
+      else if (e.result?.turns?.length) patch((st) => ({ turns: [...st.turns, ...e.result.turns] }));
+    });
     const ctrl = new CaptureController({
       onWindow: (blob, idx) => {
         const windowStartMs = lastCut;
         lastCut = Date.now();
         patch({ inflight: ++inflight });
+        if (queue) {
+          uploads.push(queue.enqueue(s.id, idx, blob, { filename: `window-${idx}.${ext}`, windowStartMs })
+            .catch((e) => patch({ error: friendlyError(e), inflight: --inflight })));
+          return;
+        }
         uploads.push(
           api.ingestWindow(s.id, blob, idx, `window-${idx}.${ext}`, windowStartMs)
             .then((r: any) => { if (r?.turns?.length) patch((st) => ({ turns: [...st.turns, ...r.turns] })); })
@@ -129,7 +152,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     });
     let stopped = false;
     session.current = {
-      teardown: () => { void ctrl.stop(); },
+      teardown: () => { unsubscribe?.(); void ctrl.stop(); },
       stop: async () => {
         if (stopped) return;
         stopped = true;
@@ -138,12 +161,21 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
         try {
           await Promise.allSettled(uploads);
           await api.closeSession(s.id);
-          const r: any = await api.processSession(s.id);
-          if (r?.failed > 0) patch({ error: `Processed with issues — ${r.failed} part(s) failed${r.lastError ? ": " + r.lastError : ""}.` });
-          await finished(s.id);
+          if (queue) {
+            // The queue's worker writes the notes once everything has reached the Mac.
+            await queue.closeSession(s.id);
+            await queue.drain();
+            if (await queue.isWaiting(s.id)) patch({ notice: SAVED_FOR_MAC, lastConversationId: null });
+            else await finished(s.id);
+          } else {
+            const r: any = await api.processSession(s.id);
+            if (r?.failed > 0) patch({ error: `Processed with issues — ${r.failed} part(s) failed${r.lastError ? ": " + r.lastError : ""}.` });
+            await finished(s.id);
+          }
         } catch (e) {
           patch({ error: friendlyError(e) });
         } finally {
+          unsubscribe?.();
           session.current = null;
           patch({ status: "idle", sessionId: null, inflight: 0 });
         }
@@ -152,8 +184,10 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     try {
       await ctrl.start();
     } catch (e) {
+      unsubscribe?.();
       session.current = null;
       await api.closeSession(s.id).catch(() => {});
+      await queue?.closeSession(s.id).catch(() => {});
       throw e;
     }
     patch({ status: "recording", startedAt: Date.now(), sessionId: s.id });
@@ -181,7 +215,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     await s.stop();
   }, []);
 
-  const clearError = useCallback(() => patch({ error: null }), [patch]);
+  const clearError = useCallback(() => patch({ error: null, notice: null }), [patch]);
 
   // Never orphan a live MediaStream / AudioContext if the provider unmounts.
   useEffect(() => () => session.current?.teardown(), []);
