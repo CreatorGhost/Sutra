@@ -66,7 +66,8 @@ export function clampBrief(raw: unknown, cap: number = BRIEF_CAP): string {
 }
 
 // ---- sessions ----
-export type SessionKind = "meeting" | "ambient";
+/** "phone" = a meeting recorded on a paired phone and saved here too (local/meetingBundle.ts). */
+export type SessionKind = "meeting" | "ambient" | "phone";
 export async function createSession(device?: string, kind: SessionKind = "ambient", sourceApp?: string | null) {
   const { lastId } = await run("INSERT INTO sessions(device,status,kind,source_app) VALUES(?, 'active', ?, ?)", [device ?? null, kind, sourceApp ?? null]);
   await persist();

@@ -2,13 +2,15 @@
 //   • the outbound MCP bridge (lib/mcpBridge.ts) — dials the local MCP server when "Share with AI
 //     tools" is on, so Claude Code / Codex / Cursor / Gemini can read memory;
 //   • the daily recap — phone: an OS-scheduled local notification (lib/recapScheduler.ts);
-//     desktop: a system notification at the chosen time while the app is running (this file).
+//     desktop: a system notification at the chosen time while the app is running (this file);
+//   • desktop: serving paired phones (pairing/hostExecutor.ts) — their audio and AI jobs run here.
 import { useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
 import { api } from "../local/sutra";
 import { desktop } from "../desktop/bridge";
 import { initMcpBridge } from "../lib/mcpBridge";
 import { initDailyRecap, rescheduleDailyRecap } from "../lib/recapScheduler";
+import { startHostExecutor } from "./pairing/hostExecutor";
 
 /** Whether the daily recap is on. The phone scheduler has always treated "unset" as on; on desktop
  *  it's opt-in (a surprise notification from a notes app is unwelcome). */
@@ -68,6 +70,7 @@ export function useIntegrations(): void {
   useEffect(() => {
     void initMcpBridge().catch(() => {});
     void initDailyRecap().catch(() => {}); // native only; no-op elsewhere
+    startHostExecutor(); // desktop only; idempotent
     if (desktop && !desktopTimer) {
       desktopTimer = setInterval(() => { void desktopRecapTick().catch(() => {}); }, 60000);
       void desktopRecapTick().catch(() => {});

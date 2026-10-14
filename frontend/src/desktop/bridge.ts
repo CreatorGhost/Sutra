@@ -3,8 +3,9 @@
 import type { Detection } from "../shared/meetingRules";
 import type { AgentId, AgentRequest, AgentStatus } from "../shared/agentProtocol";
 import type { LocalTranscription, SpeechProgress, SpeechStatus, SpeechTranscribeOpts } from "../shared/speechModels";
+import type { ExecMessage, ExecResult, PairingStatus, PairingUpdate } from "../shared/pairing/hostApi";
 
-export type { AgentStatus };
+export type { AgentStatus, PairingStatus, PairingUpdate };
 export type SttStatus = SpeechStatus;
 export type SttProgress = SpeechProgress;
 
@@ -69,6 +70,23 @@ export interface DesktopBridge {
     install(id: McpClientId, token: string, url?: string): Promise<McpWriteResult>;
     remove(id: McpClientId): Promise<McpWriteResult>;
     reveal(path: string): Promise<void>;
+  };
+  /** Phones paired with this computer (Settings → Phones; electron/pairing/*). */
+  pairing?: {
+    status(): Promise<PairingStatus>;
+    /** A fresh pairing QR (replaces any open one). */
+    newOffer(): Promise<PairingStatus>;
+    cancelOffer(): Promise<void>;
+    removeDevice(id: string): Promise<boolean>;
+    /** `hostSecret` omitted keeps the saved one. */
+    setRelay(p: { url?: string; hostSecret?: string; enabled?: boolean }): Promise<PairingStatus>;
+    setLan(on: boolean): Promise<PairingStatus>;
+    onChange(cb: (u: PairingUpdate) => void): Unsub;
+    /** Serve phone requests forwarded by main (one handler, the main window's). */
+    serve(cb: (req: ExecMessage) => void): Unsub;
+    result(r: ExecResult): void;
+    /** Something phones care about changed (engine, model, speech). */
+    hostChanged(): void;
   };
   /** Save a backup file via the native save dialog; null when cancelled. */
   backup?: { save(json: string, filename: string): Promise<string | null> };

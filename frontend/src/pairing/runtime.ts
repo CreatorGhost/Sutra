@@ -7,6 +7,7 @@ import { desktop } from "../desktop/bridge";
 import { processSession } from "../local/extraction";
 import { ingestWindow } from "../local/ingest";
 import { exportMeetingBundle } from "../local/meetingBundle";
+import { uploadBlob } from "../providers/pairedMacProvider";
 import * as repo from "../local/repo";
 import { macProvider } from "../providers";
 import type { PairOffer } from "../shared/pairing/protocol";
@@ -22,6 +23,9 @@ function macReady(): boolean {
 }
 
 let box: Outbox | null = null;
+/** Bundles bigger than this go up as a blob (sealed frames must stay well under the relay's 1 MiB). */
+const INLINE_BUNDLE_BYTES = 256 * 1024;
+
 export function outbox(): Outbox {
   return (box ??= new Outbox({
     fs: capacitorQueueFs,
@@ -35,7 +39,11 @@ export function outbox(): Outbox {
     },
     sync: async (cid) => {
       const bundle = await exportMeetingBundle(cid, thisDevice());
-      await (await macConnection().whenOnline()).request("meetings.put", { bundle }, 60_000);
+      const link = await macConnection().whenOnline();
+      // A long meeting won't fit in one relay message: upload it in chunks and send the id instead.
+      const json = new TextEncoder().encode(JSON.stringify(bundle));
+      const params = json.length > INLINE_BUNDLE_BYTES ? { blobId: await uploadBlob(link, json) } : { bundle };
+      await link.request("meetings.put", params, 60_000);
     },
   }));
 }

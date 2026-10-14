@@ -17,6 +17,18 @@ const CHUNK_TIMEOUT_MS = 60_000;
 const STT_TIMEOUT_MS = 300_000;
 const AI_TIMEOUT_MS = 300_000;
 
+/** Send bytes to the Mac in relay-sized chunks (blob.put); returns the id later requests refer to. */
+export async function uploadBlob(link: SecureLink, bytes: Uint8Array): Promise<string> {
+  const blobId = b64u(randomBytes(12));
+  for (let seq = 0, off = 0; ; seq++) {
+    const end = Math.min(off + BLOB_CHUNK_BYTES, bytes.length);
+    const last = end >= bytes.length;
+    await link.request("blob.put", { id: blobId, seq, last, data: b64u(bytes.subarray(off, end)) }, CHUNK_TIMEOUT_MS);
+    off = end;
+    if (last) return blobId;
+  }
+}
+
 export class PairedMacProvider implements Provider {
   readonly id = "mac";
   readonly sttId = "local";
@@ -30,14 +42,7 @@ export class PairedMacProvider implements Provider {
     const bytes = new Uint8Array(await audio.arrayBuffer());
     if (bytes.length > MAX_BLOB_BYTES) throw new Error("This recording is too large to send to your Mac.");
     const link = await this.link();
-    const blobId = b64u(randomBytes(12));
-    for (let seq = 0, off = 0; ; seq++) {
-      const end = Math.min(off + BLOB_CHUNK_BYTES, bytes.length);
-      const last = end >= bytes.length;
-      await link.request("blob.put", { id: blobId, seq, last, data: b64u(bytes.subarray(off, end)) }, CHUNK_TIMEOUT_MS);
-      off = end;
-      if (last) break;
-    }
+    const blobId = await uploadBlob(link, bytes);
     const r = await link.request("stt.transcribe", { blobId, mime: audio.type, filename, opts: opts ? { ...opts } : undefined }, STT_TIMEOUT_MS);
     return r as Transcription & { translated?: boolean };
   }

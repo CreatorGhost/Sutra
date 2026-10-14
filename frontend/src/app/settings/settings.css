@@ -75,8 +75,6 @@
 .recap-text { white-space: pre-wrap; line-height: 1.55; font-size: 14px; color: var(--text); }
 .recap-list { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; color: var(--text-2); }
 
-@media (max-width: 820px) { .set-field.two { grid-template-columns: 1fr; } }
-
 /* Your Mac: paste-a-link field and the full-screen QR scanner */
 .mac-paste { display: flex; gap: 8px; }
 .mac-paste input {
@@ -95,4 +93,34 @@
 .qr-text {
   position: absolute; left: 16px; right: 16px; bottom: calc(var(--sab, 0px) + 28px); margin: 0;
   text-align: center; color: #fff; font-size: 14px; line-height: 1.45; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* Phones: the pairing QR (always dark-on-white so any camera reads it), routes, paired phones */
+.set-row.pair-panel { align-items: flex-start; gap: 18px; padding: 16px; }
+.pair-qr {
+  flex: 0 0 auto; width: 196px; height: 196px; padding: 12px; border-radius: 12px; background: #fff;
+  box-shadow: 0 0 0 1px var(--line-2); transition: opacity 0.2s;
+}
+.pair-qr svg { display: block; width: 100%; height: 100%; }
+.pair-qr.expired { opacity: 0.25; }
+.pair-info { display: flex; flex-direction: column; gap: 6px; min-height: 196px; }
+.pair-routes { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; color: var(--text-2); }
+.pair-routes li::before { content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--text-3); margin: 0 8px 2px 1px; }
+.pair-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.pair-foot .set-sub { font-variant-numeric: tabular-nums; }
+.phone-glyph {
+  display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--text-2);
+}
+.phone-ok { color: var(--ok); }
+.phone-status { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.phone-status .dot { width: 6px; height: 6px; }
+.phone-status .set-sub::before { content: "·"; margin-right: 7px; }
+.set-hint a { color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--line-2); }
+.set-hint a:hover { color: var(--text); }
+
+@media (max-width: 820px) {
+  .set-field.two { grid-template-columns: 1fr; }
+  .set-row.pair-panel { flex-direction: column; align-items: center; }
+  .pair-info { min-height: 0; width: 100%; }
 }

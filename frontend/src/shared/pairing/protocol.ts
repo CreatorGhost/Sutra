@@ -142,8 +142,9 @@ export interface Methods {
   "stt.transcribe": { p: { blobId: string; mime: string; filename: string; opts?: Record<string, unknown> }; r: unknown /* Transcription & { translated?: boolean } */ };
   /** Run a text job through the Mac's AI engine (Provider.extract/chat/translate/refine/rerank). */
   "ai.call": { p: { fn: AiFn; args: unknown[]; engine?: AgentId | null; model?: string | null }; r: unknown };
-  /** Save a finished phone meeting on the Mac too (idempotent by the bundle's uid). */
-  "meetings.put": { p: { bundle: unknown }; r: { conversationId: number; created: boolean } };
+  /** Save a finished phone meeting on the Mac too (idempotent by the bundle's uid). A bundle too big
+   *  for one message (over ~512 KiB of JSON) is uploaded with blob.put first and named by `blobId`. */
+  "meetings.put": { p: { bundle: unknown } | { blobId: string }; r: { conversationId: number; created: boolean } };
 }
 export type Method = keyof Methods;
 export type AiFn = "extract" | "chat" | "translate" | "refine" | "rerank";

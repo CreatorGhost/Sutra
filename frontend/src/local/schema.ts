@@ -265,6 +265,7 @@ export const ENSURED_COLUMNS: ReadonlyArray<readonly [table: string, column: str
   ["conversations", "project_id", "INTEGER"],
   ["conversations", "project_auto", "INTEGER NOT NULL DEFAULT 0"],
   ["conversations", "suggested_project_id", "INTEGER"],
+  ["conversations", "uid", "TEXT"],             // stable id across devices (a phone meeting saved on the Mac too)
   ["memories", "subtitle", "TEXT"],
   ["memories", "open_questions", "TEXT NOT NULL DEFAULT '[]'"],
 ];

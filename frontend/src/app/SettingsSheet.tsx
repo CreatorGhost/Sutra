@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from "react";
-import { ArrowLeft, Archive, Bell, Brain, ChevronRight, Laptop, Plug, Settings2, SlidersHorizontal, Sparkles, UserRound, Users, X } from "lucide-react";
+import { ArrowLeft, Archive, Bell, Brain, ChevronRight, Laptop, Plug, Settings2, SlidersHorizontal, Smartphone, Sparkles, UserRound, Users, X } from "lucide-react";
 import { api } from "../local/sutra";
 import { desktop } from "../desktop/bridge";
 import { useToast } from "./ui";
@@ -9,6 +9,7 @@ import { GeneralSection } from "./settings/GeneralSection";
 import { PeopleSection } from "./settings/PeopleSection";
 import { ContextSection } from "./settings/ContextSection";
 import { ConnectionsSection } from "./settings/ConnectionsSection";
+import { PhonesSection } from "./settings/PhonesSection";
 import { BackupSection } from "./settings/BackupSection";
 import { RecapSection } from "./settings/RecapSection";
 import { AdvancedSection } from "./settings/AdvancedSection";
@@ -20,7 +21,7 @@ function IntelligenceSection({ settings, put }: SectionProps) {
   return <Intelligence settings={settings} onChange={(p) => put({ ...p, setup_engines: true })} />;
 }
 
-export type SectionId = "general" | "mac" | "intelligence" | "people" | "context" | "connections" | "backup" | "recap" | "advanced" | "account";
+export type SectionId = "general" | "mac" | "intelligence" | "people" | "context" | "connections" | "phones" | "backup" | "recap" | "advanced" | "account";
 const SECTIONS: { id: SectionId; label: string; icon: ComponentType<{ size?: number }>; view: ComponentType<SectionProps> }[] = [
   { id: "general", label: "General", icon: Settings2, view: GeneralSection },
   // Phone/web: pair with Sutra on a Mac, which then transcribes and writes the notes.
@@ -29,6 +30,8 @@ const SECTIONS: { id: SectionId; label: string; icon: ComponentType<{ size?: num
   { id: "people", label: "People", icon: Users, view: PeopleSection },
   { id: "context", label: "Your context", icon: Brain, view: ContextSection },
   { id: "connections", label: "Connections", icon: Plug, view: ConnectionsSection },
+  // Pairing the phone app with this computer (it transcribes and writes notes for the phone).
+  ...(desktop ? [{ id: "phones" as const, label: "Phones", icon: Smartphone, view: PhonesSection }] : []),
   { id: "backup", label: "Backup & restore", icon: Archive, view: BackupSection },
   { id: "recap", label: "Daily recap", icon: Bell, view: RecapSection },
   { id: "advanced", label: "Advanced", icon: SlidersHorizontal, view: AdvancedSection },
