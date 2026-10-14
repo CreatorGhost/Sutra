@@ -1,4 +1,5 @@
 // Typed on-device data access (port of the Postgres-backed services' SQL). JSON columns are TEXT(JSON1).
+import type { AskScope } from "../providers/provider";
 import { q, run, exec, persist } from "./db";
 import { blobToVec, cosine, normName, vecToBlob } from "./util";
 import { coalesceTurns } from "./coalesce";
@@ -66,7 +67,8 @@ export function clampBrief(raw: unknown, cap: number = BRIEF_CAP): string {
 }
 
 // ---- sessions ----
-export type SessionKind = "meeting" | "ambient";
+/** "phone" = a meeting recorded on a paired phone and saved here too (local/meetingBundle.ts). */
+export type SessionKind = "meeting" | "ambient" | "phone";
 export async function createSession(device?: string, kind: SessionKind = "ambient", sourceApp?: string | null) {
   const { lastId } = await run("INSERT INTO sessions(device,status,kind,source_app) VALUES(?, 'active', ?, ?)", [device ?? null, kind, sourceApp ?? null]);
   await persist();
@@ -193,6 +195,18 @@ export const setConversationTitle = async (id: number, title: string) => { await
 export const setConversationStatus = async (id: number, status: string) => { await run("UPDATE conversations SET status=? WHERE id=?", [status, id]); await persist(); };
 export const setConversationMeeting = async (id: number, on: boolean) => { await run("UPDATE conversations SET is_meeting=? WHERE id=?", [on ? 1 : 0, id]); await persist(); };
 
+// ---- minutes (Minutes of Meeting) — derived, non-destructive; one row per conversation ----
+export const setMinutes = async (cid: number, data: any) => {
+  await run(`INSERT INTO minutes(conversation_id,data,generated_at) VALUES(?,?,datetime('now'))
+             ON CONFLICT(conversation_id) DO UPDATE SET data=excluded.data, generated_at=excluded.generated_at`,
+    [cid, J(data ?? {})]);
+  await persist();
+};
+export const clearMinutes = async (cid: number) => { await run("DELETE FROM minutes WHERE conversation_id=?", [cid]); await persist(); };
+export const minutesFor = async (cid: number) => {
+  const row = (await q("SELECT data,generated_at FROM minutes WHERE conversation_id=?", [cid]))[0] as any;
+  return row ? { ...P(row.data, {} as Record<string, unknown>), generated_at: row.generated_at } : null;
+};
 // ---- notes (per-style meeting notes; derived + regenerable, one row per conversation per style) ----
 export const getNotes = async (cid: number, style: string) => {
   const row = (await q("SELECT data,generated_at FROM notes WHERE conversation_id=? AND style=?", [cid, style]))[0] as any;
@@ -218,6 +232,9 @@ export async function deleteConversation(cid: number) {
   await run("DELETE FROM action_items WHERE source_conversation=?", [cid]);
   await run("DELETE FROM events WHERE conversation_id=?", [cid]);
   await run("DELETE FROM notes WHERE conversation_id=?", [cid]);
+  await run("DELETE FROM meeting_chat WHERE conversation_id=?", [cid]);
+  await run("DELETE FROM meeting_visual WHERE conversation_id=?", [cid]);
+  await run("DELETE FROM meeting_images WHERE conversation_id=?", [cid]);
   await run("DELETE FROM turns WHERE conversation_id=?", [cid]);
   await run("DELETE FROM conversations WHERE id=?", [cid]);
   await persist();
@@ -274,12 +291,41 @@ export async function conversationDetail(cid: number) {
   const participants = ids.length ? await q(`SELECT id,canonical_name,is_me FROM people WHERE id IN (${ids.map(() => "?").join(",")})`, ids) : [];
   const events = await q("SELECT id,title,when_text,start_ts,kind FROM events WHERE conversation_id=? ORDER BY (start_ts IS NULL), start_ts, id", [cid]);
   const actions = await q("SELECT id,text,owner,due,status FROM action_items WHERE source_conversation=? ORDER BY id", [cid]);
+  const minutes = await minutesFor(cid);
+  const hasClean = (turns as any[]).some((t: any) => t.text_clean != null);
   const memory = m ? { ...m, facts: P(m.facts, []), action_items: P(m.action_items, []), decisions: P(m.decisions, []),
                            open_questions: P(m.open_questions, []), type_tags: P(m.type_tags, []) } : null;
   return {
-    conversation: { ...conv, participant_person_ids: ids, refined: useClean, is_meeting: !!conv.is_meeting, tags: P<string[]>(conv.tags, []) },
-    memory, turns: coalesced, participants, events, actions,
+    conversation: { ...conv, participant_person_ids: ids, refined: useClean, hasClean, is_meeting: !!conv.is_meeting, tags: P<string[]>(conv.tags, []),
+                    project_id: conv.project_id ?? null, project_auto: !!conv.project_auto, suggested_project_id: conv.suggested_project_id ?? null },
+    memory, turns: coalesced, participants, events, actions, minutes,
   };
+}
+
+
+
+/** Redaction-safe variant of conversationDetail used by the MCP read layer: identical result shape,
+ *  but turns with redacted=1 are EXCLUDED (filtered in SQL with t.redacted=0) before coalesce/return,
+ *  so a redacted turn can never reach an external consumer. Everything else (clean-text resolution,
+ *  cross-window coalescing, participants/events/minutes) is preserved exactly as conversationDetail. */
+export async function conversationDetailSafe(cid: number) {
+  const conv = (await q("SELECT * FROM conversations WHERE id=?", [cid]))[0];
+  if (!conv) return null;
+  const m = (await q(`SELECT id,conversation_id,title,summary,facts,action_items,decisions,importance AS importance_score,type_tags,created_at
+                      FROM memories WHERE conversation_id=?`, [cid]))[0];
+  const turns = await q(`SELECT t.id,t.session_speaker_label,t.session_id,t.person_id,p.canonical_name person_name,p.is_me,t.text,t.text_clean,t.lang,t.start_ts,t.end_ts,t.abs_start,t.window_index,t.redacted
+                         FROM turns t LEFT JOIN people p ON p.id=t.person_id WHERE t.conversation_id=? AND t.redacted=0 ORDER BY t.window_index,t.start_ts,t.id`, [cid]);
+  const useClean = !!(conv as any).refined;
+  const hasClean = (turns as any[]).some((t: any) => t.text_clean != null);
+  const resolved = (turns as any[]).map((t: any) => ({ ...t, text: (useClean && t.text_clean) ? t.text_clean : t.text }));
+  const crossWindow = resolved.some((t: any) => t.person_id != null);
+  const coalesced = coalesceTurns(resolved as any, { maxGapS: 2, maxMergeWords: 400, crossWindow });
+  const ids = P<number[]>((conv as any).participant_person_ids, []).filter((x) => Number.isInteger(x));
+  const participants = ids.length ? await q(`SELECT id,canonical_name,is_me FROM people WHERE id IN (${ids.map(() => "?").join(",")})`, ids) : [];
+  const events = await q("SELECT id,title,when_text,start_ts,kind FROM events WHERE conversation_id=? ORDER BY (start_ts IS NULL), start_ts, id", [cid]);
+  const minutes = await minutesFor(cid);
+  const memory = m ? { ...m, facts: P((m as any).facts, []), action_items: P((m as any).action_items, []), decisions: P((m as any).decisions, []), type_tags: P((m as any).type_tags, []) } : null;
+  return { conversation: { ...conv, participant_person_ids: ids, refined: useClean, hasClean, is_meeting: !!(conv as any).is_meeting }, memory, turns: coalesced, participants, events, minutes };
 }
 
 // ---- memories (+ FTS mirror) ----
@@ -504,7 +550,7 @@ export async function createProject(name?: string): Promise<number> {
  *  through parseProjectTerms before storage so the column stays a clean ProjectTerm[] JSON. */
 export async function updateProject(
   id: number,
-  patch: { name?: string; brief?: string; color?: string | null; context_enabled?: boolean; share_cloud?: boolean; terms?: unknown },
+  patch: { name?: string; brief?: string; color?: string | null; context_enabled?: boolean; share_cloud?: boolean; code_access?: boolean; terms?: unknown },
 ): Promise<void> {
   const cols: string[] = [], vals: any[] = [];
   const set = (c: string, v: any) => { cols.push(`${c}=?`); vals.push(v); };
@@ -513,6 +559,7 @@ export async function updateProject(
   if (patch.color !== undefined) set("color", patch.color ?? null);
   if (patch.context_enabled !== undefined) set("context_enabled", patch.context_enabled ? 1 : 0);
   if (patch.share_cloud !== undefined) set("share_cloud", patch.share_cloud ? 1 : 0);
+  if (patch.code_access !== undefined) set("code_access", patch.code_access ? 1 : 0);
   if (patch.terms !== undefined) set("terms", J(parseProjectTerms(patch.terms)));
   if (!cols.length) return;
   await run(`UPDATE projects SET ${cols.join(", ")} WHERE id=?`, [...vals, id]);
@@ -521,16 +568,21 @@ export async function updateProject(
 
 export const deleteProject = async (id: number) => {
   await run("DELETE FROM project_people WHERE project_id=?", [id]);
+  await run("DELETE FROM project_folders WHERE project_id=?", [id]);
   // Unmap any conversations pointing at this project (additive: never deletes the conversation).
   await run("UPDATE conversations SET project_id=NULL WHERE project_id=?", [id]);
   await run("DELETE FROM projects WHERE id=?", [id]);
   await persist();
 };
 
-const hydrateProject = (r: any) => ({ ...r, context_enabled: !!r.context_enabled, share_cloud: !!r.share_cloud, terms: parseProjectTerms(r.terms) });
+const hydrateProject = (r: any) => ({
+  ...r, context_enabled: !!r.context_enabled, share_cloud: !!r.share_cloud, code_access: r.code_access == null ? true : !!r.code_access,
+  terms: parseProjectTerms(r.terms),
+});
 
 export const listProjects = async () =>
   (await q(`SELECT p.*, (SELECT count(*) FROM project_people pp WHERE pp.project_id=p.id) people_count,
+              (SELECT count(*) FROM project_folders pf WHERE pf.project_id=p.id) folder_count,
               (SELECT group_concat(pe.canonical_name, '\x1f') FROM
                  (SELECT pe.canonical_name FROM project_people pp JOIN people pe ON pe.id=pp.person_id
                     WHERE pp.project_id=p.id ORDER BY pe.is_me DESC, pe.canonical_name LIMIT 4) pe) people_names
@@ -546,7 +598,56 @@ export async function getProject(id: number) {
     `SELECT pp.person_id, pp.role, p.canonical_name, p.is_me, (p.voiceprint IS NOT NULL) has_voiceprint
      FROM project_people pp LEFT JOIN people p ON p.id=pp.person_id
      WHERE pp.project_id=? ORDER BY p.is_me DESC, p.canonical_name`, [id]);
-  return { ...hydrateProject(row), people };
+  const folders = (await q("SELECT path FROM project_folders WHERE project_id=? ORDER BY added_at, path", [id])).map((r: any) => String(r.path));
+  return { ...hydrateProject(row), people, folders };
+}
+
+// ---- project folders (desktop): code folders Ask may read, read-only ----
+
+export const addProjectFolder = async (projectId: number, path: string) => {
+  await run("INSERT OR IGNORE INTO project_folders(project_id,path) VALUES(?,?)", [projectId, path]);
+  await persist();
+};
+export const removeProjectFolder = async (projectId: number, path: string) => {
+  await run("DELETE FROM project_folders WHERE project_id=? AND path=?", [projectId, path]);
+  await persist();
+};
+/** Whether any other project still links this folder (the Mac app forgets a folder only when none does). */
+export const folderStillLinked = async (path: string) =>
+  (await q("SELECT 1 FROM project_folders WHERE path=? LIMIT 1", [path])).length > 0;
+
+
+async function scopeOf(projectId: number, meetingUid: string | null = null): Promise<AskScope | null> {
+  const p = (await q("SELECT id, name, code_access FROM projects WHERE id=?", [projectId]))[0] as any;
+  if (!p) return null;
+  const folders = p.code_access === 0 ? [] : (await q("SELECT path FROM project_folders WHERE project_id=? ORDER BY added_at, path", [projectId])).map((r: any) => String(r.path));
+  return { projectId: Number(p.id), projectName: String(p.name ?? "").trim() || "Untitled project", folders, meetingUid };
+}
+
+/** The Ask scope for a meeting: its project (if any) and that project's folders, plus the meeting's uid
+ *  so a paired Mac can find the same meeting (and project) in its own database. */
+export async function askScopeForConversation(convId: number): Promise<AskScope | null> {
+  const row = (await q("SELECT project_id, uid FROM conversations WHERE id=?", [convId]))[0] as any;
+  if (!row) return null;
+  if (row.project_id == null) return row.uid ? { projectId: null, projectName: "", folders: [], meetingUid: String(row.uid) } : null;
+  return scopeOf(Number(row.project_id), row.uid ? String(row.uid) : null);
+}
+export const askScopeForProject = (projectId: number) => scopeOf(projectId);
+export const projectConversationIds = async (projectId: number): Promise<number[]> =>
+  (await q("SELECT id FROM conversations WHERE project_id=?", [projectId])).map((r: any) => Number(r.id));
+
+/** On the Mac, for a paired phone's question: the folders for the meeting it names (by uid), else for the
+ *  project it names (by name, case-insensitive). */
+export async function askScopeFromHint(hint: { meetingUid?: unknown; projectName?: unknown }): Promise<AskScope | null> {
+  const uid = typeof hint.meetingUid === "string" ? hint.meetingUid.slice(0, 200) : "";
+  if (uid) {
+    const row = (await q("SELECT project_id FROM conversations WHERE uid=? LIMIT 1", [uid]))[0] as any;
+    if (row?.project_id != null) return scopeOf(Number(row.project_id), uid);
+  }
+  const name = typeof hint.projectName === "string" ? hint.projectName.trim().slice(0, 200) : "";
+  if (!name) return null;
+  const p = (await q("SELECT id FROM projects WHERE lower(trim(name))=lower(?) ORDER BY id LIMIT 1", [name]))[0] as any;
+  return p ? scopeOf(Number(p.id)) : null;
 }
 
 /** Add a person to a project with a per-project role. Provide an existing person_id, OR a name to create a
@@ -648,3 +749,103 @@ export async function scorableProjects(): Promise<{ projectId: number; peopleIds
 }
 
 export { exec };
+
+// ---- a meeting's Ask chat (kept with the meeting) and what was added to its notes from it ----
+
+export interface ChatMessage {
+  id: number;
+  conversation_id: number;
+  role: "user" | "assistant" | "note";
+  content: string;
+  /** For an answer: the question it answers (shown as its title once added to the notes). */
+  question: string | null;
+  pinned: boolean;
+  error: boolean;
+  created_at: string;
+}
+const CHAT_CAP = 20_000;
+const hydrateChat = (r: any): ChatMessage => ({ ...r, pinned: !!r.pinned, error: !!r.error });
+
+export const listMeetingChat = async (cid: number): Promise<ChatMessage[]> =>
+  (await q("SELECT * FROM meeting_chat WHERE conversation_id=? ORDER BY id", [cid])).map(hydrateChat);
+
+export async function addMeetingChat(cid: number, m: { role: ChatMessage["role"]; content: string; question?: string | null; pinned?: boolean; error?: boolean }): Promise<ChatMessage> {
+  const { lastId } = await run(
+    "INSERT INTO meeting_chat(conversation_id,role,content,question,pinned,error) VALUES(?,?,?,?,?,?)",
+    [cid, m.role, String(m.content ?? "").slice(0, CHAT_CAP), m.question ? String(m.question).slice(0, 2000) : null, m.pinned ? 1 : 0, m.error ? 1 : 0]);
+  await persist();
+  return hydrateChat((await q("SELECT * FROM meeting_chat WHERE id=?", [lastId]))[0]);
+}
+
+/** Add an answer to the meeting's notes (or take it back out). */
+export const setMeetingChatPinned = async (id: number, pinned: boolean) => {
+  await run("UPDATE meeting_chat SET pinned=? WHERE id=?", [pinned ? 1 : 0, id]);
+  await persist();
+};
+
+/** A note the user wrote (or an added answer) edited in place. */
+export const updateMeetingChat = async (id: number, content: string) => {
+  await run("UPDATE meeting_chat SET content=? WHERE id=?", [String(content).slice(0, CHAT_CAP), id]);
+  await persist();
+};
+
+export const deleteMeetingChat = async (id: number) => {
+  await run("DELETE FROM meeting_chat WHERE id=?", [id]);
+  await persist();
+};
+
+/** Clear the chat; what was added to the notes stays. */
+export const clearMeetingChat = async (cid: number) => {
+  await run("DELETE FROM meeting_chat WHERE conversation_id=? AND pinned=0", [cid]);
+  await persist();
+};
+
+/** What was added to the meeting's notes, oldest first. */
+export const meetingAdditions = async (cid: number): Promise<ChatMessage[]> =>
+  (await q("SELECT * FROM meeting_chat WHERE conversation_id=? AND pinned=1 ORDER BY id", [cid])).map(hydrateChat);
+
+// ---- notes from screenshots (desktop recordings with "Take screenshots during meetings") ----
+
+export interface MeetingVisual {
+  conversation_id: number; session_id: number; facts: string[]; frames_seen: number; frames_total: number;
+  engine: string | null; error: string | null; confirmed: boolean; created_at: string;
+}
+export interface MeetingImage { id: number; conversation_id: number; name: string; at: number | null; caption: string | null }
+
+/** The recording (capture session) a conversation came from. */
+export const sessionForConversation = async (cid: number): Promise<number | null> => {
+  const r = (await q("SELECT session_id FROM turns WHERE conversation_id=? AND session_id IS NOT NULL LIMIT 1", [cid]))[0] as any;
+  return r?.session_id != null ? Number(r.session_id) : null;
+};
+
+export async function setMeetingVisual(cid: number, v: { session_id: number; facts?: string[]; frames_seen?: number; frames_total?: number; engine?: string | null; error?: string | null }): Promise<void> {
+  await run(
+    `INSERT INTO meeting_visual(conversation_id,session_id,facts,frames_seen,frames_total,engine,error) VALUES(?,?,?,?,?,?,?)
+     ON CONFLICT(conversation_id) DO UPDATE SET session_id=excluded.session_id, facts=excluded.facts, frames_seen=excluded.frames_seen,
+       frames_total=excluded.frames_total, engine=excluded.engine, error=excluded.error`,
+    [cid, v.session_id, J(v.facts ?? []), v.frames_seen ?? 0, v.frames_total ?? 0, v.engine ?? null, v.error ?? null]);
+  await persist();
+}
+
+export async function getMeetingVisual(cid: number): Promise<MeetingVisual | null> {
+  const r = (await q("SELECT * FROM meeting_visual WHERE conversation_id=?", [cid]))[0] as any;
+  if (!r) return null;
+  let facts: string[] = [];
+  try { facts = JSON.parse(r.facts || "[]"); } catch { /* keep [] */ }
+  return { ...r, facts: Array.isArray(facts) ? facts.map(String) : [], confirmed: !!r.confirmed };
+}
+
+/** The user confirmed the notes: the recording's screenshots + audio can go. */
+export const confirmMeetingVisual = async (cid: number) => {
+  await run("UPDATE meeting_visual SET confirmed=1 WHERE conversation_id=?", [cid]);
+  await persist();
+};
+
+export async function addMeetingImage(cid: number, img: { name: string; at?: number | null; caption?: string | null }): Promise<void> {
+  await run("INSERT INTO meeting_images(conversation_id,name,at,caption) VALUES(?,?,?,?)", [cid, img.name, img.at ?? null, img.caption ?? null]);
+  await persist();
+}
+export const listMeetingImages = async (cid: number): Promise<MeetingImage[]> =>
+  (await q("SELECT id,conversation_id,name,at,caption FROM meeting_images WHERE conversation_id=? ORDER BY at, id", [cid])) as MeetingImage[];
+export const deleteMeetingImage = async (id: number) => { await run("DELETE FROM meeting_images WHERE id=?", [id]); await persist(); };
+export const clearMeetingImages = async (cid: number) => { await run("DELETE FROM meeting_images WHERE conversation_id=?", [cid]); await persist(); };

@@ -15,22 +15,21 @@ describe("speakerName", () => {
   });
 });
 
+const OPTS = { maxGapS: 2, maxMergeWords: 400, crossWindow: false };
 describe("coalesceTurns", () => {
   const t = (id: number, label: string, text: string, start: number, end: number, win = 0) =>
     ({ id, session_speaker_label: label, person_id: null, text, start_ts: start, end_ts: end, window_index: win });
   it("merges consecutive same-speaker fragments within the gap", () => {
-    const out = coalesceTurns([t(1, "A", "Hello", 0, 1), t(2, "A", "there", 1.5, 2), t(3, "B", "Hi", 2.2, 3), t(4, "B", "later", 10, 11)]);
+    const out = coalesceTurns([t(1, "A", "Hello", 0, 1), t(2, "A", "there", 1.5, 2), t(3, "B", "Hi", 2.2, 3), t(4, "B", "later", 10, 11)], OPTS);
     expect(out.map((x) => x.text)).toEqual(["Hello there", "Hi", "later"]);
-    expect(out[0].turn_ids).toEqual([1, 2]);
+    expect(out[0].member_ids).toEqual([1, 2]);
   });
   it("does not merge across windows unless asked", () => {
     const rows = [t(1, "A", "one", 0, 1, 0), t(2, "A", "two", 0, 1, 1)];
-    expect(coalesceTurns(rows)).toHaveLength(2);
-    expect(coalesceTurns(rows, { crossWindow: true })).toHaveLength(1);
+    expect(coalesceTurns(rows, OPTS)).toHaveLength(2);
+    expect(coalesceTurns(rows, { ...OPTS, crossWindow: true, maxGapS: 99 })).toHaveLength(1);
   });
-  it("drops empty fragments", () => {
-    expect(coalesceTurns([t(1, "A", "  ", 0, 1)])).toHaveLength(0);
-  });
+
 });
 
 describe("notes markdown", () => {

@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 
-from ..config import settings
+from ..config import get_runtime_settings, refresh_runtime_settings, settings
 from ..db import get_pool
 from ..providers import get_provider
 
@@ -15,11 +15,11 @@ log = logging.getLogger("sutra.ranking")
 _cross_encoder = None
 
 
-def _recency(created_at: dt.datetime) -> float:
-    if settings.rank_recency.lower() != "on" or created_at is None:
+def _recency(created_at: dt.datetime, rt=settings) -> float:
+    if rt.rank_recency.lower() != "on" or created_at is None:
         return 1.0
     age_days = (dt.datetime.now(dt.timezone.utc) - created_at).total_seconds() / 86400.0
-    hl = max(0.5, settings.rank_half_life_days)
+    hl = max(0.5, rt.rank_half_life_days)
     return 0.5 ** (age_days / hl)
 
 
@@ -37,8 +37,10 @@ async def search(query: str, top_n: int | None = None) -> list[dict]:
     if not query:
         return []
     pool = await get_pool()
-    top_n = top_n or settings.search_topn
-    prefetch = settings.search_prefetch
+    await refresh_runtime_settings()
+    rt = get_runtime_settings()
+    top_n = top_n or rt.search_topn
+    prefetch = rt.search_prefetch
     provider = get_provider()
 
     qvec = (await provider.embed([query]))[0]
@@ -56,7 +58,7 @@ async def search(query: str, top_n: int | None = None) -> list[dict]:
         query, prefetch,
     )
 
-    k = settings.rank_rrf_k
+    k = rt.rank_rrf_k
     rrf: dict[int, float] = {}
     for pos, r in enumerate(sem):
         rrf[r["id"]] = rrf.get(r["id"], 0.0) + 1.0 / (k + pos + 1)
@@ -78,22 +80,25 @@ async def search(query: str, top_n: int | None = None) -> list[dict]:
     for r in rows:
         d = dict(r)
         rrf_norm = rrf[r["id"]] / rmax
-        score = settings.rank_w_rrf * rrf_norm * _recency(r["created_at"]) * (
-            1.0 + settings.rank_w_importance * float(r["importance_score"])
+        score = rt.rank_w_rrf * rrf_norm * _recency(r["created_at"], rt) * (
+            1.0 + rt.rank_w_importance * float(r["importance_score"])
         )
         d["rrf"] = round(rrf[r["id"]], 6)
         d["score"] = round(score, 6)
         out.append(d)
     out.sort(key=lambda x: x["score"], reverse=True)
 
-    mode = settings.rerank.lower()
+    mode = rt.rerank.lower()
     head = out[: max(top_n, min(prefetch, len(out)))]
     if mode == "llm" and head:
-        scores = await provider.rerank(query, [h["summary"] for h in head])
-        for h, s in zip(head, scores):
-            h["score"] = float(s)
-        head.sort(key=lambda x: x["score"], reverse=True)
-        out = head
+        try:
+            scores = await provider.rerank(query, [h["summary"] for h in head])
+            for h, s in zip(head, scores):
+                h["score"] = float(s)
+            head.sort(key=lambda x: x["score"], reverse=True)
+            out = head
+        except Exception as e:
+            log.warning("llm rerank failed, falling back to fused order: %s", e)
     elif mode == "crossencoder" and head:
         try:
             ce = _get_cross_encoder()

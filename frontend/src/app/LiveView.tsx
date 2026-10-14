@@ -5,12 +5,15 @@ import { speakerName } from "../local/speakers";
 import { clock } from "./format";
 import { useNow, useRecorder } from "./recorder";
 import { LevelBars } from "./ui";
+import { useMac } from "../pairing/runtime";
 
 /** The recording screen: big clock, live level, and the transcript as each ~90 s window lands. */
 export function LiveView() {
   const nav = useNavigate();
   const { state: rec, start, stop, clearError } = useRecorder();
   const now = useNow(rec.status === "recording");
+  const mac = useMac();
+  const viaMac = !!mac.pairing && mac.status.state !== "revoked";
   const endRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" }); }, [rec.turns.length]);
 
@@ -53,6 +56,12 @@ export function LiveView() {
             <button className="btn primary" onClick={() => void start()}>Start recording</button>
           </>
         )}
+        {rec.notice && !rec.error && (
+          <div className="notice" style={{ maxWidth: 560, margin: "22px auto 0", textAlign: "left" }}>
+            <div className="grow">{rec.notice}</div>
+            <button className="icon-btn ghost sm" onClick={clearError} aria-label="Dismiss">×</button>
+          </div>
+        )}
         {rec.error && (
           <div className="notice err" style={{ maxWidth: 560, margin: "22px auto 0", textAlign: "left" }}>
             <div className="grow">{rec.error}</div>
@@ -61,7 +70,9 @@ export function LiveView() {
         )}
       </div>
       <div className="live-body">
-        {recording && rec.turns.length === 0 && (
+        {recording && viaMac && mac.status.state !== "online" ? (
+          <p className="faint" style={{ textAlign: "center" }}>Your Mac isn't reachable — this recording is saved on your phone and will be transcribed when it is.</p>
+        ) : recording && rec.turns.length === 0 && (
           <p className="faint" style={{ textAlign: "center" }}>The transcript appears here as you talk — in chunks of about a minute and a half.</p>
         )}
         <div className="transcript">
@@ -74,7 +85,7 @@ export function LiveView() {
         </div>
         <div ref={endRef} />
         <p className="faint" style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", fontSize: 13, marginTop: 28 }}>
-          <ShieldCheck size={14} /> Audio is transcribed in-flight and never stored.
+          <ShieldCheck size={14} /> {viaMac ? "Audio stays encrypted on your phone only until your Mac transcribes it." : "Audio is transcribed in-flight and never stored."}
         </p>
       </div>
     </div>

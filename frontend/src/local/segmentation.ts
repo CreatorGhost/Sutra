@@ -31,7 +31,9 @@ export async function segmentSession(sessionId: number): Promise<number[]> {
   if (sess?.kind === "meeting") return segmentMeeting(sessionId, sess.source_app ?? null);
   const s = await getSettings();
   const gap = Number(s["segment_gap_seconds"] ?? 300);
-  const topic = String(s["segment_topic_shift"] ?? "on") === "on";
+  const topic = String(s["segment_topic_shift"] ?? "off") === "on";
+  const minTurns = Number(s["segment_min_turns"] ?? 8);
+  const minSecs = Number(s["segment_min_seconds"] ?? 90);
   const turns = await unsegmentedTurns(sessionId);
   if (!turns.length) return [];
   const starts = [0];
@@ -40,8 +42,13 @@ export async function segmentSession(sessionId: number): Promise<number[]> {
     const prev = turns[i - 1] as any, cur = turns[i] as any;
     const dt = prev.abs_start && cur.abs_start
       ? (Date.parse(cur.abs_start) - Date.parse(prev.abs_start)) / 1000 : 0;
-    if (dt >= gap) { starts.push(i); continue; }
-    if (topic && i - starts[starts.length - 1] >= 2 * block) {
+    const lastStart = starts[starts.length - 1];
+    const segTurns = i - lastStart;
+    const segSecs = (cur.abs_start && turns[lastStart].abs_start)
+      ? (Date.parse(cur.abs_start) - Date.parse(turns[lastStart].abs_start)) / 1000 : 0;
+    const bigEnough = segTurns >= minTurns || segSecs >= minSecs;
+    if (dt >= gap && bigEnough) { starts.push(i); continue; }
+    if (topic && bigEnough && i - starts[starts.length - 1] >= 2 * block) {
       const a = new Set<string>(); turns.slice(Math.max(starts[starts.length - 1], i - block), i).forEach((t: any) => toks(t.text).forEach((x) => a.add(x)));
       const b = new Set<string>(); turns.slice(i, i + block).forEach((t: any) => toks(t.text).forEach((x) => b.add(x)));
       if (b.size && jaccard(a, b) < 0.05) starts.push(i);

@@ -1,0 +1,121 @@
+// PURE: what the Ask bar's model picker lists. One entry per (engine, model) the user can pick —
+// "Default" (the engine's own choice) first, then the models the engine reports — plus favorites and
+// search. The picker writes ai_engine / ai_model_<id>, the same settings as Settings → Intelligence.
+import { AGENTS, agentReady, safeModel, type AgentId, type AgentStatus } from "../shared/agentProtocol";
+import { pickContext, splitModelParams, withContext, type ContextOption } from "../shared/engineProbes";
+import type { EngineSummary } from "../shared/pairing/protocol";
+
+export interface ModelOption {
+  key: string;            // "<engine>:<model>" ("<engine>:" for Default) — stable, used for favorites
+  engine: AgentId;
+  model: string | null;   // null = let the engine choose
+  name: string;           // shown on the row
+  hint: string | null;    // e.g. the default model's name
+}
+
+export const FAVORITES_KEY = "ai_model_favorites";
+export const optionKey = (engine: AgentId, model: string | null) => `${engine}:${model ?? ""}`;
+
+const UPPER = new Set(["gpt", "ai", "asr", "cli", "xl"]);
+/** "gpt-5-codex" → "GPT-5 Codex", "gemini-2.5-pro" → "Gemini 2.5 Pro", "claude-sonnet-5-5" → "Claude Sonnet 5.5". */
+export function prettyModel(slug: string): string {
+  const parts = slug.split(/[-_\s]+/).filter(Boolean);
+  const out: string[] = [];
+  for (const p of parts) {
+    const lower = p.toLowerCase();
+    const word = UPPER.has(lower) ? lower.toUpperCase() : /^\d/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1);
+    // Glue a version straight onto "GPT" ("GPT-5"), as vendors write it.
+    if (/^\d/.test(word) && out.length && out[out.length - 1] === "GPT") out[out.length - 1] = `GPT-${word}`;
+    // Anthropic writes versions as dashed digits ("claude-opus-5-5" → "Opus 5.5").
+    else if (/^\d+$/.test(word) && out.length && /^\d+$/.test(out[out.length - 1])) out[out.length - 1] += `.${word}`;
+    else out.push(word);
+  }
+  return out.join(" ") || slug;
+}
+
+/** The listed model a saved id stands for: itself, or its bare id when the engine lists bare ids and
+ *  the suffix is the user's context choice (Cursor's "…opus-5[context=1m]"). */
+export function listedModel(st: Pick<AgentStatus, "models">, model: string | null): string | null {
+  if (!model) return null;
+  const base = splitModelParams(model).base;
+  return !st.models?.includes(model) && st.models?.includes(base) ? base : model;
+}
+
+/** A model's name as the engine gives it (Cursor's "Opus 4.6"), else made readable from its id. */
+export function modelName(st: Pick<AgentStatus, "models" | "modelNames">, model: string): string {
+  const id = listedModel(st, model) ?? model;
+  return st.modelNames?.[id] ?? prettyModel(id);
+}
+
+/** The context windows a model offers (Cursor: 300K / 1M) and the one in use — the user's choice on
+ *  the id, else Sutra's 300K default. Empty when the model offers no choice. */
+export function modelContext(st: Pick<AgentStatus, "models" | "contexts">, model: string | null): { choices: ContextOption[]; value: string | null } {
+  const id = listedModel(st, model);
+  const choices = (id && st.contexts?.[id]) || [];
+  return { choices, value: choices.length ? pickContext(choices, splitModelParams(model ?? "").params["context"] ?? null) : null };
+}
+
+/** Switching to `next` keeps the context window chosen for the current model when `next` offers it. */
+export function carryContext(st: Pick<AgentStatus, "models" | "contexts">, current: string | null, next: string): string {
+  const wanted = splitModelParams(current ?? "").params["context"];
+  if (!wanted || listedModel(st, next) !== next) return next;
+  return modelContext(st, withContext(next, wanted)).choices.some((c) => c.value === wanted) ? withContext(next, wanted) : next;
+}
+
+/** Listed ids that mean "the CLI's own pick" — the same as the Default row (Cursor's "default" is its Auto). */
+const OWN_PICK: Partial<Record<AgentId, string[]>> = { cursor: ["default", "auto"] };
+
+export function engineOptions(st: AgentStatus, current: string | null): ModelOption[] {
+  const cur = listedModel(st, current);
+  const own = OWN_PICK[st.id] ?? [];
+  const models = [...new Set([...(st.models ?? []), ...(cur ? [cur] : [])])].filter((m) => safeModel(m) && !own.includes(m));
+  const ownName = own.map((m) => st.modelNames?.[m]).find(Boolean);
+  const hint = st.defaultModel && !own.includes(st.defaultModel) ? modelName(st, st.defaultModel) : ownName ?? null;
+  return [
+    { key: optionKey(st.id, null), engine: st.id, model: null, name: "Default", hint },
+    ...models.map((m) => ({ key: optionKey(st.id, m), engine: st.id, model: m, name: modelName(st, m), hint: null })),
+  ];
+}
+
+export function parseFavorites(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+export function toggleFavorite(list: string[], key: string): string[] {
+  return list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
+}
+
+/** Rows for the picker's current view: a search across every ready engine, the favorites, or one engine. */
+export function visibleOptions(input: {
+  agents: AgentStatus[];
+  settings: Record<string, unknown>;
+  tab: "favorites" | AgentId;
+  query: string;
+}): ModelOption[] {
+  const ready = input.agents.filter(agentReady);
+  const all = ready.flatMap((a) => engineOptions(a, safeModel(input.settings[`ai_model_${a.id}`])));
+  const q = input.query.trim().toLowerCase();
+  if (q) {
+    const terms = q.split(/\s+/);
+    return all.filter((o) => {
+      const hay = `${o.name} ${o.model ?? ""} ${AGENTS[o.engine].label} ${AGENTS[o.engine].vendor} ${o.hint ?? ""}`.toLowerCase();
+      return terms.every((t) => hay.includes(t));
+    });
+  }
+  if (input.tab === "favorites") {
+    const favs = parseFavorites(input.settings[FAVORITES_KEY]);
+    return favs.map((k) => all.find((o) => o.key === k)).filter((o): o is ModelOption => !!o);
+  }
+  return all.filter((o) => o.engine === input.tab);
+}
+
+/** A paired phone lists the engines on its Mac (host.info) in the same picker. The Mac only says
+ *  whether each one is ready; one that isn't is shown as needing setup on the Mac. */
+export function agentsFromHost(engines: EngineSummary[]): AgentStatus[] {
+  return engines.map((e) => ({
+    id: e.id, label: e.label, installed: e.ready, path: null, version: null, signedIn: e.ready ? true : null,
+    account: e.account, models: e.models, defaultModel: e.defaultModel, install: "", signIn: "",
+    ...(e.modelNames ? { modelNames: e.modelNames } : {}), ...(e.contexts ? { contexts: e.contexts } : {}),
+    hint: e.ready ? null : "Set it up on your Mac",
+  }));
+}

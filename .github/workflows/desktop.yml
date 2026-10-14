@@ -1,0 +1,63 @@
+# Desktop app checks on the three platforms Sutra ships to. Typecheck, unit tests and both bundles
+# (web + Electron) must pass on macOS, Windows and Linux; the MCP server and the phone relay have their own tests.
+name: desktop
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  frontend:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npx vitest run
+      - run: npx vite build
+      - run: npx electron-vite build
+
+  mcp-server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mcp-server/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  relay:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/sutra-relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: infra/sutra-relay/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test

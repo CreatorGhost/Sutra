@@ -9,6 +9,7 @@ import { desktop } from "./desktop/bridge";
 // Theme before first paint (no flash).
 applyTheme();
 if (desktop?.platform === "darwin") document.documentElement.classList.add("mac-desktop");
+else if (desktop) document.documentElement.classList.add("win-desktop");
 
 const view = new URLSearchParams(window.location.search).get("view");
 const root = ReactDOM.createRoot(document.getElementById("root")!);

@@ -1,55 +1,56 @@
-// Read-time transcript coalescing: the diarizer emits many short fragments per speaker; for display
-// and extraction we merge consecutive fragments from the same speaker into one readable paragraph.
-// PURE — never mutates stored rows (the raw turns stay the source of truth).
+/**
+ * Pure, dependency-free turn coalescing used at READ time only.
+ * Merges consecutive same-speaker diarization turns into coherent turns.
+ * Never mutates stored rows; input is assumed sorted by window_index, start_ts, id.
+ */
 
-export interface CoalescibleTurn {
-  id: number;
-  session_speaker_label?: string | null;
-  person_id?: number | null;
-  text: string;
-  start_ts?: number | null;
-  end_ts?: number | null;
-  window_index?: number | null;
+export interface RawTurn {
+  id: number; session_speaker_label: string; person_id?: number | null;
+  person_name?: string | null; is_me?: number | boolean | null;
+  text: string; lang?: string | null;
+  start_ts: number; end_ts?: number | null; abs_start?: string | null;
+  window_index?: number | null; redacted?: number | boolean | null;
   [k: string]: unknown;
 }
 
-export interface CoalesceOpts {
-  /** Merge only when the silence between fragments is at most this many seconds (same window). */
-  maxGapS?: number;
-  /** Stop growing a paragraph once it reaches this many words. */
-  maxMergeWords?: number;
-  /** Allow merging across capture windows (only safe once speakers are stabilised to person_ids). */
-  crossWindow?: boolean;
+export interface CoalescedTurn extends RawTurn { member_ids: number[]; }
+
+export interface CoalesceOpts { maxGapS: number; maxMergeWords: number; crossWindow: boolean; }
+
+const wordCount = (s: string) => (s.match(/\S+/g) || []).length;
+
+function gapBetween(run: RawTurn, cur: RawTurn): number {
+  if ((run.window_index ?? 0) === (cur.window_index ?? 0)) {
+    return cur.start_ts - (run.end_ts ?? run.start_ts);
+  }
+  if (run.abs_start && cur.abs_start) {
+    return (Date.parse(cur.abs_start) - (Date.parse(run.abs_start) + ((run.end_ts ?? run.start_ts) - run.start_ts) * 1000)) / 1000;
+  }
+  return 0;
 }
 
-const words = (s: string) => (s.trim() ? s.trim().split(/\s+/).length : 0);
-
-function sameSpeaker(a: CoalescibleTurn, b: CoalescibleTurn): boolean {
-  if (a.person_id != null || b.person_id != null) return a.person_id === b.person_id;
-  return (a.session_speaker_label ?? "") === (b.session_speaker_label ?? "");
+function sameSpeaker(run: RawTurn, cur: RawTurn): boolean {
+  if (run.person_id != null && cur.person_id != null) return run.person_id === cur.person_id;
+  return run.session_speaker_label === cur.session_speaker_label;
 }
 
-export function coalesceTurns<T extends CoalescibleTurn>(
-  turns: T[],
-  { maxGapS = 2, maxMergeWords = 400, crossWindow = false }: CoalesceOpts = {},
-): (T & { turn_ids: number[] })[] {
-  const out: (T & { turn_ids: number[] })[] = [];
-  for (const t of turns) {
-    const text = String(t.text ?? "").trim();
-    if (!text) continue;
-    const prev = out[out.length - 1];
-    if (prev && sameSpeaker(prev, t)) {
-      const sameWindow = (prev.window_index ?? 0) === (t.window_index ?? 0);
-      const gap = sameWindow && t.start_ts != null && prev.end_ts != null ? Number(t.start_ts) - Number(prev.end_ts) : 0;
-      const fits = words(prev.text) + words(text) <= maxMergeWords;
-      if ((sameWindow ? gap <= maxGapS : crossWindow) && fits) {
-        prev.text = `${prev.text} ${text}`;
-        if (sameWindow) prev.end_ts = t.end_ts ?? prev.end_ts;
-        prev.turn_ids.push(t.id);
-        continue;
-      }
+export function coalesceTurns(turns: RawTurn[], opts: CoalesceOpts): CoalescedTurn[] {
+  const out: CoalescedTurn[] = [];
+  for (const cur of turns) {
+    const run = out[out.length - 1];
+    const mergeable = run != null
+      && sameSpeaker(run, cur)
+      && (opts.crossWindow || (run.window_index ?? 0) === (cur.window_index ?? 0))
+      && gapBetween(run, cur) <= opts.maxGapS
+      && wordCount(run.text) < opts.maxMergeWords
+      && !!run.redacted === !!cur.redacted;
+    if (mergeable) {
+      run.text = (run.text + " " + cur.text).trim();
+      run.end_ts = cur.end_ts ?? run.end_ts;
+      run.member_ids.push(cur.id);
+    } else {
+      out.push({ ...cur, member_ids: [cur.id] });
     }
-    out.push({ ...t, text, turn_ids: [t.id] });
   }
   return out;
 }

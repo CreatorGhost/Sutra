@@ -3,8 +3,12 @@
  *
  * One getUserMedia stream feeds both a MediaRecorder (the audio we upload) and an
  * AnalyserNode-based energy VAD (to find silence gaps that bound a window). Each window is
- * a complete webm/opus blob (header included), so the backend can diarize it in one call.
- * Audio lives only in memory and is handed to onWindow; nothing is stored client-side.
+ * a complete opus blob (ogg or webm container, header included), so the backend can diarize it
+ * in one call. Audio lives only in memory and is handed to onWindow; nothing is stored client-side.
+ *
+ * Encoding is LOW-bitrate Opus (~24 kbps, speech-grade): keeps every window tiny so it can never
+ * trip the proxy's 30 MB upload cap (an oversized window used to 413 and lose the audio entirely).
+ * Lower fidelity is an accepted trade — diarization/transcription only need intelligible speech.
  */
 import { ForegroundMic } from "./foregroundMic";
 
@@ -14,14 +18,20 @@ export interface CaptureOptions {
   maxSeconds?: number;     // hard cap per window
   silenceMs?: number;      // trailing silence that closes a window after speech
   minSpeechMs?: number;    // ignore windows with less speech than this
-  onWindow: (blob: Blob, index: number) => void;
+  onWindow: (blob: Blob, index: number, startedAtMs: number) => void;
   onState?: (s: CaptureState) => void;
   onLevel?: (rms: number, speaking: boolean) => void;
   onError?: (msg: string) => void;
 }
 
+// Speech-grade Opus bitrate. ~24 kbps stays intelligible for transcription/diarization while keeping
+// files tiny (~3 KB/s), so even a maxed-out window is orders of magnitude under the 30 MB upload cap.
+export const OPUS_BITS_PER_SECOND = 24000;
+
 export function pickMime(): string {
-  const cands = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+  // Prefer ogg/opus (smallest, cleanly seekable). Fall back to webm/opus, then any opus-bearing
+  // container; bitrate is what actually shrinks the file, but ogg shaves a little container overhead.
+  const cands = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
   for (const m of cands) if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m)) return m;
   return "";
 }
@@ -32,13 +42,15 @@ export class CaptureController {
   private analyser: AnalyserNode | null = null;
   private rec: MediaRecorder | null = null;
   private chunks: Blob[] = [];
-  private raf = 0;
+  private tick: ReturnType<typeof setInterval> | null = null;
+  private onVisibility: (() => void) | null = null;
   private starting = false;
   private opts: Required<Omit<CaptureOptions, "onState" | "onLevel" | "onError">> & CaptureOptions;
   private mime = "";
   private index = 0;
 
   private windowStart = 0;
+  private windowStartWall = 0;
   private lastVoice = 0;
   private hadSpeech = false;
   private speaking = false;
@@ -46,12 +58,20 @@ export class CaptureController {
   private cutting = false;
   private buf = new Float32Array(0);
 
-  // hysteresis thresholds on RMS
-  private readonly hi = 0.022;
-  private readonly lo = 0.012;
+  // adaptive noise-floor VAD: thresholds track ambient level (fall fast / rise slow) so quiet or
+  // distant speech still crosses the gate instead of being lost under a fixed threshold.
+  private floor = 0.006;
+  private readonly FLOOR_MIN = 0.004;
+  private readonly FLOOR_MAX = 0.030;
+  private readonly HI_MULT = 3.0;
+  private readonly LO_MULT = 1.8;
+  private readonly PRESENCE_MULT = 1.5;
+  private sumRms = 0;
+  private nRms = 0;
+  private peakRms = 0;
 
   constructor(opts: CaptureOptions) {
-    this.opts = { maxSeconds: 150, silenceMs: 1200, minSpeechMs: 700, ...opts };
+    this.opts = { maxSeconds: 90, silenceMs: 1200, minSpeechMs: 700, ...opts };
   }
 
   async start() {
@@ -83,9 +103,11 @@ export class CaptureController {
       this.buf = new Float32Array(this.analyser.fftSize);
       this.startRecorder();
       this.windowStart = performance.now();
+      this.windowStartWall = Date.now();
       this.lastVoice = this.windowStart;
       this.hadSpeech = false;
       this.setState("listening");
+      this.setupVisibility();  // force-cut the current window when the screen/app goes to background
       this.loop();
     } catch (e) {
       this.releasePartial();   // release the mic/context so a retry (or another app) can use it
@@ -124,11 +146,19 @@ export class CaptureController {
         throw e;
       }
     }
-    try { return await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { /* fall through */ }
+    // Last-resort fallback must keep the Android-safe constraints, or it re-enables the DSP flags
+    // (echoCancellation/noiseSuppression/autoGainControl) that bias toward the Bluetooth comms route
+    // and reproduce the very NotReadableError it's trying to recover from.
+    const minimal: MediaStreamConstraints = isAndroid
+      ? { audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false } }
+      : { audio: true };
+    try { return await navigator.mediaDevices.getUserMedia(minimal); } catch { /* fall through */ }
     throw lastErr;
   }
 
   private releasePartial() {
+    this.stopLoop();
+    this.teardownVisibility();
     try { this.stream?.getTracks().forEach((t) => t.stop()); } catch { /* */ }
     try { void this.ctx?.close(); } catch { /* */ }
     this.stream = null; this.ctx = null; this.analyser = null;
@@ -138,26 +168,44 @@ export class CaptureController {
   private startRecorder() {
     if (!this.stream) return;
     this.chunks = [];
-    this.rec = this.mime ? new MediaRecorder(this.stream, { mimeType: this.mime }) : new MediaRecorder(this.stream);
+    // Low-bitrate Opus: audioBitsPerSecond caps the encoder so a window stays tiny and can't 413.
+    const recOpts: MediaRecorderOptions = { audioBitsPerSecond: OPUS_BITS_PER_SECOND };
+    if (this.mime) recOpts.mimeType = this.mime;
+    this.rec = new MediaRecorder(this.stream, recOpts);
     this.rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) this.chunks.push(e.data); };
     this.rec.onstop = () => this.finalizeWindow();
-    try { this.rec.start(); } catch (e: any) { this.opts.onError?.(`recorder: ${e?.message ?? e}`); }
+    // timeslice (1s): flush partial chunks incrementally so data isn't trapped in one growing
+    // in-memory blob if the main VAD logic stalls screen-off. ondataavailable now fires repeatedly
+    // with partial chunks; they're accumulated in this.chunks and assembled into one complete
+    // webm/opus blob per window at stop (finalizeWindow), so window semantics are unchanged.
+    try { this.rec.start(1000); } catch (e: any) { this.opts.onError?.(`recorder: ${e?.message ?? e}`); this.releasePartial(); this.setState("idle"); }
   }
 
   private finalizeWindow() {
     const blob = new Blob(this.chunks, { type: this.mime || "audio/webm" });
-    const speechMs = this.lastVoice - this.windowStart;
-    const emit = this.hadSpeech && speechMs >= 0 && blob.size > 1200;
-    if (emit) this.opts.onWindow(blob, this.index++);
+    const emit = this.windowHadContent(blob);
+    if (emit) { this.guardSize(blob); this.opts.onWindow(blob, this.index++, this.windowStartWall); }
     // reset window
     this.windowStart = performance.now();
+    this.windowStartWall = Date.now();
     this.lastVoice = this.windowStart;
     this.hadSpeech = false;
     this.cutting = false;
+    this.sumRms = 0; this.nRms = 0; this.peakRms = 0;
     if (!this.paused && this.stream) {
       this.startRecorder();
       this.setState("listening");
     }
+  }
+
+  // Decide whether a closed window holds anything worth uploading. Beyond the explicit speech gate,
+  // accept windows whose average/peak energy sits clearly above the adaptive noise floor — this is
+  // where quiet or distant speech (that never tripped hadSpeech) is recovered instead of discarded.
+  private windowHadContent(blob: Blob): boolean {
+    if (blob.size <= 2000) return false;
+    if (this.hadSpeech) return true;
+    const avg = this.nRms ? this.sumRms / this.nRms : 0;
+    return avg > this.floor * this.PRESENCE_MULT || this.peakRms > this.floor * this.HI_MULT * 0.8;
   }
 
   private cut() {
@@ -167,7 +215,36 @@ export class CaptureController {
     try { this.rec.stop(); } catch { this.cutting = false; }
   }
 
+  // When the page is hidden (screen off / app backgrounded) during an active recording, the rAF-
+  // free poll keeps running but may be throttled; force-cut the current window now so it gets
+  // finalized + uploaded instead of growing unbounded. Only cut when there's speech in the window
+  // (cut() already handles the speech-bearing case); a silent window keeps rolling.
+  private setupVisibility() {
+    if (this.onVisibility || typeof document === "undefined") return;
+    this.onVisibility = () => {
+      if (document.visibilityState !== "hidden") return;
+      if (this.paused || this.cutting || !this.hadSpeech) return;
+      this.cut();
+    };
+    document.addEventListener("visibilitychange", this.onVisibility);
+  }
+
+  private teardownVisibility() {
+    if (this.onVisibility && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.onVisibility);
+    }
+    this.onVisibility = null;
+  }
+
+  // VAD polling runs on setInterval (not requestAnimationFrame): rAF is fully paused while the
+  // display is off, which froze the window cut/flush logic screen-off. setInterval keeps firing
+  // (throttled, but not paused), so silence detection and maxSeconds rollover still work.
   private loop = () => {
+    if (this.tick != null) return; // idempotent: don't stack intervals on re-entry
+    this.tick = setInterval(this.poll, 60);
+  };
+
+  private poll = () => {
     if (!this.analyser || this.paused) return;
     this.analyser.getFloatTimeDomainData(this.buf);
     let sum = 0;
@@ -175,7 +252,15 @@ export class CaptureController {
     const rms = Math.sqrt(sum / this.buf.length);
     const now = performance.now();
 
-    if (this.speaking ? rms > this.lo : rms > this.hi) {
+    // Track the ambient noise floor: fall fast toward quiet so a brief lull re-sensitizes the gate,
+    // rise slowly so transient speech doesn't drag the floor up and swallow itself.
+    if (rms < this.floor) this.floor = this.floor * 0.90 + rms * 0.10;
+    else this.floor = this.floor * 0.995 + rms * 0.005;
+    this.floor = Math.min(this.FLOOR_MAX, Math.max(this.FLOOR_MIN, this.floor));
+    const hi = this.floor * this.HI_MULT, lo = this.floor * this.LO_MULT;
+    this.sumRms += rms; this.nRms++; if (rms > this.peakRms) this.peakRms = rms;
+
+    if (this.speaking ? rms > lo : rms > hi) {
       this.speaking = true;
       this.lastVoice = now;
       if (!this.hadSpeech) { this.hadSpeech = true; this.setState("speaking"); }
@@ -190,24 +275,20 @@ export class CaptureController {
       if (this.hadSpeech && silence >= this.opts.silenceMs && (this.lastVoice - this.windowStart) >= this.opts.minSpeechMs) {
         this.cut();
       } else if (elapsed >= this.opts.maxSeconds * 1000) {
-        if (this.hadSpeech) this.cut();
-        else { this.windowStart = now; this.startRecorderReset(); } // silent window: roll over without uploading
+        // Hard cap reached: always cut and let windowHadContent decide — never hard-discard, since a
+        // maxed-out "silent" window can still hold quiet/distant speech below the speech gate.
+        this.cut();
       }
     }
-    this.raf = requestAnimationFrame(this.loop);
   };
 
-  private startRecorderReset() {
-    // discard a long silent window without emitting
-    if (this.rec && this.rec.state !== "inactive") {
-      this.rec.onstop = () => { this.chunks = []; this.rec!.onstop = () => this.finalizeWindow(); this.startRecorder(); };
-      try { this.rec.stop(); } catch { /* ignore */ }
-    }
+  private stopLoop() {
+    if (this.tick != null) { clearInterval(this.tick); this.tick = null; }
   }
 
   pause() {
     this.paused = true;
-    cancelAnimationFrame(this.raf);
+    this.stopLoop();
     if (this.rec && this.rec.state !== "inactive") { this.cutting = true; try { this.rec.stop(); } catch { /* */ } }
     this.setState("paused");
   }
@@ -216,9 +297,11 @@ export class CaptureController {
     if (!this.stream) return;
     this.paused = false;
     this.windowStart = performance.now();
+    this.windowStartWall = Date.now();
     this.lastVoice = this.windowStart;
     this.hadSpeech = false;
     this.cutting = false;
+    this.sumRms = 0; this.nRms = 0; this.peakRms = 0;
     this.startRecorder();
     this.setState("listening");
     this.loop();
@@ -226,7 +309,8 @@ export class CaptureController {
 
   async stop(): Promise<void> {
     this.paused = true;
-    cancelAnimationFrame(this.raf);
+    this.stopLoop();
+    this.teardownVisibility();
     if (this.rec && this.rec.state !== "inactive") {
       this.cutting = true;
       await new Promise<void>((resolve) => {
@@ -243,8 +327,21 @@ export class CaptureController {
 
   private finalizeWindowFinal() {
     const blob = new Blob(this.chunks, { type: this.mime || "audio/webm" });
-    if (this.hadSpeech && blob.size > 1200) this.opts.onWindow(blob, this.index++);
+    if (this.windowHadContent(blob)) { this.guardSize(blob); this.opts.onWindow(blob, this.index++, this.windowStartWall); }
     this.chunks = [];
+  }
+
+  // Size safety net. At ~24 kbps Opus the duration cap (maxSeconds) keeps a window far under the
+  // proxy's 30 MB limit, so this should never fire. If a window ever approaches the cap we must NOT
+  // silently lose it (the original 413 bug) and we must NOT byte-split an Opus/OGG container (that
+  // yields undecodable files): surface it loudly and still emit so the audio gets a chance to upload.
+  private readonly SIZE_WARN_BYTES = 28 * 1024 * 1024;  // ~28 MB, just under the 30 MB cap
+  private guardSize(blob: Blob) {
+    if (blob.size < this.SIZE_WARN_BYTES) return;
+    const mb = (blob.size / (1024 * 1024)).toFixed(1);
+    const msg = `audio window ${this.index} is ${mb} MB — near the 30 MB upload cap; it may be rejected. Lower maxSeconds.`;
+    console.warn(`[capture] ${msg}`);
+    this.opts.onError?.(msg);
   }
 
   private setState(s: CaptureState) { this.opts.onState?.(s); }

@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Loader2, Search, Settings as Gear, Sparkles, Square, X } from "lucide-react";
+import { AudioLines, FolderClosed, Laptop, Loader2, Search, Settings as Gear, Sparkles, Square, Waypoints, X } from "lucide-react";
 import { api } from "../local/sutra";
+import { setMeetingFilter, useMeetingFilter } from "./projects/filter";
+import { projectColor, projectName, type ProjectLike } from "./projects/model";
+import "./features.css";
 import { desktop, type DetectionState } from "../desktop/bridge";
 import { useDataVersion } from "./events";
 import { clock, groupByPeriod, shortDate } from "./format";
 import { useNow, useRecorder } from "./recorder";
 import { AppIcon } from "./ui";
+import { useMac, useQueueStats } from "../pairing/runtime";
 
 interface MeetingRow {
   id: number;
@@ -18,7 +22,14 @@ interface MeetingRow {
   status: string | null;
   tags: string[];
   source_app: string | null;
+  project_id: number | null;
 }
+
+const NAV = [
+  { to: "/", label: "Meetings", icon: AudioLines, match: (p: string) => p === "/" || p.startsWith("/m/") || p === "/live" || p === "/ask" },
+  { to: "/projects", label: "Projects", icon: FolderClosed, match: (p: string) => p.startsWith("/projects") },
+  { to: "/graph", label: "Graph", icon: Waypoints, match: (p: string) => p.startsWith("/graph") },
+];
 
 function matches(m: MeetingRow, q: string): boolean {
   const hay = `${m.title ?? ""} ${m.subtitle ?? ""} ${m.summary ?? ""} ${(m.tags ?? []).join(" ")} ${m.source_app ?? ""}`.toLowerCase();
@@ -34,12 +45,18 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [rows, setRows] = useState<MeetingRow[] | null>(null);
   const [query, setQuery] = useState("");
   const [detection, setDetection] = useState<DetectionState>({ active: null, visible: false });
+  const [projects, setProjects] = useState<Map<number, ProjectLike>>(new Map());
+  const filter = useMeetingFilter();
 
   useEffect(() => {
     let alive = true;
     api.listConversations()
       .then((r: any[]) => { if (alive) setRows(r as MeetingRow[]); })
       .catch(() => { if (alive) setRows([]); });
+    // Project names + colours for the list items (a mapped meeting shows its project).
+    api.listProjects()
+      .then((ps: any[]) => { if (alive) setProjects(new Map(ps.map((p) => [p.id, p]))); })
+      .catch(() => {});
     return () => { alive = false; };
   }, [version, rec.status]);
 
@@ -49,7 +66,11 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
     return desktop.detection.onChange(setDetection);
   }, []);
 
-  const filtered = useMemo(() => (rows ?? []).filter((m) => !query.trim() || matches(m, query)), [rows, query]);
+  const filtered = useMemo(
+    () => (rows ?? []).filter((m) => (filter == null || m.project_id === filter) && (!query.trim() || matches(m, query))),
+    [rows, query, filter],
+  );
+  const filterProject = filter != null ? projects.get(filter) : undefined;
   const groups = useMemo(() => groupByPeriod(filtered, (m) => m.started_at ?? m.created_at), [filtered]);
   const activeId = Number(pathname.match(/^\/m\/(\d+)/)?.[1] ?? NaN);
   const recording = rec.status === "recording" || rec.status === "starting";
@@ -68,6 +89,22 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
           {query && <button className="icon-btn ghost sm" onClick={() => setQuery("")} aria-label="Clear search"><X size={14} /></button>}
         </label>
       </div>
+      <nav className="side-nav" aria-label="Sections">
+        {NAV.map(({ to, label, icon: Icon, match }) => (
+          <button key={to} aria-current={match(pathname) ? "page" : undefined} onClick={() => nav(to)}>
+            <Icon size={14} /> {label}
+          </button>
+        ))}
+      </nav>
+      {filter != null && (
+        <div className="side-filter">
+          Showing
+          <span className="tag" style={{ ["--pc" as any]: projectColor(filterProject) }}>
+            <span className="pdot" />{projectName(filterProject)}
+            <button aria-label="Show all meetings" onClick={() => setMeetingFilter(null)}><X size={12} /></button>
+          </span>
+        </div>
+      )}
 
       {recording ? (
         <div className="banner rec">
@@ -87,7 +124,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
           <button className="link" onClick={() => void start({ app: detection.active!.app })}>Record</button>
           <button className="x" aria-label="Dismiss" onClick={() => desktop?.pill.action("dismiss")}><X size={14} /></button>
         </div>
-      ) : null}
+      ) : !desktop ? <MacChip /> : null}
 
       <nav className="list" aria-label="Meetings">
         {query.trim() && (
@@ -99,7 +136,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
         {rows === null ? (
           <div style={{ padding: 8 }}>{[0, 1, 2].map((i) => <div key={i} className="skel" style={{ height: 58, margin: "8px 0" }} />)}</div>
         ) : groups.length === 0 ? (
-          <div className="list-empty">{query ? "No meetings match." : "Your meetings will appear here."}</div>
+          <div className="list-empty">{query || filter != null ? "No meetings match." : "Your meetings will appear here."}</div>
         ) : (
           groups.map((g) => (
             <section key={g.label}>
@@ -112,6 +149,11 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
                   </div>
                   <div className="item-sub">
                     {m.status === "failed" && <span className="dot" style={{ background: "var(--warn)" }} />}
+                    {m.project_id != null && projects.has(m.project_id) && (
+                      <span className="item-proj" style={{ ["--pc" as any]: projectColor(projects.get(m.project_id)) }}>
+                        <span className="pdot" />{projectName(projects.get(m.project_id))} ·{" "}
+                      </span>
+                    )}
                     {m.subtitle || m.summary || (m.status === "failed" ? "Open to retry." : "Transcribed — notes are on the way.")}
                   </div>
                 </button>
@@ -124,16 +166,37 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
       <div className="side-bottom">
         <button className="icon-btn" onClick={onOpenSettings} aria-label="Settings"><Gear size={18} /></button>
         {recording ? (
-          <button className="record-btn live" onClick={() => void stop()} disabled={rec.status === "starting"}>
+          <button className="record-btn is-recording" onClick={() => void stop()} disabled={rec.status === "starting"}>
             {rec.status === "starting" ? <Loader2 size={16} className="spin" /> : <Square size={14} fill="currentColor" />}
             {rec.status === "starting" ? "Starting…" : <>Stop <span className="timer">{rec.startedAt ? clock(now - rec.startedAt) : ""}</span></>}
           </button>
         ) : (
-          <button className="record-btn" disabled={rec.status === "processing"} onClick={() => { void start({ app: detection.active?.app ?? null }); nav("/live"); }}>
-            {rec.status === "processing" ? <><Loader2 size={16} className="spin" /> Saving…</> : "Start recording"}
+          <button className="record-btn" onClick={() => { void start({ app: detection.active?.app ?? null }); nav("/live"); }}>
+            Start recording
           </button>
         )}
       </div>
     </aside>
+  );
+}
+
+/** Phone paired with a Mac: a quiet line when the Mac is out of reach or recordings are waiting for it. */
+function MacChip() {
+  const mac = useMac();
+  const stats = useQueueStats(!!mac.pairing);
+  if (!mac.pairing) return null;
+  const waiting = stats?.recordings ?? 0;
+  const state = mac.status.state;
+  const text = state === "revoked" ? "Removed by your Mac"
+    : state === "online" ? (waiting ? `Sending ${waiting} to your Mac…` : null)
+    : state === "connecting" ? (waiting ? `${waiting} waiting for your Mac` : null)
+    : `Mac not reachable${waiting ? ` · ${waiting} waiting` : ""}`;
+  if (!text) return null;
+  return (
+    <div className="banner">
+      <Laptop size={15} />
+      <span className="grow">{text}</span>
+      <button className="link" onClick={() => window.dispatchEvent(new CustomEvent("sutra:open-settings", { detail: "mac" }))}>Details</button>
+    </div>
   );
 }

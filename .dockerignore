@@ -1,0 +1,15 @@
+# The build context is the repo root (docker-compose.yml). Keep host-built and bulky things out:
+# a Mac's node_modules copied over the container's would break the Linux build.
+**/node_modules
+**/.git
+.claude
+frontend/dist
+frontend/out
+frontend/android
+frontend/ios
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.pytest_cache
+backend/tests
+infra

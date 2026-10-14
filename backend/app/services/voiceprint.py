@@ -62,7 +62,7 @@ async def _get_classifier():
 
                     return EncoderClassifier.from_hparams(
                         source=settings.voiceprint_model,
-                        savedir="/models/sb/ecapa",
+                        savedir=settings.voiceprint_savedir,
                         run_opts={"device": "cpu"},
                     )
 

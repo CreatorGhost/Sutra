@@ -195,6 +195,15 @@ export function detectMeeting(obs: Observation): Detection | null {
 
 // ---- debounce / dismissal state machine -----------------------------------------------------------
 
+/** One call seen through different signals on different ticks: the mic/tab say "Google Chrome|Google Meet",
+ *  a window title says "Browser|Google Meet", and the mic alone (tab not matched yet) "Google Chrome|".
+ *  Treating those as different calls ended the first one mid-meeting — and auto-stopped its recording. */
+export function sameCall(a: Pick<Detection, "app" | "service" | "key">, b: Pick<Detection, "app" | "service" | "key">): boolean {
+  if (a.key === b.key) return true;
+  if (a.service && b.service) return a.service === b.service;
+  return a.app === b.app || a.app === "Browser" || b.app === "Browser";
+}
+
 export interface TrackerUpdate {
   /** The call currently considered active (after debouncing), or null. */
   active: Detection | null;
@@ -224,10 +233,16 @@ export class DetectionTracker {
     let ended: Detection | undefined;
     if (det) {
       this.misses = 0;
-      if (this.active && this.active.key === det.key) {
-        this.active = det; // refresh details (e.g. appPath) without a state change
+      if (this.active && sameCall(this.active, det)) {
+        // The same call (maybe through another signal): refresh its details without a state change, keeping
+        // its identity — the key auto-stop and dismissal match on — and the best name/service seen so far.
+        const a = this.active;
+        this.active = { ...det, key: a.key, app: det.app === "Browser" ? a.app : det.app, service: det.service ?? a.service, appPath: det.appPath ?? a.appPath };
+        // Reported when the evidence changes (mic → window title): auto-stop treats "only the title is
+        // left" as the call being over once the mic has been seen (see AutoStop).
+        if (det.source !== a.source) changed = true;
       } else {
-        if (this.pending?.key === det.key) this.hits++;
+        if (this.pending && sameCall(this.pending, det)) this.hits++;
         else { this.pending = det; this.hits = 1; }
         if (this.hits >= this.raiseAfter) {
           if (this.active) ended = this.active;
@@ -262,6 +277,55 @@ export class DetectionTracker {
 
   get current(): Detection | null {
     return this.active;
+  }
+}
+
+/**
+ * "Stop when the call ends", forgiving. A call can vanish for a moment — a Meet seen only through its
+ * window title disappears while you look at another Chrome tab — so the recording stops only after the
+ * call it was started for has stayed gone for `graceMs`, and never if it comes back first.
+ */
+export class AutoStop {
+  private call: Detection | null = null;
+  private timer: unknown = null;
+  /** The call was seen holding the mic: from then on, losing the mic means it's over, whatever the window
+   *  title says (Meet's tab keeps "Meet – …" after you leave). */
+  private micSeen = false;
+
+  constructor(
+    private readonly stop: () => void,
+    private readonly graceMs = 45_000,
+    /** Only the window title left after the call held the mic: likely left — or muted in an app that
+     *  releases the mic while muted, so wait longer before calling it over. */
+    private readonly titleOnlyGraceMs = 120_000,
+    private readonly timers: { set: (fn: () => void, ms: number) => unknown; clear: (t: unknown) => void } =
+      { set: (fn, ms) => setTimeout(fn, ms), clear: (t) => clearTimeout(t as ReturnType<typeof setTimeout>) },
+  ) {}
+
+  /** A recording started (for this call, when one is detected — else the first call seen during it). */
+  recording(call: Detection | null): void { this.cancel(); this.call = call; this.micSeen = call?.source === "mic"; }
+  /** The recording ended for any reason. */
+  idle(): void { this.cancel(); this.call = null; this.micSeen = false; }
+
+  /** Each detector change while recording. */
+  update(up: Pick<TrackerUpdate, "active" | "ended">, enabled: boolean): void {
+    // A recording started before the call was detected (or from the app window) follows the first call seen.
+    if (!this.call && up.active) { this.call = up.active; this.micSeen = up.active.source === "mic"; }
+    const call = this.call;
+    if (!call) return;
+    const same = !!up.active && sameCall(up.active, call);
+    if (same && up.active!.source === "mic") this.micSeen = true;
+    const present = same && !(this.micSeen && up.active!.source !== "mic");
+    if (present) { this.cancel(); return; } // it's back (or never left)
+    if (enabled && !this.timer) {
+      const wait = same ? this.titleOnlyGraceMs : this.graceMs;
+      this.timer = this.timers.set(() => { this.timer = null; if (this.call === call) this.stop(); }, wait);
+    }
+  }
+
+  private cancel(): void {
+    if (this.timer) this.timers.clear(this.timer);
+    this.timer = null;
   }
 }
 

@@ -1,11 +1,15 @@
 # Local AI in Sutra
 
-In the desktop app you choose, per job, where the work runs: **Settings → Intelligence**. On first launch the Home screen shows the same choices.
+In the desktop app everything runs on your own computer — nothing goes through the Sutra cloud.
+Choose the engines in **Settings → Intelligence** (first launch asks the same questions).
 
-| Job | Options |
+| Job | How it runs on desktop |
 |---|---|
-| **Transcription** (speech-to-text) | **Sutra cloud**: speaker separation, voiceprints, tuned for Hinglish.<br>**On this computer**: whisper.cpp with a model you download. |
-| **Notes and questions** | **Sutra cloud**, **Claude Code** (`claude -p`), **Codex** (`codex exec`) or **Cursor Agent** (`cursor-agent -p`). |
+| **Transcription + speakers** | Always on this computer: sherpa-onnx in an Electron utility process, with a model picked for your machine (default **Qwen3-ASR 0.6B**). whisper.cpp is an optional extra engine. |
+| **Notes, minutes, clean-up, translation, Ask** | The agent CLI you already pay for: **Claude Code**, **Codex**, **Cursor Agent**, **Gemini CLI**, **Grok**, **Droid** or **Command Code**. No API keys. |
+
+On the phone/web app (no agent CLIs there) both run through the Sutra cloud — or, when the phone is
+paired with your Mac, through the Mac (see `docs/RELAY.md`).
 
 ## Local speech-to-text: models researched
 
@@ -13,7 +17,7 @@ Sutra's quality bar is Hindi–English code-switching (Hinglish), which rules ou
 
 | Model | Size | Languages | Speed on Apple Silicon | Hinglish | Verdict |
 |---|---|---|---|---|---|
-| **Whisper large-v3-turbo (q5_0)** | 574 MB | 99 | fast (~6× large-v3) | good | **Default.** Best balance for a Mac. |
+| **Whisper large-v3-turbo (q5_0)** | 574 MB | 99 | fast (~6× large-v3) | good | Was the first default; Qwen3-ASR 0.6B (sherpa-onnx) now is. |
 | Whisper large-v3-turbo | 1.6 GB | 99 | fast | good | Full-precision Turbo. |
 | Whisper large-v3 (q5_0 / full) | 1.1 / 3.1 GB | 99 | slow | best | Most accurate; for Pro/Max chips. |
 | Whisper medium / small | 1.5 GB / 488 MB | 99 | medium / very fast | fair / weak | For older machines. |
@@ -24,39 +28,117 @@ Sutra's quality bar is Hindi–English code-switching (Hinglish), which rules ou
 | Moonshine tiny / base | 27–60 MB | English | real-time on CPU | no | Good for live captions, not notes. |
 | AI4Bharat IndicConformer / IndicWhisper | 0.6–1.5 GB | 22 Indic | medium | strong Hindi | Worth evaluating for Hinglish via sherpa-onnx or NeMo. No whisper.cpp build yet. |
 
-**Runtimes considered:**
-- **whisper.cpp** — chosen. It uses Metal, CUDA and Vulkan, supports quantized models, installs with one command (`brew install whisper-cpp`), and needs no Python.
-- **MLX-Whisper** — fastest on M-series, but needs Python.
-- **faster-whisper (CTranslate2)** — Python.
-- **WhisperKit** — CoreML, Swift only.
-- **sherpa-onnx** — runs Parakeet, Moonshine and IndicConformer; the path forward for non-Whisper models.
-- **transformers.js** — WebGPU in the renderer; slower and uses more memory.
+**Runtimes:**
+- **sherpa-onnx** — the default (`sherpa-onnx-node`): VAD → speaker diarization (pyannote segmentation + speaker embeddings) → ASR, all in-process. Runs Qwen3-ASR, Whisper, Parakeet and Omnilingual models; no Python.
+- **whisper.cpp** — optional (`brew install whisper-cpp`); its ggml models (incl. a Hinglish fine-tune) appear in Settings when `whisper-cli` is installed.
+- Not used: MLX-Whisper and faster-whisper (Python), WhisperKit (Swift/CoreML only), transformers.js (slower in the renderer).
 
 **How it runs:**
-- Models download on demand from `huggingface.co/ggerganov/whisper.cpp` (the official files listed in whisper.cpp's `download-ggml-model.sh`) into `~/Library/Application Support/Sutra/models`.
-- Each ~90 s channel window is written as a 16 kHz WAV to a private `0700` temp folder, passed to `whisper-cli -oj`, and **deleted as soon as the call returns**.
-- Language choice maps to Whisper flags:
+- Models download on demand into the app's data folder (`~/Library/Application Support/Sutra/sherpa/…` on a Mac). The model list recommends one for your chip and memory.
+- Each ~90 s window is transcribed in memory; when an engine needs a file (whisper.cpp), it is a 16 kHz WAV in a private `0700` temp folder, **deleted as soon as the call returns**. Raw audio is never kept.
+- Meeting capture keeps **you** (mic) and **everyone else** (call audio) on separate channels; the call channel is diarized into speakers, and per-turn voiceprints keep them consistent across the meeting and later meetings.
+- Hindi can be written in Roman (Hinglish) or Devanagari script.
 
-| Transcript language | Whisper flags |
-|---|---|
-| English | `-l auto -tr` |
-| Hindi (Devanagari) | `-l hi` |
-| Hinglish | `-l auto`, primed with a romanized sample |
+## Agent CLIs for notes and Q&A
 
-- Whisper has no diarization. Meeting capture already separates **you** (mic) from **everyone else** (call audio). Several remote speakers share one label with local STT; the cloud path splits them by voice.
+Each call runs in a fresh, empty temp folder with tools off (or the agent's read-only mode), one at a
+time, with a timeout. The prompt goes on stdin (or the ACP prompt). Replies are checked against the
+expected JSON schema, with one retry.
 
-## Local agents for notes and Q&A
-
-| Agent | Command Sutra runs | Structured output |
+| Agent | How Sutra drives it | Structured output |
 |---|---|---|
-| Claude Code | `claude -p --output-format json --tools "" --no-session-persistence [--model M] --json-schema <schema>` | enforced by the CLI (`structured_output`) — **verified end to end** |
-| Codex CLI | `codex exec --skip-git-repo-check --ephemeral -s read-only -o <file> --output-schema <file> [-m M] -` | enforced by the CLI; flags verified against `codex exec --help` |
-| Cursor Agent | `cursor-agent -p --output-format json [--model M] <prompt>` | schema given in the prompt, JSON parsed from the result |
+| Claude Code | `claude -p --output-format json --tools "" --disable-slash-commands --permission-mode dontAsk --no-session-persistence [--model M] --json-schema <schema>` | enforced by the CLI |
+| Codex | `codex exec --skip-git-repo-check --ephemeral -s read-only -o <file> [--output-schema <file>] [-m M] -` | enforced by the CLI |
+| Gemini CLI | `gemini -p "" --output-format json --approval-mode plan --skip-trust [-m M]` | schema in the prompt, validated |
+| Command Code | `command-code -p --output-format json --skip-onboarding --no-auto-update --no-session [--model M]` | schema in the prompt, validated |
+| Cursor Agent | **ACP**: `cursor-agent acp` → `initialize` → `authenticate cursor_login` → `session/new` → mode `ask` → model → `session/prompt` | schema in the prompt, validated |
+| Grok | **ACP**: `grok agent --no-leader [-m M] stdio` | schema in the prompt, validated |
+| Droid | **ACP**: `droid exec --output-format acp` | schema in the prompt, validated |
 
-- **Isolation:**
-  - Each call runs in a fresh, empty temp folder with tools off or a read-only sandbox.
-  - The prompt goes on stdin; Cursor takes it as an argument.
-  - Calls are queued one at a time and time out after 4 minutes.
-- **PATH:** it's read from your login shell, so CLIs installed with Homebrew, `npm -g` or `~/.local/bin` are found even when Sutra is opened from the Dock.
-- **What the agent does:** it runs extraction (title, summary, decisions, action items, open questions), Detailed notes, *Ask about this meeting*, and *Ask Sutra* across meetings.
-- **Search:** agents can't produce embeddings, so search is keyword-only (SQLite FTS5) with a local agent.
+**Cursor models and context window.** Sutra drives Cursor the way ViewCode does: `initialize` advertises
+`clientCapabilities._meta.parameterizedModelPicker`, so the model list is `cursor/list_available_models`
+(every model, as bare ids like `claude-opus-5`, with display names), the model is selected by its bare
+id, and the context window is set afterwards through the session's `model_config` "Context" option.
+The window is the user's choice — **300K (default) or 1M** — in Settings → Intelligence and in the
+Ask-bar model picker, for models that offer both. It is saved on the model id in Cursor's own syntax
+(`claude-opus-5[context=1m]`), so it follows the model to a paired phone too. A model without a 300K
+option (GPT's 272K) gets its nearest window under 300K by default. A Cursor CLI too old for the flag
+only accepts the suffixed ids its session lists; Sutra falls back to that form (`resolveAcpModelId`).
+
+- **PATH:** read from your login shell, so CLIs installed with Homebrew, `npm -g` or `~/.local/bin` are found even when Sutra is opened from the Dock. Windows npm `.cmd` launchers are handled without passing text through `cmd.exe`.
+- **What the agent does:** extraction (title, summary, decisions, action items, open questions), Detailed notes and Minutes, transcript clean-up (with the project glossary), translation, *Ask about this meeting* and *Ask Sutra*.
+- **If the agent fails, everything after transcription stops** (no title, notes or answers) while the transcript itself is fine — check the engine in Settings → Intelligence first.
+- **Search:** agents can't produce embeddings, so search is keyword-only (SQLite FTS5).
+
+## Projects and code folders (Ask only)
+
+A project can link the folders where its code lives (project page → **Code → Link a folder**, desktop).
+
+- **Who can open what.** The renderer stores which folders a project links, but the Mac app only ever
+  opens folders the user picked in the system folder dialog (`userData/project-folders.json`,
+  `electron/projectFolders.ts`). Every read, the AGENTS.md write and an agent's working directory are
+  checked against that list; reads are capped and never follow a symlink out of the folder.
+- **Linking fills the project.** Sutra reads `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursorrules`,
+  `.cursor/rules/*`, `.github/copilot-instructions.md`, the README and the manifest. An empty brief is
+  filled from them (editable); people and glossary terms are only *suggested* — each is added on a tap.
+  **People come from the git history too:** everyone who commits there (`git log -n 3000 --no-merges`,
+  hooks/fsmonitor off), most active first, one entry per person across emails, bots left out.
+  **Suggest from folder** runs it again.
+- **No AGENTS.md / CLAUDE.md?** "Create AGENTS.md" drafts one from the folder plus the project's people
+  and glossary; the user edits it, and **Save to folder** creates the file (never overwrites one).
+- **Ask reads the code — read-only, and only in Ask.** Asking about a meeting in the project, or Ask
+  Sutra with the project selected (the scope chip next to the engine picker, or "Ask about this
+  project"), lets the engine read the project's folders. The engine still **runs in Sutra's private empty
+  temp dir**, never inside the project, so the repo's own agent config (`.mcp.json`, `.claude/`,
+  `.gemini/settings.json`, hooks) never loads. Claude Code gets only `Read,Grep,Glob` (pre-approved) with
+  `--add-dir` for every folder and `--strict-mcp-config`; Gemini runs in `plan` mode with
+  `--include-directories`; Codex reads by absolute path in its `read-only` sandbox; Cursor/Grok/Droid/
+  Command Code get the folder's absolute path in the prompt (Cursor in `ask` mode, tool permissions
+  refused). The prompt tells the agent to cite files and never change anything. Notes, minutes and
+  clean-up never get the folder. "Let Ask read the code" turns it off per project.
+- **Paired phone.** The phone has no folder paths: its question names the project and the meeting
+  (uid), and the Mac finds that project's folders in its own database before running the agent.
+- **Later:** a one-week copy of each project's brief/people/glossary on the phone, synced from the Mac,
+  for answers while the Mac is unreachable. Nothing is stored on a server.
+
+## Meeting chat
+
+Each meeting has a **Chat** tab: the questions asked about it and the answers, saved with the meeting
+(`meeting_chat` table, keyed by the meeting's conversation id — so every recording keeps its own chat,
+on the device it was asked on; it's in backups and is deleted with the meeting). The last few
+exchanges are the context for the next question. Answers render as Markdown (safe: React elements only,
+no HTML; links only http(s)/mailto); a file path in an answer opens in Finder when it's in one of the
+meeting's project folders.
+
+**Add to notes** keeps an answer in the meeting's notes ("Added to this meeting" on the Notes tab), next
+to notes the user writes there. Added items stay when the chat is cleared, are exported with the notes,
+and are given to the AI as part of the meeting's record on later questions.
+
+
+## Notes that see the screen (screenshots + audio)
+
+Settings → General → **Take screenshots during meetings** (desktop, off by default).
+
+- **While recording:** the display stream the recorder already opens for call audio is sampled every 4 s;
+  a frame is saved only when the screen changed (mean change on a 64×36 grayscale thumbnail ≥ 3.5%, or
+  a still screen re-shot every 5 min; past 400 frames only big changes) as a ≤1600 px JPEG. Mic + call
+  audio is recorded as Opus (~32 kbit/s, 10 s chunks). The primary display is captured — Sutra's own pill
+  is excluded, but anything else on screen (including notifications) can be.
+- **At rest:** `userData/recordings/<session>/`, every file AES-256-GCM with a per-install key sealed in
+  the OS keychain (`electron/recordingMedia.ts`). Only the main process reads or writes them.
+- **After the meeting:** before the notes are written, the engine gets the timestamped transcript and up
+  to 16 screenshots (one per stretch of the meeting, the biggest change in each), decrypted into the run's
+  private temp dir (deleted with it). It returns the **screen facts** the transcript doesn't make clear
+  (fed into the notes, and into later questions) and the **screenshots worth keeping** (≤ 8, captioned),
+  which are copied to `recordings/kept/<meeting>/` and shown under **On screen** in the notes. It's told
+  to skip unrelated apps, notifications, private chats and anything with secrets.
+  - Claude Code opens the images with its `Read` tool only; Codex takes them as `--image` attachments;
+    Gemini reads them in `plan` mode; Cursor/Grok/Droid get ACP image blocks when the agent advertises
+    `promptCapabilities.image`. Command Code can't see images — notes then come from the transcript.
+  - Checked with the real Claude Code CLI: given a slide, code, a private chat and a blank desktop, it
+    kept the slide and the code, skipped the chat and the desktop, and pulled "$1.2M ARR by Sept 30"
+    and `MAX_WEBHOOK_RETRIES = 7` — neither said aloud.
+- **Confirm:** the meeting shows what's still on the Mac (screenshots, minutes of audio) with **Play
+  recording**, **Look again** (re-run, e.g. after switching to an engine that can see) and **Keep notes,
+  delete recording**, which deletes the screenshots and audio (kept screenshots stay). Unconfirmed
+  recordings are deleted after 7 days; deleting the meeting deletes everything.

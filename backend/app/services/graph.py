@@ -45,7 +45,7 @@ async def upsert_entity(pool, etype: str, name: str, description: str | None, em
     eid = await pool.fetchval(
         "INSERT INTO entities(type, canonical_name, norm_name, attrs, embedding, importance) "
         "VALUES($1,$2,$3,$4,$5,0.5) "
-        "ON CONFLICT (type, norm_name) DO UPDATE SET mention_count=entities.mention_count+1, last_seen=now() "
+        "ON CONFLICT (user_id, type, norm_name) DO UPDATE SET mention_count=entities.mention_count+1, last_seen=now() "
         "RETURNING id",
         etype, name.strip(), nn, {"description": description} if description else {}, embedding,
     )
@@ -59,7 +59,7 @@ async def upsert_edge(pool, src: int, dst: int, relation: str, conv_id: int, tur
     await pool.execute(
         """INSERT INTO edges(src_entity, dst_entity, relation, weight, evidence)
            VALUES($1,$2,$3,1.0,$4)
-           ON CONFLICT (src_entity, dst_entity, relation)
+           ON CONFLICT (user_id, src_entity, dst_entity, relation)
            DO UPDATE SET weight=edges.weight+1.0, last_seen=now(),
                          evidence = edges.evidence || EXCLUDED.evidence""",
         src, dst, relation.strip().lower().replace(" ", "_"), ev,

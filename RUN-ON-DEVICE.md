@@ -37,6 +37,18 @@ VITE_PROXY_URL=http://192.168.1.9:8787 npm run build && npx cap sync android
 # (proxy already binds 0.0.0.0; phone must be on the same Wi-Fi; allow port 8787 through the Mac firewall)
 ```
 
+## 2b. Hosting the proxy safely (beyond USB)
+The `adb reverse` / same-LAN flows above are fine for **USB testing on your own desk**. For **any non-USB use** — LAN-exposed, or a hosted/public proxy — turn on the optional hardening (all off by default, all in `.env.example`):
+- **`PROXY_SHARED_SECRET`** — set a strong random value so every proxy request must carry a matching `X-Sutra-Secret` header (constant-time compared; 401 otherwise). Build the app with **`VITE_PROXY_SECRET` set to the same value** so the phone sends it:
+  ```bash
+  cd frontend
+  VITE_PROXY_URL=https://proxy.example.com VITE_PROXY_SECRET=<same-as-PROXY_SHARED_SECRET> npm run build && npx cap sync android
+  ```
+- **`PROXY_ALLOWED_ORIGINS`** — set a comma-separated CORS allowlist instead of the default permissive `*`.
+- **`MAX_UPLOAD_MB`** — keep this sane (default 30); oversized `/transcribe` uploads are rejected with HTTP 413.
+- **Serve over HTTPS** — never expose the proxy over plain HTTP off your own machine.
+Leave all of these empty/unset for plain USB testing and the proxy behaves exactly as before.
+
 ## 3. Build + install + launch
 ```bash
 cd /Users/adityapratapsingh/code/Sutra/frontend
@@ -61,6 +73,13 @@ npx cap run android                   # builds, installs, launches on the connec
 - **Mode:** default **Hybrid** (audio → your proxy, in-flight, not stored). The **on-device "max privacy"** mode ("Audio never leaves your device.") is the Phase-3 stub — not active yet.
 - **adb reverse** must be re-applied after each reconnect/reboot of the phone.
 - The web SQLite (jeep-sqlite/sql.js wasm) mismatch from the browser preview **does NOT apply on device** — native Android uses real SQLite (SQLCipher).
+
+## Production hardening (before shipping a release build)
+The dev transport uses **cleartext HTTP** — `capacitor.config.ts` `androidScheme: "http"` + `cleartext: true`, `android: { allowMixedContent: true }`, and `android:usesCleartextTraffic="true"` in `AndroidManifest.xml`. This is **correct for USB testing** (so the `http://localhost` WebView origin can reach the `http://localhost:8787` proxy without a mixed-content block), but for production it **MUST be flipped to HTTPS**:
+- `capacitor.config.ts` → `androidScheme: "https"`, drop `cleartext`/`allowMixedContent`.
+- `AndroidManifest.xml` → remove (or set `false`) `android:usesCleartextTraffic`.
+- Point the app at a **remote HTTPS proxy** (`VITE_PROXY_URL=https://…`) and enable the §2b hardening (`PROXY_SHARED_SECRET`/`VITE_PROXY_SECRET`, `PROXY_ALLOWED_ORIGINS`, `MAX_UPLOAD_MB`).
+- **Rotate the cloud API key** if this folder was ever shared/synced, and verify the configured models are available on the key before trusting it (the proxy 502s opaquely if a configured model isn't enabled).
 
 ## Verify data is on-device
 - All transcripts/memories/graph/voiceprints live in the app's encrypted SQLite. Uninstalling the app wipes it. Nothing is written to the proxy (stateless) or any server.

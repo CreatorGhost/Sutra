@@ -1,0 +1,99 @@
+// Notes that see the screen: which screenshots go to the engine, how its reply is checked, and the whole
+// pass against a fake recording store + engine (the REAL repo on an in-memory SQLite).
+import { describe, it, expect, vi, beforeAll } from "vitest";
+import Database from "better-sqlite3";
+import { adapt } from "../../storage/desktopAdapter";
+import { runMigrations } from "../../storage/migrate";
+
+const raw = new Database(":memory:");
+runMigrations({
+  exec: (sql) => raw.exec(sql),
+  getUserVersion: () => Number(raw.pragma("user_version", { simple: true })),
+  setUserVersion: (v) => raw.exec(`PRAGMA user_version=${v};`),
+  columns: (t) => (raw.prepare(`PRAGMA table_info(${t})`).all() as any[]).map((r) => String(r.name)),
+});
+const store = adapt(raw as any);
+vi.mock("../db", () => ({ q: (s: string, p?: any[]) => store.q(s, p), run: (s: string, p?: any[]) => store.run(s, p), exec: (s: string) => store.exec(s), persist: async () => {} }));
+
+const T0 = Date.UTC(2026, 9, 14, 10, 0, 0);
+const media = {
+  frames: vi.fn(async () => [0, 1, 2, 3].map((i) => ({ name: `shot-${T0 + i * 60_000}.jpg`, at: T0 + i * 60_000, score: 0.2 + i / 10 }))),
+  keep: vi.fn(async () => ""), deleteSession: vi.fn(async () => {}),
+};
+(globalThis as any).sutraDesktop = { isDesktop: true, platform: "darwin", db: () => null, media };
+
+let repo: typeof import("../repo");
+let visual: typeof import("../visual");
+beforeAll(async () => { repo = await import("../repo"); visual = await import("../visual"); });
+
+async function meeting() {
+  const s = await repo.createSession("electron", "meeting", "Zoom");
+  await repo.insertTurn({ session_id: s.id, session_speaker_label: "me", text: "The plan is on the slide.", start_ts: 0, end_ts: 2, abs_start: new Date(T0 + 10_000).toISOString() });
+  const { segmentSession } = await import("../segmentation");
+  const [cid] = await segmentSession(s.id);
+  return { cid, sid: s.id };
+}
+
+describe("choosing and labelling screenshots", () => {
+  it("spreads the picks over the meeting, biggest change per stretch, in time order", () => {
+    const frames = Array.from({ length: 40 }, (_, i) => ({ name: `shot-${i}.jpg`, at: i * 1000, score: i % 5 === 0 ? 0.9 : 0.1 }));
+    const picked = visual.pickShots(frames, 8);
+    expect(picked).toHaveLength(8);
+    expect(picked.map((f) => f.at)).toEqual([...picked.map((f) => f.at)].sort((a, b) => a - b));
+    expect(picked.every((f) => f.score === 0.9)).toBe(true);
+    expect(visual.pickShots(frames.slice(0, 3), 8)).toHaveLength(3);
+    expect(visual.labelShots(picked.slice(0, 2), 0).map((s) => `${s.label} ${s.offset}`)).toEqual(["S01 00:00", "S02 00:05"]);
+  });
+
+  it("times the transcript from the start", () => {
+    expect(visual.timedTranscript([{ abs_start: new Date(T0 + 754_000).toISOString(), session_speaker_label: "me", text: "Hi" }], T0)).toBe("[12:34] Me: Hi");
+  });
+
+  it("keeps only screenshots it was shown, once each, and caps the facts", () => {
+    const shots = visual.labelShots([{ name: "shot-1.jpg", at: 1, score: 0 }, { name: "shot-2.jpg", at: 2, score: 0 }], 0);
+    const r = visual.parseVisual({
+      screen_facts: ["  [S01]  Q3 target $1.2M  ", "", ...Array(30).fill("x")],
+      moments: [{ shot: "S01", caption: "Q3 plan", keep: true }, { shot: "[s01]", caption: "dup", keep: true }, { shot: "S09", caption: "made up", keep: true }, { shot: "S02", caption: "desktop", keep: false }],
+    }, shots);
+    expect(r.facts[0]).toBe("[S01] Q3 target $1.2M");
+    expect(r.facts).toHaveLength(visual.MAX_FACTS);
+    expect(r.keep.map((k) => [k.frame.name, k.caption])).toEqual([["shot-1.jpg", "Q3 plan"]]);
+  });
+});
+
+describe("the pass after a recording", () => {
+  it("sends the screenshots with the timed transcript, keeps the picks, saves the facts", async () => {
+    const { cid, sid } = await meeting();
+    const extract = vi.fn(async () => ({ screen_facts: ["[S02] $1.2M ARR"], moments: [{ shot: "S02", caption: "Q3 slide", keep: true }] }));
+    const facts = await visual.visualPass(cid, sid, { extract, engineId: async () => "claude" } as any);
+    expect(facts).toEqual(["[S02] $1.2M ARR"]);
+    const [, , user, opts] = extract.mock.calls[0] as any[];
+    expect(user).toContain("S01 00:00, S02 01:00, S03 02:00, S04 03:00");
+    expect(user).toContain("[00:10] Me: The plan is on the slide.");
+    expect(opts.images).toEqual({ session: sid, frames: [0, 1, 2, 3].map((i) => ({ name: `shot-${T0 + i * 60_000}.jpg`, label: `S0${i + 1}` })) });
+    expect(media.keep).toHaveBeenCalledWith(sid, `shot-${T0 + 60_000}.jpg`, cid);
+    expect(await repo.listMeetingImages(cid)).toMatchObject([{ name: `shot-${T0 + 60_000}.jpg`, caption: "Q3 slide" }]);
+    expect(await repo.getMeetingVisual(cid)).toMatchObject({ facts: ["[S02] $1.2M ARR"], frames_seen: 4, frames_total: 4, engine: "claude", error: null, confirmed: false });
+    expect(await repo.sessionForConversation(cid)).toBe(sid);
+  });
+
+  it("an engine that can't see is noted, not fatal; confirming deletes the recording", async () => {
+    const { cid, sid } = await meeting();
+    const extract = vi.fn();
+    expect(await visual.visualPass(cid, sid, { extract, engineId: async () => "commandcode" } as any)).toBeNull();
+    expect(extract).not.toHaveBeenCalled();
+    expect((await repo.getMeetingVisual(cid))?.error).toMatch(/Command Code can't look at screenshots/);
+    await visual.confirmRecording(cid);
+    expect(media.deleteSession).toHaveBeenCalledWith(sid);
+    expect((await repo.getMeetingVisual(cid))?.confirmed).toBe(true);
+  });
+
+  it("screen facts reach the notes extraction", async () => {
+    const { cid, sid } = await meeting();
+    await repo.setMeetingVisual(cid, { session_id: sid, facts: ["[S01] Q3 target $1.2M ARR"] });
+    const { extractConversation } = await import("../extraction");
+    const extract = vi.fn(async () => ({ title: "Plan", summary: "s", facts: [], entities: [], relations: [] }));
+    await extractConversation(cid, { extract, canEmbed: false, id: "agent:claude" } as any).catch(() => {});
+    expect((extract.mock.calls[0] as any[])[2]).toContain("# On screen during the meeting (from screenshots; use it where it makes the notes more precise)\n- [S01] Q3 target $1.2M ARR");
+  });
+});

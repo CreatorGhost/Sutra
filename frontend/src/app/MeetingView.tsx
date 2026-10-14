@@ -1,17 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Check, ChevronDown, Copy, Loader2, RotateCcw, Share, Sparkles, Tag as TagIcon, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Copy, Loader2, RotateCcw, Share, Sparkles, Tag as TagIcon, Trash2, Users, Wand2, X } from "lucide-react";
 import { api } from "../local/sutra";
+import { minutesToMarkdown } from "../local/minutes";
 import { NOTE_STYLES, type DetailedNotes, type NoteStyle } from "../local/notes";
 import { isMe, speakerName } from "../local/speakers";
 import { notifyDataChanged, useDataVersion } from "./events";
 import { duration, longDate, offsetLabel } from "./format";
 import { AppIcon, Popover, friendlyError, useAppIcon, useToast } from "./ui";
+import { MinutesNotes } from "./meeting/Minutes";
+import { ProjectChip, useProjects } from "./meeting/ProjectChip";
+import { projectName } from "./projects/model";
+import { EnginePicker } from "./EnginePicker";
+import { Additions, ChatThread, pathOpener, useMeetingChat } from "./meeting/MeetingChat";
+import { OnScreen, RecordingBanner, useMeetingVisual } from "./meeting/MeetingMedia";
+import "./features.css";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof api.conversation>>>;
 
+/** Notes styles: the two note styles plus formal Minutes of Meeting. */
+type ViewStyle = NoteStyle | "minutes";
+const STYLES: Record<ViewStyle, { label: string; hint: string }> = {
+  brief: { label: NOTE_STYLES.brief, hint: "Summary & actions" },
+  detailed: { label: NOTE_STYLES.detailed, hint: "Topic by topic" },
+  minutes: { label: "Minutes", hint: "Formal minutes" },
+};
 const STYLE_KEY = "sutra_note_style";
-const readStyle = (): NoteStyle => { try { return localStorage.getItem(STYLE_KEY) === "detailed" ? "detailed" : "brief"; } catch { return "brief"; } };
+const readStyle = (): ViewStyle => {
+  try { const v = localStorage.getItem(STYLE_KEY); return v === "detailed" || v === "minutes" ? v : "brief"; } catch { return "brief"; }
+};
 
 const PALETTE = ["#7aa2ff", "#f5a97f", "#8bd5ca", "#c6a0f6", "#eed49f", "#f0a6ca", "#91d7e3", "#a6da95"];
 function speakerColor(key: string): string {
@@ -27,9 +44,18 @@ export function MeetingView() {
   const version = useDataVersion();
   const [detail, setDetail] = useState<Detail | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"notes" | "transcript">("notes");
-  const [style, setStyle] = useState<NoteStyle>(readStyle);
+  const [tab, setTab] = useState<"notes" | "transcript" | "chat">("notes");
+  const [style, setStyle] = useState<ViewStyle>(readStyle);
   const [toast, showToast] = useToast();
+  const projects = useProjects(version);
+  const chat = useMeetingChat(cid);
+  const visual = useMeetingVisual(cid, version);
+  const projectId: number | null = (detail as any)?.conversation?.project_id ?? null;
+  const [folders, setFolders] = useState<string[]>([]);
+  useEffect(() => {
+    if (projectId == null) { setFolders([]); return; }
+    void api.getProject(projectId).then((p: any) => setFolders(p?.code_access === false ? [] : p?.folders ?? [])).catch(() => setFolders([]));
+  }, [projectId, version]);
 
   const load = useCallback(async () => {
     try { setDetail(await api.conversation(cid)); setError(null); }
@@ -47,7 +73,7 @@ export function MeetingView() {
     return () => clearInterval(t);
   }, [pending, load]);
 
-  const chooseStyle = (s: NoteStyle) => {
+  const chooseStyle = (s: ViewStyle) => {
     setStyle(s);
     try { localStorage.setItem(STYLE_KEY, s); } catch { /* ignore */ }
   };
@@ -67,14 +93,18 @@ export function MeetingView() {
 
   const c: any = detail.conversation;
   const m: any = detail.memory;
+  const questions = chat.messages.filter((x) => x.role === "user").length;
+  const openPath = pathOpener(folders, showToast);
   const title = m?.title || c.title || (pending ? "Writing notes…" : "Untitled meeting");
 
+  // Copy / export follow the chosen style; Minutes fall back to Brief notes until they exist.
+  const minutesMd = style === "minutes" ? minutesToMarkdown(title, detail.minutes as any) : "";
   const copy = async () => {
-    const md = await api.notesMarkdown(cid, style);
-    showToast((await api.copyText(md)) ? "Notes copied" : "Couldn't copy");
+    const md = minutesMd || (await api.notesMarkdown(cid, style === "minutes" ? "brief" : style));
+    showToast((await api.copyText(md)) ? (minutesMd ? "Minutes copied" : "Notes copied") : "Couldn't copy");
   };
   const exportMd = async () => {
-    const md = await api.notesMarkdown(cid, style, true);
+    const md = minutesMd || (await api.notesMarkdown(cid, style === "minutes" ? "brief" : style, true));
     const safe = String(title).replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "meeting";
     await api.exportText(`${safe}.md`, md);
   };
@@ -98,29 +128,46 @@ export function MeetingView() {
 
           <div className="meta">
             <StylePicker style={style} onChange={chooseStyle} />
+            <ProjectChip cid={cid} conversation={c} projects={projects} onError={showToast} />
             <TagEditor cid={cid} tags={c.tags ?? []} />
             <span className="faint when">
+              {c.is_meeting && <span title="Sutra detected a meeting"><Users size={13} style={{ verticalAlign: -2, marginRight: 5 }} />Meeting · </span>}
               {[longDate(c.started_at ?? c.created_at), duration(c.started_at, c.ended_at)].filter(Boolean).join(" · ")}
               {c.source_app && <> · <SourceApp name={c.source_app} /></>}
             </span>
           </div>
 
+          {!pending && <RecordingBanner cid={cid} v={visual.v} startedAt={c.started_at ?? null} onChanged={() => { void visual.reload(); void load(); }} toast={showToast} />}
+
           <div className="seg" role="tablist">
             <button role="tab" aria-selected={tab === "notes"} onClick={() => setTab("notes")}>Notes</button>
             <button role="tab" aria-selected={tab === "transcript"} onClick={() => setTab("transcript")}>Transcript</button>
+            <button role="tab" aria-selected={tab === "chat"} onClick={() => setTab("chat")}>
+              Chat{questions > 0 && <span className="seg-count">{questions}</span>}
+            </button>
           </div>
 
-          {tab === "notes" ? (
-            pending ? <Writing />
-              : c.status === "failed" && !m ? <Failed cid={cid} onDone={load} />
-              : style === "detailed" ? <DetailedNotesView cid={cid} actions={detail.actions as any[]} />
-              : <BriefNotes memory={m} actions={detail.actions as any[]} />
+          {tab === "chat" ? (
+            <ChatThread chat={chat} onPath={openPath} toast={showToast} />
+          ) : tab === "notes" ? (
+            <>
+              {pending ? <Writing />
+                : c.status === "failed" && !m ? <Failed cid={cid} onDone={load} />
+                : style === "minutes" ? <MinutesNotes cid={cid} minutes={detail.minutes as any} meetingTitle={title} isMeeting={!!c.is_meeting} toast={showToast} />
+                : style === "detailed" ? <DetailedNotesView cid={cid} actions={detail.actions as any[]} />
+                : <BriefNotes memory={m} actions={detail.actions as any[]} />}
+              {!pending && <OnScreen cid={cid} images={visual.v?.images ?? []} startedAt={c.started_at ?? null} onChanged={() => void visual.reload()} />}
+              {!pending && <Additions chat={chat} onPath={openPath} onOpenChat={() => setTab("chat")} />}
+            </>
           ) : (
-            <Transcript turns={detail.turns as any[]} startedAt={c.started_at} cid={cid} />
+            <>
+              <TranscriptTools cid={cid} conversation={c} glossaryFrom={projects.find((p) => p.id === c.project_id && p.context_enabled !== false && p.terms?.length)} toast={showToast} />
+              <Transcript turns={detail.turns as any[]} startedAt={c.started_at} cid={cid} />
+            </>
           )}
         </article>
       </div>
-      <AskBar cid={cid} onCopy={copy} onExport={exportMd} onDelete={remove} />
+      <AskBar cid={cid} busy={!!chat.pending} onAsk={(question) => { setTab("chat"); void chat.ask(question); }} onCopy={copy} onExport={exportMd} onDelete={remove} />
       {toast}
     </>
   );
@@ -177,21 +224,21 @@ function EditableTitle({ value, onSave, disabled }: { value: string; onSave: (v:
   );
 }
 
-function StylePicker({ style, onChange }: { style: NoteStyle; onChange: (s: NoteStyle) => void }) {
+function StylePicker({ style, onChange }: { style: ViewStyle; onChange: (s: ViewStyle) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
       <span className="k">Style</span>
       <Popover open={open} onOpenChange={setOpen} trigger={
         <button className="chip-btn" onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open}>
-          {NOTE_STYLES[style]} <ChevronDown size={14} />
+          {STYLES[style].label} <ChevronDown size={14} />
         </button>
       }>
-        {(Object.keys(NOTE_STYLES) as NoteStyle[]).map((s) => (
+        {(Object.keys(STYLES) as ViewStyle[]).map((s) => (
           <button key={s} role="menuitemradio" aria-checked={s === style} onClick={() => { onChange(s); setOpen(false); }}>
             <span style={{ width: 16 }}>{s === style ? <Check size={14} /> : null}</span>
-            {NOTE_STYLES[s]}
-            <span className="hint">{s === "brief" ? "Summary & actions" : "Topic by topic"}</span>
+            {STYLES[s].label}
+            <span className="hint">{STYLES[s].hint}</span>
           </button>
         ))}
       </Popover>
@@ -251,7 +298,7 @@ function Failed({ cid, onDone }: { cid: number; onDone: () => void }) {
     <div className="notice err">
       <div className="grow">
         <div style={{ fontWeight: 600 }}>Couldn't write notes for this meeting</div>
-        <div className="muted">{err ?? "The transcript is safe. Try again when you're online."}</div>
+        <div className="muted">{err ?? "The transcript is safe. Check your AI engine in Settings → Intelligence, then retry."}</div>
       </div>
       <button className="btn" onClick={retry} disabled={busy}>{busy ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />} Retry</button>
     </div>
@@ -340,6 +387,53 @@ function DetailedNotesView({ cid, actions }: { cid: number; actions: any[] }) {
   );
 }
 
+/** Raw / Cleaned switch and "Clean up transcript". Cleaning keeps the raw text, uses the project's
+ *  glossary (refinement service) and rebuilds the notes, so the whole view refreshes afterwards. */
+function TranscriptTools({ cid, conversation: c, glossaryFrom, toast }: { cid: number; conversation: any; glossaryFrom?: any; toast: (m: string) => void }) {
+  const [busy, setBusy] = useState<null | "clean" | "raw" | "cleaned">(null);
+  const [err, setErr] = useState<string | null>(null);
+  const clean = async () => {
+    setBusy("clean"); setErr(null);
+    try {
+      const r = await api.cleanConversation(cid);
+      if (r.ok) { toast("Transcript cleaned · notes updated"); notifyDataChanged(); }
+      else setErr(r.reason === "cloud-only" ? "Clean-up needs an AI engine — connect one in Settings → Intelligence."
+        : r.reason === "empty" ? "There's no transcript to clean yet." : "Couldn't clean the transcript — try again.");
+    } catch (e) { setErr(friendlyError(e)); }
+    finally { setBusy(null); }
+  };
+  // Switching re-derives the notes from the chosen text; the flag flips first, so a failed refresh
+  // (offline) still shows the text the user picked.
+  const show = async (cleaned: boolean) => {
+    if (cleaned === !!c.refined) return;
+    setBusy(cleaned ? "cleaned" : "raw"); setErr(null);
+    try { await api.setConversationRefined(cid, cleaned); }
+    catch { toast("Switched — notes will refresh once your AI engine is available"); }
+    finally { setBusy(null); notifyDataChanged(); }
+  };
+  return (
+    <>
+      <div className="tx-tools">
+        {c.hasClean && (
+          <span className="mini-seg" role="group" aria-label="Transcript text">
+            <button aria-pressed={!c.refined} onClick={() => void show(false)} disabled={!!busy}>{busy === "raw" ? <Loader2 size={12} className="spin" /> : null} Raw</button>
+            <button aria-pressed={!!c.refined} onClick={() => void show(true)} disabled={!!busy}>{busy === "cleaned" ? <Loader2 size={12} className="spin" /> : null} Cleaned</button>
+          </span>
+        )}
+        <button className="btn" onClick={() => void clean()} disabled={!!busy}>
+          {busy === "clean" ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />}
+          {busy === "clean" ? "Cleaning…" : c.hasClean ? "Clean again" : "Clean up transcript"}
+        </button>
+        <span className="faint grow">
+          {busy === "clean" ? "Fixing mishearings and filler, then rewriting the notes — this can take a minute."
+            : glossaryFrom ? `Uses the ${projectName(glossaryFrom)} glossary.` : c.hasClean ? "" : "Fixes mishearings and filler. The original is kept."}
+        </span>
+      </div>
+      {err && <div className="notice err"><div className="grow">{err}</div></div>}
+    </>
+  );
+}
+
 function Transcript({ turns, startedAt, cid }: { turns: any[]; startedAt?: string | null; cid: number }) {
   const [renamed, setRenamed] = useState(false);
   if (!turns.length) return <p className="muted">No transcript for this meeting.</p>;
@@ -405,43 +499,22 @@ function SpeakerButton({ turn, onRenamed }: { turn: any; onRenamed: () => void }
   );
 }
 
-function AskBar({ cid, onCopy, onExport, onDelete }: { cid: number; onCopy: () => void; onExport: () => void; onDelete: () => void }) {
+/** The bar at the bottom: ask about this meeting (answers go to the Chat tab), copy, export, delete. */
+function AskBar({ cid, busy, onAsk, onCopy, onExport, onDelete }: {
+  cid: number; busy: boolean; onAsk: (q: string) => void; onCopy: () => void; onExport: () => void; onDelete: () => void;
+}) {
   const [q, setQ] = useState("");
-  const [qa, setQa] = useState<{ q: string; a: string | null }[]>([]);
-  const endRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => { setQa([]); setQ(""); }, [cid]);
-  useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [qa]);
-
-  const ask = async () => {
-    const question = q.trim();
-    if (!question) return;
-    setQ("");
-    const history = qa.filter((x) => x.a).map((x) => ({ q: x.q, a: x.a! }));
-    setQa((xs) => [...xs, { q: question, a: null }]);
-    let a: string;
-    try { a = await api.askMeeting(cid, question, history); } catch (e) { a = friendlyError(e); }
-    setQa((xs) => xs.map((x, i) => (i === xs.length - 1 && x.q === question && x.a === null ? { ...x, a } : x)));
-  };
+  useEffect(() => { setQ(""); }, [cid]);
+  const ask = () => { const question = q.trim(); if (!question || busy) return; setQ(""); onAsk(question); };
 
   return (
     <>
-      {qa.length > 0 && (
-        <div className="answers" role="log" aria-live="polite">
-          <div className="answers-head"><span>About this meeting</span><button className="icon-btn ghost sm" onClick={() => setQa([])} aria-label="Close answers"><X size={14} /></button></div>
-          {qa.map((x, i) => (
-            <div key={i} className="qa">
-              <div className="q">{x.q}</div>
-              <div className="a">{x.a ?? <span className="muted"><Loader2 size={13} className="spin" /> Thinking…</span>}</div>
-            </div>
-          ))}
-          <div ref={endRef} />
-        </div>
-      )}
       <div className="pane-fade" />
       <div className="askbar">
-        <form className="ask-input" onSubmit={(e) => { e.preventDefault(); void ask(); }}>
-          <Sparkles size={17} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask about this meeting…" aria-label="Ask about this meeting" />
+        <form className="ask-input" onSubmit={(e) => { e.preventDefault(); ask(); }}>
+          {busy ? <Loader2 size={17} className="spin" /> : <Sparkles size={17} />}
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={busy ? "Thinking…" : "Ask about this meeting…"} aria-label="Ask about this meeting" />
+          <EnginePicker />
         </form>
         <div className="ask-actions">
           <button className="icon-btn" onClick={onCopy} aria-label="Copy notes" title="Copy notes"><Copy size={17} /></button>

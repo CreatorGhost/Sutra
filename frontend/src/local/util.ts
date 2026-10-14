@@ -17,11 +17,48 @@ export function normName(name: string): string {
   return (name || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/** Display-only mapping for unnamed speakers: raw per-session cluster label ("c1","c2",…) -> a clean
+ *  1-indexed "Speaker 1","Speaker 2",… assigned in first-appearance order within the conversation. The
+ *  raw cN label stays the database value (and the key for relabel); this only governs what the user/model
+ *  see, so raw voiceprint-cluster ids never leak into the transcript UI or generated minutes. Stable and
+ *  deterministic for a given turn order. Use the inverse to translate a model's returned "Speaker N" back
+ *  to its raw cN label before relabelling. */
+export function buildSpeakerDisplay(turns: { session_speaker_label?: string | null }[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const t of turns) {
+    const raw = t.session_speaker_label;
+    if (raw == null || raw === "") continue;
+    if (!map.has(raw)) map.set(raw, `Speaker ${map.size + 1}`);
+  }
+  return map;
+}
+
+/** Stable color-key for a speaker dot in the transcript. Hashes the RAW session_speaker_label
+ *  (the cN/letter cluster id — never the display name, so the color survives renaming) to a fixed
+ *  palette of 8 calm hues that sit on the dark surface. Deterministic per label; the same speaker
+ *  always reads the same color within and across conversations. */
+const SPEAKER_PALETTE = [
+  "#8b7bff", // accent violet
+  "#5ec6c0", // teal
+  "#e0a458", // amber
+  "#e07ba8", // rose
+  "#7bb0ff", // sky
+  "#9fcf6b", // lime
+  "#c08bff", // orchid
+  "#ff9b7b", // coral
+];
+export function speakerColor(rawLabel: string | null | undefined): string {
+  const s = String(rawLabel ?? "");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return SPEAKER_PALETTE[Math.abs(h) % SPEAKER_PALETTE.length];
+}
+
 export function cosine(a: Float32Array | number[], b: Float32Array | number[]): number {
   // Mismatched dimensions mean corruption (e.g. a wrong-length voiceprint) — don't silently truncate
   // and return a plausible-but-wrong score; treat as "no match" so a bad row can't mis-identify a speaker.
-  if (a.length !== b.length || a.length === 0) {
-    if (a.length !== b.length) console.warn("cosine: dimension mismatch", a.length, b.length);
+  if (!a || !b || a.length !== b.length || a.length === 0) {
+    if (a && b && a.length !== b.length) console.warn("cosine: dimension mismatch", a.length, b.length);
     return 0;
   }
   let dot = 0, na = 0, nb = 0;
@@ -66,5 +103,6 @@ export function blobToVec(b: string | Uint8Array | ArrayBuffer | null | undefine
     return new Float32Array(bytes.buffer);
   }
   const buf = b instanceof Uint8Array ? b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) : b;
+  if (buf.byteLength % 4 !== 0) { console.warn("blobToVec: misaligned buffer", buf.byteLength); return new Float32Array(0); }
   return new Float32Array(buf);
 }

@@ -1,9 +1,61 @@
 """Pydantic request models + the strict JSON schema used for LLM extraction."""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 ENTITY_TYPES = ["person", "project", "topic", "org", "place", "event", "commitment"]
+
+
+# ----- Tier B auth request bodies -----
+# A pragmatic email check (no `email-validator` dep added): one @, non-empty local + dotted domain.
+# We normalize to a trimmed, lowercased string; CITEXT in the DB makes the uniqueness case-insensitive.
+import re as _re
+
+_EMAIL_RE = _re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class SignupRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=8, max_length=200)
+
+    @field_validator("email")
+    @classmethod
+    def _valid_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not _EMAIL_RE.match(v):
+            raise ValueError("invalid email address")
+        return v
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=200)
+
+    @field_validator("email")
+    @classmethod
+    def _norm_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class RequestResetBody(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+    @field_validator("email")
+    @classmethod
+    def _norm_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class ResetBody(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
+    new_password: str = Field(min_length=8, max_length=200)
+
+
+class DeleteAccountRequest(BaseModel):
+    """Fresh confirmation for DELETE /auth/account: password accounts confirm with their password;
+    social accounts (no password hash) confirm by typing their email."""
+    password: str | None = Field(default=None, max_length=200)
+    confirm_email: str | None = Field(default=None, max_length=254)
 
 
 # ----- API request bodies -----
