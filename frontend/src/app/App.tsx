@@ -5,6 +5,8 @@ import { App as CapApp } from "@capacitor/app";
 import { api } from "../local/sutra";
 import { AUTH_EXPIRED_EVENT } from "../providers/cloudProvider";
 import { desktop } from "../desktop/bridge";
+import { pairingActive } from "../pairing/model";
+import { startPairingRuntime } from "../pairing/runtime";
 import { AskAll } from "./AskAll";
 import { useIntegrations } from "./integrations";
 import { Home } from "./Home";
@@ -46,10 +48,16 @@ function Shell() {
   // Desktop: the main process can deep-link us (pill "Open", tray).
   useEffect(() => desktop?.onNavigate((p) => nav(p)), [nav]);
 
+  // Phone paired with a Mac: connect to it and send any recordings still waiting on the phone.
+  useEffect(() => { startPairingRuntime(); }, []);
+
   // Self-heal once per launch: finish any recording that was transcribed but never turned into notes
-  // (app quit mid-processing, offline, crash). Delayed so it never competes with first paint.
+  // (app quit mid-processing, offline, crash). Delayed so it never competes with first paint. A phone
+  // paired with a Mac leaves this to its queue, which owns those recordings (two passes would race).
   useEffect(() => {
-    const t = setTimeout(() => { void api.reprocessIncomplete().catch(() => {}); }, 2500);
+    const t = setTimeout(() => {
+      void api.getSettings().then((s) => (!desktop && pairingActive(s) ? null : api.reprocessIncomplete())).catch(() => {});
+    }, 2500);
     return () => clearTimeout(t);
   }, []);
 

@@ -3,6 +3,9 @@ import { CloudProvider } from "./cloudProvider";
 import { OnDeviceProvider } from "./ondeviceProvider";
 import { AgentProvider } from "./agentProvider";
 import { ComposedProvider, LocalSpeechProvider } from "./localSttProvider";
+import { PairedMacProvider } from "./pairedMacProvider";
+import { macConnection } from "../pairing/connection";
+import { pairedAiChoice, pairingActive } from "../pairing/model";
 import { desktop } from "../desktop/bridge";
 import { DEFAULT_SPEECH_MODEL } from "../shared/speechModels";
 import { AGENT_IDS, isAgentId, safeModel, type AgentId } from "../shared/agentProtocol";
@@ -74,7 +77,8 @@ export function getProvider(mode: Mode = "hybrid"): Provider {
  *                ai_model_<id> picks its model.
  *  On desktop ALL AI (notes, minutes, clean-up, translation, Q&A, Ask Sutra) runs through the user's own
  *  agent CLI — never the Sutra cloud. No explicit choice ("auto") = the first installed, signed-in engine.
- *  Outside the desktop app (web/Android) there are no agent CLIs, so both fall back to the cloud. */
+ *  Outside the desktop app (web/Android) there are no agent CLIs, so both fall back to the cloud —
+ *  unless the phone is paired with a Mac, which then does both (resolveProvider → macProvider). */
 export type SttEngine = "cloud" | "local";
 export type AiEngine = "cloud" | "auto" | AgentId;
 
@@ -91,11 +95,21 @@ export function engineChoice(s: Record<string, unknown>): { stt: SttEngine; ai: 
 
 /** Engines that write full notes (the cloud, or an agent CLI) — unlike the on-device stub. Gates the
  *  extra passes (auto minutes, transcript clean-up, Your Context) that used to be cloud-only. */
-export const isFullTextEngine = (p: Pick<Provider, "id">) => p.id === "cloud" || p.id.startsWith("agent:");
+export const isFullTextEngine = (p: Pick<Provider, "id">) => p.id === "cloud" || p.id === "mac" || p.id.startsWith("agent:");
 
 const composed = new Map<string, Provider>();
 
+/** A phone paired with a Mac: transcription and every AI job run there (see pairing/). */
+export function macProvider(s: Record<string, unknown>): Provider {
+  const choice = pairedAiChoice(s);
+  const key = `mac|${choice.engine}|${choice.model}`;
+  let p = composed.get(key);
+  if (!p) { p = new PairedMacProvider(macConnection, choice); composed.set(key, p); }
+  return p;
+}
+
 export function resolveProvider(s: Record<string, unknown>): Provider {
+  if (!desktop && pairingActive(s)) return macProvider(s);
   if (!desktop && s["mode"] === "ondevice") return getProvider("ondevice");
   const c = engineChoice(s);
   if (c.stt === "cloud" && c.ai === "cloud") return getProvider("hybrid");

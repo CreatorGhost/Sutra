@@ -37,6 +37,7 @@
     "electron-updater": "^6.8.9",
     "gsap": "^3.15.0",
     "jeep-sqlite": "^2.8.0",
+    "jsqr": "^1.4.0",
     "lucide-react": "^0.468.0",
     "maath": "^0.10.8",
     "postprocessing": "^6.39.1",

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AudioLines, FolderClosed, Loader2, Search, Settings as Gear, Sparkles, Square, Waypoints, X } from "lucide-react";
+import { AudioLines, FolderClosed, Laptop, Loader2, Search, Settings as Gear, Sparkles, Square, Waypoints, X } from "lucide-react";
 import { api } from "../local/sutra";
 import { setMeetingFilter, useMeetingFilter } from "./projects/filter";
 import { projectColor, projectName, type ProjectLike } from "./projects/model";
@@ -10,6 +10,7 @@ import { useDataVersion } from "./events";
 import { clock, groupByPeriod, shortDate } from "./format";
 import { useNow, useRecorder } from "./recorder";
 import { AppIcon } from "./ui";
+import { useMac, useQueueStats } from "../pairing/runtime";
 
 interface MeetingRow {
   id: number;
@@ -123,7 +124,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
           <button className="link" onClick={() => void start({ app: detection.active!.app })}>Record</button>
           <button className="x" aria-label="Dismiss" onClick={() => desktop?.pill.action("dismiss")}><X size={14} /></button>
         </div>
-      ) : null}
+      ) : !desktop ? <MacChip /> : null}
 
       <nav className="list" aria-label="Meetings">
         {query.trim() && (
@@ -176,5 +177,26 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
         )}
       </div>
     </aside>
+  );
+}
+
+/** Phone paired with a Mac: a quiet line when the Mac is out of reach or recordings are waiting for it. */
+function MacChip() {
+  const mac = useMac();
+  const stats = useQueueStats(!!mac.pairing);
+  if (!mac.pairing) return null;
+  const waiting = stats?.recordings ?? 0;
+  const state = mac.status.state;
+  const text = state === "revoked" ? "Removed by your Mac"
+    : state === "online" ? (waiting ? `Sending ${waiting} to your Mac…` : null)
+    : state === "connecting" ? (waiting ? `${waiting} waiting for your Mac` : null)
+    : `Mac not reachable${waiting ? ` · ${waiting} waiting` : ""}`;
+  if (!text) return null;
+  return (
+    <div className="banner">
+      <Laptop size={15} />
+      <span className="grow">{text}</span>
+      <button className="link" onClick={() => window.dispatchEvent(new CustomEvent("sutra:open-settings", { detail: "mac" }))}>Details</button>
+    </div>
   );
 }

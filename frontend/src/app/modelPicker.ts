@@ -2,6 +2,7 @@
 // "Default" (the engine's own choice) first, then the models the engine reports — plus favorites and
 // search. The picker writes ai_engine / ai_model_<id>, the same settings as Settings → Intelligence.
 import { AGENTS, agentReady, safeModel, type AgentId, type AgentStatus } from "../shared/agentProtocol";
+import type { EngineSummary } from "../shared/pairing/protocol";
 
 export interface ModelOption {
   key: string;            // "<engine>:<model>" ("<engine>:" for Default) — stable, used for favorites
@@ -67,4 +68,14 @@ export function visibleOptions(input: {
     return favs.map((k) => all.find((o) => o.key === k)).filter((o): o is ModelOption => !!o);
   }
   return all.filter((o) => o.engine === input.tab);
+}
+
+/** A paired phone lists the engines on its Mac (host.info) in the same picker. The Mac only says
+ *  whether each one is ready; one that isn't is shown as needing setup on the Mac. */
+export function agentsFromHost(engines: EngineSummary[]): AgentStatus[] {
+  return engines.map((e) => ({
+    id: e.id, label: e.label, installed: e.ready, path: null, version: null, signedIn: e.ready ? true : null,
+    account: e.account, models: e.models, defaultModel: e.defaultModel, install: "", signIn: "",
+    hint: e.ready ? null : "Set it up on your Mac",
+  }));
 }

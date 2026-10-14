@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentStatus } from "../../shared/agentProtocol";
-import { engineOptions, optionKey, prettyModel, toggleFavorite, visibleOptions } from "../modelPicker";
+import { agentsFromHost, engineOptions, optionKey, prettyModel, toggleFavorite, visibleOptions } from "../modelPicker";
 
 const st = (id: AgentStatus["id"], over: Partial<AgentStatus> = {}): AgentStatus => ({
   id, label: id, installed: true, path: "/bin/x", version: "1", signedIn: true, account: null, models: [], defaultModel: null,
@@ -41,5 +41,17 @@ describe("visibleOptions", () => {
     expect(visibleOptions({ agents, settings: { ai_model_favorites: favs }, tab: "favorites", query: "" }).map((o) => o.key))
       .toEqual(["codex:gpt-5-codex", "claude:opus"]);
     expect(toggleFavorite(favs, "claude:opus")).not.toContain("claude:opus");
+  });
+});
+
+describe("engines on a paired Mac", () => {
+  it("lists the Mac's engines in the picker; only ready ones offer models", () => {
+    const agents = agentsFromHost([
+      { id: "claude", label: "Claude Code", ready: true, account: "a@b.c", models: ["sonnet", "opus"], defaultModel: "sonnet" },
+      { id: "codex", label: "Codex", ready: false, account: null, models: ["gpt-5"], defaultModel: null },
+    ]);
+    expect(agents.map((a) => [a.id, a.installed, a.signedIn])).toEqual([["claude", true, true], ["codex", false, null]]);
+    expect(visibleOptions({ agents, settings: {}, tab: "claude", query: "" }).map((o) => o.key)).toEqual(["claude:", "claude:sonnet", "claude:opus"]);
+    expect(visibleOptions({ agents, settings: {}, tab: "codex", query: "" })).toEqual([]);
   });
 });

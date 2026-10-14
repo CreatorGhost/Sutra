@@ -1,7 +1,9 @@
 // The model picker in the Ask bars, after ViewCode's: a rail of engines (favorites first), a search
 // field, and one row per model with its engine underneath. It edits the same settings as Settings →
 // Intelligence (ai_engine, ai_model_<id>), so the next answer — and every later AI job — uses the pick.
-// Desktop only: phone/web answer through the cloud.
+// On a phone paired with a Mac it lists the Mac's engines and saves the pick on the phone
+// (paired_ai_engine / paired_ai_model); the Mac's own setting is left alone. Elsewhere phone/web
+// answer through the cloud, and there's no picker.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Search, Settings2, Star } from "lucide-react";
 import { api } from "../local/sutra";
@@ -10,38 +12,81 @@ import { AGENTS, agentReady, safeModel, type AgentId } from "../shared/agentProt
 import { engineChoice } from "../providers";
 import { autoEngine } from "./EngineSettings";
 import { EngineLogo } from "./engineLogos";
-import { FAVORITES_KEY, optionKey, parseFavorites, prettyModel, toggleFavorite, visibleOptions, type ModelOption } from "./modelPicker";
+import { agentsFromHost, FAVORITES_KEY, optionKey, parseFavorites, prettyModel, toggleFavorite, visibleOptions, type ModelOption } from "./modelPicker";
+import { PAIRED_ENGINE_KEY, PAIRED_MODEL_KEY, pairedAiChoice } from "../pairing/model";
+import { useMac } from "../pairing/runtime";
 
-const EVT = "sutra:engine";
+/** Fired when the engine pick changes, so every picker re-reads it. */
+export const ENGINE_EVENT = "sutra:engine";
+const EVT = ENGINE_EVENT;
 const MOD = isMacDesktop ? "⌘" : "Ctrl+";
 type Tab = "favorites" | AgentId;
 
-export function EnginePicker() {
+/** What the picker shows and where a pick is saved. */
+interface EngineSource {
+  agents: AgentStatus[];
+  /** For the option list: favorites, and ai_model_<id> for the current pick. */
+  settings: Record<string, unknown>;
+  active: AgentStatus | null;
+  model: string | null;
+  /** The engines run on the paired Mac (set up there, not here). */
+  remote: boolean;
+  pick(o: ModelOption): void;
+  favorite(key: string): void;
+}
+
+function useEngineSource(): EngineSource | null {
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
   const [settings, setSettings] = useState<Record<string, unknown>>({});
-  const [open, setOpen] = useState(false);
+  const mac = useMac();
 
   useEffect(() => {
-    if (!desktop) return;
     const load = () => { void api.getSettings().then((s) => setSettings(s as Record<string, unknown>)).catch(() => {}); };
     load();
-    void desktop.ai.detect().then(setAgents).catch(() => setAgents([]));
+    if (desktop) void desktop.ai.detect().then(setAgents).catch(() => setAgents([]));
     // Keep every picker (meeting Ask bar, Ask Sutra) in step.
     window.addEventListener(EVT, load);
     return () => window.removeEventListener(EVT, load);
   }, []);
-
-  if (!desktop || !agents) return null;
-  const choice = engineChoice(settings);
-  const ready = agents.filter(agentReady);
-  const active = (choice.ai !== "auto" && choice.ai !== "cloud" ? ready.find((a) => a.id === choice.ai) : null) ?? autoEngine(agents);
-  const model = active ? safeModel(settings[`ai_model_${active.id}`]) : null;
 
   const save = async (patch: Record<string, unknown>) => {
     await api.putSettings(patch);
     setSettings((s) => ({ ...s, ...patch }));
     window.dispatchEvent(new Event(EVT));
   };
+  const favorite = (key: string) => void save({ [FAVORITES_KEY]: toggleFavorite(parseFavorites(settings[FAVORITES_KEY]), key) });
+
+  if (desktop) {
+    if (!agents) return null;
+    const choice = engineChoice(settings);
+    const ready = agents.filter(agentReady);
+    const active = (choice.ai !== "auto" && choice.ai !== "cloud" ? ready.find((a) => a.id === choice.ai) : null) ?? autoEngine(agents);
+    const model = active ? safeModel(settings[`ai_model_${active.id}`]) : null;
+    return {
+      agents, settings, active, model, remote: false, favorite,
+      pick: (o) => void save({ ai_engine: o.engine, [`ai_model_${o.engine}`]: o.model ?? "" }),
+    };
+  }
+
+  const info = mac.hostInfo;
+  if (!mac.pairing || mac.status.state === "revoked" || !info) return null;
+  const remoteAgents = agentsFromHost(info.engines);
+  // The phone's own pick, else whatever the Mac uses.
+  const own = pairedAiChoice(settings);
+  const active = remoteAgents.find((a) => a.id === (own.engine ?? info.activeEngine) && agentReady(a)) ?? autoEngine(remoteAgents);
+  const model = !active ? null : own.engine ? own.model : active.id === info.activeEngine ? safeModel(info.activeModel) : null;
+  return {
+    agents: remoteAgents, active, model, remote: true, favorite,
+    settings: { [FAVORITES_KEY]: settings[FAVORITES_KEY], ...(active && model ? { [`ai_model_${active.id}`]: model } : {}) },
+    pick: (o) => void save({ [PAIRED_ENGINE_KEY]: o.engine, [PAIRED_MODEL_KEY]: o.model }),
+  };
+}
+
+export function EnginePicker() {
+  const src = useEngineSource();
+  const [open, setOpen] = useState(false);
+  if (!src) return null;
+  const { agents, settings, active, model } = src;
 
   return (
     <div className="mp-wrap">
@@ -52,17 +97,17 @@ export function EnginePicker() {
         <ChevronDown size={14} className="engine-chip-caret" />
       </button>
       {open && (
-        <PickerPanel agents={agents} settings={settings} activeId={active?.id ?? null} activeModel={model}
+        <PickerPanel agents={agents} settings={settings} activeId={active?.id ?? null} activeModel={model} remote={src.remote}
           onClose={() => setOpen(false)}
-          onPick={(o) => { setOpen(false); void save({ ai_engine: o.engine, [`ai_model_${o.engine}`]: o.model ?? "" }); }}
-          onFavorite={(key) => void save({ [FAVORITES_KEY]: toggleFavorite(parseFavorites(settings[FAVORITES_KEY]), key) })} />
+          onPick={(o) => { setOpen(false); src.pick(o); }}
+          onFavorite={src.favorite} />
       )}
     </div>
   );
 }
 
-function PickerPanel({ agents, settings, activeId, activeModel, onClose, onPick, onFavorite }: {
-  agents: AgentStatus[]; settings: Record<string, unknown>; activeId: AgentId | null; activeModel: string | null;
+function PickerPanel({ agents, settings, activeId, activeModel, remote, onClose, onPick, onFavorite }: {
+  agents: AgentStatus[]; settings: Record<string, unknown>; activeId: AgentId | null; activeModel: string | null; remote: boolean;
   onClose: () => void; onPick: (o: ModelOption) => void; onFavorite: (key: string) => void;
 }) {
   const favorites = parseFavorites(settings[FAVORITES_KEY]);
@@ -100,7 +145,7 @@ function PickerPanel({ agents, settings, activeId, activeModel, onClose, onPick,
     else if (e.key === "Enter") { e.preventDefault(); if (rows[hl]) onPick(rows[hl]); }
   };
 
-  const openSettings = () => { onClose(); window.dispatchEvent(new CustomEvent("sutra:open-settings", { detail: "intelligence" })); };
+  const openSettings = () => { onClose(); window.dispatchEvent(new CustomEvent("sutra:open-settings", { detail: remote ? "mac" : "intelligence" })); };
 
   return (
     <div className="mp" ref={ref} role="dialog" aria-label="Select model" onKeyDown={onKey}>
@@ -111,7 +156,7 @@ function PickerPanel({ agents, settings, activeId, activeModel, onClose, onPick,
         <div className="mp-rail-sep" />
         {rail.map((a) => (
           <RailButton key={a.id} on={tab === a.id && !query} dim={!agentReady(a)} onClick={() => { setQuery(""); setTab(a.id); }}
-            label={`${AGENTS[a.id].label}${agentReady(a) ? "" : a.installed ? " — sign in" : " — not installed"}`}>
+            label={`${AGENTS[a.id].label}${agentReady(a) ? "" : remote ? " — set up on your Mac" : a.installed ? " — sign in" : " — not installed"}`}>
             <EngineLogo id={a.id} size={17} />
           </RailButton>
         ))}
@@ -125,7 +170,7 @@ function PickerPanel({ agents, settings, activeId, activeModel, onClose, onPick,
         </label>
         <div className="mp-list" ref={list} role="listbox" aria-label="Models">
           {tabAgent && !agentReady(tabAgent) && !query ? (
-            <SetupHint st={tabAgent} onManage={openSettings} />
+            <SetupHint st={tabAgent} remote={remote} onManage={openSettings} />
           ) : rows.length === 0 ? (
             <div className="mp-empty">
               {query ? "No models match." : tab === "favorites" ? <>Star a model to keep it here.</> : "This engine didn't report any models."}
@@ -145,7 +190,7 @@ function PickerPanel({ agents, settings, activeId, activeModel, onClose, onPick,
                   <div className="mp-sub"><EngineLogo id={o.engine} size={12} />{AGENTS[o.engine].label}</div>
                 </div>
                 {sel && <Check size={14} className="mp-check" />}
-                {i < 9 && <kbd className="mp-kbd">{MOD}{i + 1}</kbd>}
+                {i < 9 && !remote && <kbd className="mp-kbd">{MOD}{i + 1}</kbd>}
                 <button type="button" className={`mp-star${fav ? " on" : ""}`} aria-label={fav ? "Remove from favorites" : "Add to favorites"}
                   onClick={(e) => { e.stopPropagation(); onFavorite(o.key); }}>
                   <Star size={14} fill={fav ? "currentColor" : "none"} />
@@ -167,7 +212,16 @@ function RailButton({ on, dim, label, onClick, children }: { on?: boolean; dim?:
   );
 }
 
-function SetupHint({ st, onManage }: { st: AgentStatus; onManage: () => void }) {
+function SetupHint({ st, remote, onManage }: { st: AgentStatus; remote: boolean; onManage: () => void }) {
+  if (remote) {
+    return (
+      <div className="mp-setup">
+        <EngineLogo id={st.id} size={22} />
+        <div className="mp-setup-title">{AGENTS[st.id].label} isn't ready on your Mac</div>
+        <div className="mp-setup-text">Set it up in Sutra on your Mac, under Settings → Intelligence.</div>
+      </div>
+    );
+  }
   const cmd = st.installed ? st.signIn : st.install;
   return (
     <div className="mp-setup">
