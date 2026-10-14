@@ -116,18 +116,18 @@ function NotchIsland({ st, notch }: { st: PillState; notch: { width: number; hei
   useEffect(() => {
     if (mode === "hidden") return;
     setPeek(true);
-    const t = setTimeout(() => setPeek(false), mode === "recording" ? 1800 : 4500);
+    const t = setTimeout(() => setPeek(false), mode === "recording" ? 1500 : 3000);
     return () => clearTimeout(t);
   }, [mode]);
 
   const s = shown ?? st;
   const now = useNow(s.mode === "recording", 500);
   const expanded = open && (hover || peek);
-  const wing = s.mode === "recording" ? 72 : 46;
+  const wing = s.mode === "recording" ? 66 : 38;
   const size = !open
     ? { width: notch.width, height: notch.height }
     : expanded
-      ? { width: Math.max(notch.width + 230, 420), height: notch.height + 76 }
+      ? { width: Math.max(notch.width + 165, 350), height: notch.height + 58 }
       : { width: notch.width + wing * 2, height: notch.height };
   const enter = (on: boolean) => { setHover(on); desktop?.pill.hover(on); };
   const started = s.recorder.startedAt ?? null;
@@ -135,13 +135,13 @@ function NotchIsland({ st, notch }: { st: PillState; notch: { width: number; hei
 
   let left: React.ReactNode = null, right: React.ReactNode = null, title = "", sub = "", actions: React.ReactNode = null, lead: React.ReactNode = null;
   if (s.mode === "detected") {
-    left = <AppIcon src={s.icon} name={s.app} size={18} />;
+    left = <AppIcon src={s.icon} name={s.app} size={16} />;
     right = <span className="ni-pulse" />;
-    lead = <AppIcon src={s.icon} name={s.app} size={34} />;
+    lead = <AppIcon src={s.icon} name={s.app} size={28} />;
     title = s.app ?? "Call"; sub = s.service ? `${s.service} call` : "In a call";
     actions = <>
       <button className="ni-btn rec" onClick={() => act("record")}><span className="rec-ring" /> Record</button>
-      <button className="ni-icon" onClick={() => act("dismiss")} aria-label="Dismiss" title="Not this call"><X size={15} /></button>
+      <button className="ni-icon" onClick={() => act("dismiss")} aria-label="Dismiss" title="Not this call"><X size={13} /></button>
     </>;
   } else if (s.mode === "recording") {
     left = <><span className="live-dot" /><span className="ni-clock">{time}</span></>;
@@ -149,23 +149,23 @@ function NotchIsland({ st, notch }: { st: PillState; notch: { width: number; hei
     lead = <span className="ni-lead rec"><span className="live-dot" /></span>;
     title = `Recording · ${time}`; sub = s.app ?? "Microphone";
     actions = <>
-      <button className="ni-btn" onClick={() => act("stop")} disabled={s.recorder.status === "starting"}><Square size={11} fill="currentColor" /> Stop</button>
-      <button className="ni-icon" onClick={() => act("open")} aria-label="Open Sutra" title="Open Sutra"><ArrowUpRight size={15} /></button>
-      <button className="ni-icon" onClick={() => act("hide")} aria-label="Hide" title="Hide until the next recording"><EyeOff size={14} /></button>
+      <button className="ni-btn" onClick={() => act("stop")} disabled={s.recorder.status === "starting"}><Square size={9} fill="currentColor" /> Stop</button>
+      <button className="ni-icon" onClick={() => act("open")} aria-label="Open Sutra" title="Open Sutra"><ArrowUpRight size={13} /></button>
+      <button className="ni-icon" onClick={() => act("hide")} aria-label="Hide" title="Hide until the next recording"><EyeOff size={12} /></button>
     </>;
   } else if (s.mode === "processing") {
     left = <Loader2 size={15} className="spin" />;
     right = <FileText size={14} className="ni-dim" />;
-    lead = <span className="ni-lead"><Loader2 size={18} className="spin" /></span>;
-    title = "Writing your notes…"; sub = "You can record the next call now";
+    lead = <span className="ni-lead"><Loader2 size={15} className="spin" /></span>;
+    title = "Writing your notes…"; sub = "You can record again";
     actions = <>
       <button className="ni-btn rec" onClick={() => act("record")}><span className="rec-ring" /> Record</button>
-      <button className="ni-icon" onClick={() => act("hide")} aria-label="Hide" title="Hide until the next recording"><EyeOff size={14} /></button>
+      <button className="ni-icon" onClick={() => act("hide")} aria-label="Hide" title="Hide until the next recording"><EyeOff size={12} /></button>
     </>;
   } else if (s.mode === "done") {
     left = <Check size={16} className="ok" />;
     right = <FileText size={14} className="ok" />;
-    lead = <span className="ni-lead ok"><Check size={18} /></span>;
+    lead = <span className="ni-lead ok"><Check size={15} /></span>;
     title = "Notes ready"; sub = "Summary, decisions and action items";
     actions = <button className="ni-btn" onClick={() => act("open")}>Open</button>;
   }
