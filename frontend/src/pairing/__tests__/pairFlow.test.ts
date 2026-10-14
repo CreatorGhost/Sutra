@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { encodePairLink, decodePairLink, type PairOffer } from "../../shared/pairing/protocol";
 import type { HostConnection } from "../../shared/pairing/link";
-import { hostFixture, network, tick } from "./fixtures";
+import { hostFixture, network } from "./fixtures";
 
 const settings: Record<string, unknown> = {};
 vi.mock("../../local/repo", () => ({
@@ -48,13 +48,11 @@ describe("pairing from a scanned code", () => {
     await sup.whenOnline(2_000);
     expect(sup.snapshot().status).toEqual({ state: "online", route: "lan" });
     expect(hosts[1].paired).toBe(false);             // a hello, not a second pairing
-    await tick(20);
-    expect(sup.snapshot().hostInfo?.speech.ready).toBe(true);
+    await vi.waitFor(() => expect(sup.snapshot().hostInfo?.speech.ready).toBe(true));
 
     // The Mac removes the phone: it stops, and the pairing is marked removed (the queue key stays).
     await hosts[1].link.emit("revoked");
-    await tick(20);
-    expect(sup.snapshot().status.state).toBe("revoked");
+    await vi.waitFor(() => expect(sup.snapshot().status.state).toBe("revoked"));
     expect((await getPairing())?.revokedAt).toBeTruthy();
     sup.stop();
   });
@@ -66,8 +64,7 @@ describe("pairing from a scanned code", () => {
     mac.devices.clear();                             // removed in Settings → Phones on the Mac
     const sup = new ConnectionSupervisor({ load: getPairing, dial: (p) => dialPairing(p, net.open), revoke: markRevoked });
     await sup.start();
-    await tick(50);
-    expect(sup.snapshot().status.state).toBe("revoked");
+    await vi.waitFor(() => expect(sup.snapshot().status.state).toBe("revoked"));
     expect((await getPairing())?.revokedAt).toBeTruthy();
     sup.stop();
   });
