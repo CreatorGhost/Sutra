@@ -15,7 +15,10 @@ const config: CapacitorConfig = {
   // over `adb reverse`. localhost is still a secure context, so getUserMedia/crypto.subtle keep working.
   // PRODUCTION (SUTRA_PROD=1): "https" WebView origin, no cleartext — talks to the remote HTTPS backend.
   server: isProd ? { androidScheme: "https" } : { androidScheme: "http", cleartext: true },
-  android: { allowMixedContent: !isProd },
+  // Mixed content is allowed in every build so the https WebView can open ws:// to a paired Mac on the
+  // LAN. Every frame on that link is end-to-end encrypted (src/shared/pairing/crypto.ts); cleartext to
+  // private addresses is allowed by res/xml/network_security_config.xml.
+  android: { allowMixedContent: true },
   plugins: {
     CapacitorSQLite: {
       androidIsEncryption: true,
