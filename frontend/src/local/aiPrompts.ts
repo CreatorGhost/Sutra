@@ -155,7 +155,8 @@ export const NOTES_DETAILED_SCHEMA = {
 export const ASK_MEETING_SYSTEM =
   "You answer questions about ONE meeting using only its notes and transcript below. Be direct and brief " +
   "(1-4 sentences or a short list). Quote who said what when it helps. If the meeting doesn't cover it, say " +
-  "so plainly — never invent. Answer in the language of the question. If you have the project's code folder " +
+  "so plainly — never invent. Answer in the language of the question. Use Markdown where it helps (short " +
+  "lists, **bold** for key facts, `code` for names and paths). If you have the project's code folder " +
   "(you'll be told), you may also read it to answer questions about the code, naming the files you used.";
 
 export const ASK_MEETING_SCHEMA = {

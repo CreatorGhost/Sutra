@@ -101,11 +101,19 @@ export const api = {
   detailedNotes: async (cid: number, force = false) => notesSvc.detailedNotes(cid, await provider(), force),
   askMeeting: async (cid: number, question: string, history: { q: string; a: string }[] = []) =>
     notesSvc.askMeeting(cid, question, await provider(), history),
+  // A meeting's chat, saved with it; answers can be added to the meeting's notes.
+  meetingChat: (cid: number) => repo.listMeetingChat(cid),
+  chatMeeting: async (cid: number, question: string) => notesSvc.chatMeeting(cid, question, await provider()),
+  setChatPinned: (id: number, pinned: boolean) => repo.setMeetingChatPinned(id, pinned),
+  updateChatMessage: (id: number, content: string) => repo.updateMeetingChat(id, content),
+  deleteChatMessage: (id: number) => repo.deleteMeetingChat(id),
+  clearMeetingChat: (cid: number) => repo.clearMeetingChat(cid),
+  addMeetingNote: (cid: number, content: string) => repo.addMeetingChat(cid, { role: "note", content, pinned: true }),
   notesMarkdown: async (cid: number, style: notesSvc.NoteStyle, withTranscript = false) => {
     const d = await repo.conversationDetail(cid);
     if (!d) return "";
     const detailed = style === "detailed" ? ((await repo.getNotes(cid, "detailed")) as any) : null;
-    return notesSvc.notesToMarkdown(d, style, detailed, withTranscript);
+    return notesSvc.notesToMarkdown(d, style, detailed, withTranscript, await repo.meetingAdditions(cid));
   },
   /** Copy text to the clipboard, falling back to execCommand for old / insecure WebViews. */
   copyText: async (text: string) => {

@@ -5,6 +5,7 @@ import { api } from "../local/sutra";
 import { shortDate } from "./format";
 import { friendlyError } from "./ui";
 import { EnginePicker } from "./EnginePicker";
+import { Markdown } from "./Markdown";
 
 interface Turn { q: string; a?: string; supported?: boolean; citations?: { conversation_id: number; title: string; date: string | null }[] }
 
@@ -56,7 +57,7 @@ export function AskAll() {
           {turns.map((t, i) => (
             <section key={i} className="sec">
               <h3 style={{ marginTop: 0 }}>{t.q}</h3>
-              {t.a === undefined ? <p className="muted"><Loader2 size={14} className="spin" /> {project?.folder_count && project.code_access ? "Searching meetings and code…" : "Searching your meetings…"}</p> : <p style={{ whiteSpace: "pre-wrap" }}>{t.a}</p>}
+              {t.a === undefined ? <p className="muted"><Loader2 size={14} className="spin" /> {project?.folder_count && project.code_access ? "Searching meetings and code…" : "Searching your meetings…"}</p> : <Markdown text={t.a} />}
               {!!t.citations?.length && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
                   {t.citations.map((c) => (

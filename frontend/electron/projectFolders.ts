@@ -134,8 +134,10 @@ export function registerProjectFolderIpc(): void {
   ipcMain.handle("sutra:folders:writeAgents", (_e, p: string, content: string) => writeAgentsFile(String(p), content));
   ipcMain.handle("sutra:folders:reveal", (_e, p: string, rel?: string) => {
     const root = grantedFolder(p);
-    if (!root) return;
-    const target = typeof rel === "string" && rel && !rel.includes("..") ? join(root, rel) : root;
-    if (existsSync(target)) shell.showItemInFolder(target);
+    if (!root) return false;
+    const target = typeof rel === "string" && rel && !rel.split(/[\\/]/).includes("..") ? join(root, rel) : root;
+    if (!existsSync(target)) return false;
+    shell.showItemInFolder(target);
+    return true;
   });
 }

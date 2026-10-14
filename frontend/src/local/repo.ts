@@ -232,6 +232,7 @@ export async function deleteConversation(cid: number) {
   await run("DELETE FROM action_items WHERE source_conversation=?", [cid]);
   await run("DELETE FROM events WHERE conversation_id=?", [cid]);
   await run("DELETE FROM notes WHERE conversation_id=?", [cid]);
+  await run("DELETE FROM meeting_chat WHERE conversation_id=?", [cid]);
   await run("DELETE FROM turns WHERE conversation_id=?", [cid]);
   await run("DELETE FROM conversations WHERE id=?", [cid]);
   await persist();
@@ -746,3 +747,57 @@ export async function scorableProjects(): Promise<{ projectId: number; peopleIds
 }
 
 export { exec };
+
+// ---- a meeting's Ask chat (kept with the meeting) and what was added to its notes from it ----
+
+export interface ChatMessage {
+  id: number;
+  conversation_id: number;
+  role: "user" | "assistant" | "note";
+  content: string;
+  /** For an answer: the question it answers (shown as its title once added to the notes). */
+  question: string | null;
+  pinned: boolean;
+  error: boolean;
+  created_at: string;
+}
+const CHAT_CAP = 20_000;
+const hydrateChat = (r: any): ChatMessage => ({ ...r, pinned: !!r.pinned, error: !!r.error });
+
+export const listMeetingChat = async (cid: number): Promise<ChatMessage[]> =>
+  (await q("SELECT * FROM meeting_chat WHERE conversation_id=? ORDER BY id", [cid])).map(hydrateChat);
+
+export async function addMeetingChat(cid: number, m: { role: ChatMessage["role"]; content: string; question?: string | null; pinned?: boolean; error?: boolean }): Promise<ChatMessage> {
+  const { lastId } = await run(
+    "INSERT INTO meeting_chat(conversation_id,role,content,question,pinned,error) VALUES(?,?,?,?,?,?)",
+    [cid, m.role, String(m.content ?? "").slice(0, CHAT_CAP), m.question ? String(m.question).slice(0, 2000) : null, m.pinned ? 1 : 0, m.error ? 1 : 0]);
+  await persist();
+  return hydrateChat((await q("SELECT * FROM meeting_chat WHERE id=?", [lastId]))[0]);
+}
+
+/** Add an answer to the meeting's notes (or take it back out). */
+export const setMeetingChatPinned = async (id: number, pinned: boolean) => {
+  await run("UPDATE meeting_chat SET pinned=? WHERE id=?", [pinned ? 1 : 0, id]);
+  await persist();
+};
+
+/** A note the user wrote (or an added answer) edited in place. */
+export const updateMeetingChat = async (id: number, content: string) => {
+  await run("UPDATE meeting_chat SET content=? WHERE id=?", [String(content).slice(0, CHAT_CAP), id]);
+  await persist();
+};
+
+export const deleteMeetingChat = async (id: number) => {
+  await run("DELETE FROM meeting_chat WHERE id=?", [id]);
+  await persist();
+};
+
+/** Clear the chat; what was added to the notes stays. */
+export const clearMeetingChat = async (cid: number) => {
+  await run("DELETE FROM meeting_chat WHERE conversation_id=? AND pinned=0", [cid]);
+  await persist();
+};
+
+/** What was added to the meeting's notes, oldest first. */
+export const meetingAdditions = async (cid: number): Promise<ChatMessage[]> =>
+  (await q("SELECT * FROM meeting_chat WHERE conversation_id=? AND pinned=1 ORDER BY id", [cid])).map(hydrateChat);

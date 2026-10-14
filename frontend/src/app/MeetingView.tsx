@@ -12,6 +12,7 @@ import { MinutesNotes } from "./meeting/Minutes";
 import { ProjectChip, useProjects } from "./meeting/ProjectChip";
 import { projectName } from "./projects/model";
 import { EnginePicker } from "./EnginePicker";
+import { Additions, ChatThread, pathOpener, useMeetingChat } from "./meeting/MeetingChat";
 import "./features.css";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof api.conversation>>>;
@@ -42,10 +43,17 @@ export function MeetingView() {
   const version = useDataVersion();
   const [detail, setDetail] = useState<Detail | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"notes" | "transcript">("notes");
+  const [tab, setTab] = useState<"notes" | "transcript" | "chat">("notes");
   const [style, setStyle] = useState<ViewStyle>(readStyle);
   const [toast, showToast] = useToast();
   const projects = useProjects(version);
+  const chat = useMeetingChat(cid);
+  const projectId: number | null = (detail as any)?.conversation?.project_id ?? null;
+  const [folders, setFolders] = useState<string[]>([]);
+  useEffect(() => {
+    if (projectId == null) { setFolders([]); return; }
+    void api.getProject(projectId).then((p: any) => setFolders(p?.code_access === false ? [] : p?.folders ?? [])).catch(() => setFolders([]));
+  }, [projectId, version]);
 
   const load = useCallback(async () => {
     try { setDetail(await api.conversation(cid)); setError(null); }
@@ -83,6 +91,8 @@ export function MeetingView() {
 
   const c: any = detail.conversation;
   const m: any = detail.memory;
+  const questions = chat.messages.filter((x) => x.role === "user").length;
+  const openPath = pathOpener(folders, showToast);
   const title = m?.title || c.title || (pending ? "Writing notes…" : "Untitled meeting");
 
   // Copy / export follow the chosen style; Minutes fall back to Brief notes until they exist.
@@ -128,14 +138,22 @@ export function MeetingView() {
           <div className="seg" role="tablist">
             <button role="tab" aria-selected={tab === "notes"} onClick={() => setTab("notes")}>Notes</button>
             <button role="tab" aria-selected={tab === "transcript"} onClick={() => setTab("transcript")}>Transcript</button>
+            <button role="tab" aria-selected={tab === "chat"} onClick={() => setTab("chat")}>
+              Chat{questions > 0 && <span className="seg-count">{questions}</span>}
+            </button>
           </div>
 
-          {tab === "notes" ? (
-            pending ? <Writing />
-              : c.status === "failed" && !m ? <Failed cid={cid} onDone={load} />
-              : style === "minutes" ? <MinutesNotes cid={cid} minutes={detail.minutes as any} meetingTitle={title} isMeeting={!!c.is_meeting} toast={showToast} />
-              : style === "detailed" ? <DetailedNotesView cid={cid} actions={detail.actions as any[]} />
-              : <BriefNotes memory={m} actions={detail.actions as any[]} />
+          {tab === "chat" ? (
+            <ChatThread chat={chat} onPath={openPath} toast={showToast} />
+          ) : tab === "notes" ? (
+            <>
+              {pending ? <Writing />
+                : c.status === "failed" && !m ? <Failed cid={cid} onDone={load} />
+                : style === "minutes" ? <MinutesNotes cid={cid} minutes={detail.minutes as any} meetingTitle={title} isMeeting={!!c.is_meeting} toast={showToast} />
+                : style === "detailed" ? <DetailedNotesView cid={cid} actions={detail.actions as any[]} />
+                : <BriefNotes memory={m} actions={detail.actions as any[]} />}
+              {!pending && <Additions chat={chat} onPath={openPath} onOpenChat={() => setTab("chat")} />}
+            </>
           ) : (
             <>
               <TranscriptTools cid={cid} conversation={c} glossaryFrom={projects.find((p) => p.id === c.project_id && p.context_enabled !== false && p.terms?.length)} toast={showToast} />
@@ -144,7 +162,7 @@ export function MeetingView() {
           )}
         </article>
       </div>
-      <AskBar cid={cid} onCopy={copy} onExport={exportMd} onDelete={remove} />
+      <AskBar cid={cid} busy={!!chat.pending} onAsk={(question) => { setTab("chat"); void chat.ask(question); }} onCopy={copy} onExport={exportMd} onDelete={remove} />
       {toast}
     </>
   );
@@ -476,43 +494,21 @@ function SpeakerButton({ turn, onRenamed }: { turn: any; onRenamed: () => void }
   );
 }
 
-function AskBar({ cid, onCopy, onExport, onDelete }: { cid: number; onCopy: () => void; onExport: () => void; onDelete: () => void }) {
+/** The bar at the bottom: ask about this meeting (answers go to the Chat tab), copy, export, delete. */
+function AskBar({ cid, busy, onAsk, onCopy, onExport, onDelete }: {
+  cid: number; busy: boolean; onAsk: (q: string) => void; onCopy: () => void; onExport: () => void; onDelete: () => void;
+}) {
   const [q, setQ] = useState("");
-  const [qa, setQa] = useState<{ q: string; a: string | null }[]>([]);
-  const endRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => { setQa([]); setQ(""); }, [cid]);
-  useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [qa]);
-
-  const ask = async () => {
-    const question = q.trim();
-    if (!question) return;
-    setQ("");
-    const history = qa.filter((x) => x.a).map((x) => ({ q: x.q, a: x.a! }));
-    setQa((xs) => [...xs, { q: question, a: null }]);
-    let a: string;
-    try { a = await api.askMeeting(cid, question, history); } catch (e) { a = friendlyError(e); }
-    setQa((xs) => xs.map((x, i) => (i === xs.length - 1 && x.q === question && x.a === null ? { ...x, a } : x)));
-  };
+  useEffect(() => { setQ(""); }, [cid]);
+  const ask = () => { const question = q.trim(); if (!question || busy) return; setQ(""); onAsk(question); };
 
   return (
     <>
-      {qa.length > 0 && (
-        <div className="answers" role="log" aria-live="polite">
-          <div className="answers-head"><span>About this meeting</span><button className="icon-btn ghost sm" onClick={() => setQa([])} aria-label="Close answers"><X size={14} /></button></div>
-          {qa.map((x, i) => (
-            <div key={i} className="qa">
-              <div className="q">{x.q}</div>
-              <div className="a">{x.a ?? <span className="muted"><Loader2 size={13} className="spin" /> Thinking…</span>}</div>
-            </div>
-          ))}
-          <div ref={endRef} />
-        </div>
-      )}
       <div className="pane-fade" />
       <div className="askbar">
-        <form className="ask-input" onSubmit={(e) => { e.preventDefault(); void ask(); }}>
-          <Sparkles size={17} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask about this meeting…" aria-label="Ask about this meeting" />
+        <form className="ask-input" onSubmit={(e) => { e.preventDefault(); ask(); }}>
+          {busy ? <Loader2 size={17} className="spin" /> : <Sparkles size={17} />}
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={busy ? "Thinking…" : "Ask about this meeting…"} aria-label="Ask about this meeting" />
           <EnginePicker />
         </form>
         <div className="ask-actions">

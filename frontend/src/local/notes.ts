@@ -72,7 +72,10 @@ export async function askMeeting(cid: number, question: string, provider: Provid
       ].filter(Boolean).join("\n")
     : "(no notes yet)";
   const prior = history.slice(-4).map((h) => `Q: ${h.q}\nA: ${h.a}`).join("\n\n");
-  const user = `# Notes\n${notes}\n\n# Transcript\n${transcriptText(d.turns, 60000)}\n\n` +
+  // What the user added to this meeting (answers they kept, notes they wrote) is part of its record.
+  const added = (await repo.meetingAdditions(cid).catch(() => []))
+    .map((a) => (a.question ? `- (${a.question}) ${a.content}` : `- ${a.content}`)).join("\n").slice(0, 12000);
+  const user = `# Notes\n${notes}\n\n` + (added ? `# Added to this meeting by the user\n${added}\n\n` : "") + `# Transcript\n${transcriptText(d.turns, 60000)}\n\n` +
     (prior ? `# Earlier questions\n${prior}\n\n` : "") + `# Question\n${question}`;
   // A meeting in a project with linked code folders: the agent may read them too (read-only).
   const scope = await repo.askScopeForConversation(cid).catch(() => null);
@@ -85,7 +88,8 @@ const task = (a: { text: string; owner?: string | null; status?: string }) =>
   `- [${a.status === "done" ? "x" : " "}] ${a.owner ? `**${a.owner}:** ` : ""}${a.text}`;
 
 /** PURE: render a meeting's notes (either style) as Markdown for copy / export. */
-export function notesToMarkdown(d: Pick<Detail, "conversation" | "memory" | "actions"> & { turns?: any[] }, style: NoteStyle, detailed?: DetailedNotes | null, withTranscript = false): string {
+export function notesToMarkdown(d: Pick<Detail, "conversation" | "memory" | "actions"> & { turns?: any[] }, style: NoteStyle, detailed?: DetailedNotes | null, withTranscript = false,
+  additions: { content: string; question?: string | null }[] = []): string {
   const m: any = d.memory ?? {};
   const c: any = d.conversation ?? {};
   const title = m.title || c.title || "Meeting";
@@ -109,6 +113,29 @@ export function notesToMarkdown(d: Pick<Detail, "conversation" | "memory" | "act
     if (actions.length) out.push("## Action items", actions.map(task).join("\n"));
     if (m.open_questions?.length) out.push("## Open questions", bullet(m.open_questions));
   }
+  if (additions.length) {
+    out.push("## Added to this meeting", additions.map((a) => (a.question ? `### ${a.question}\n\n${a.content.trim()}` : a.content.trim())).join("\n\n"));
+  }
   if (withTranscript && d.turns?.length) out.push("## Transcript", d.turns.map((t) => `**${speakerName(t)}:** ${t.text}`).join("\n\n"));
   return out.join("\n\n") + "\n";
+}
+
+/** One turn of a meeting's chat: the question and the answer (or the error) are saved with the meeting,
+ *  and the last few exchanges are the context for the next question. */
+export async function chatMeeting(cid: number, question: string, provider: Provider): Promise<{ question: repo.ChatMessage; answer: repo.ChatMessage }> {
+  question = question.trim();
+  if (!question) throw new Error("Ask a question first.");
+  const earlier = await repo.listMeetingChat(cid);
+  const history: { q: string; a: string }[] = [];
+  for (let i = 0; i < earlier.length - 1; i++) {
+    const a = earlier[i], b = earlier[i + 1];
+    if (a.role === "user" && b.role === "assistant" && !b.error) history.push({ q: a.content, a: b.content });
+  }
+  const q = await repo.addMeetingChat(cid, { role: "user", content: question });
+  try {
+    const text = await askMeeting(cid, question, provider, history);
+    return { question: q, answer: await repo.addMeetingChat(cid, { role: "assistant", content: text, question }) };
+  } catch (e: any) {
+    return { question: q, answer: await repo.addMeetingChat(cid, { role: "assistant", content: String(e?.message ?? e), question, error: true }) };
+  }
 }

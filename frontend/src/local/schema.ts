@@ -16,6 +16,18 @@ CREATE TABLE IF NOT EXISTS notes(
   PRIMARY KEY(conversation_id, style));
 -- Code folders linked to a project (desktop). Ask can read them, read-only; the Mac app also keeps its own
 -- list of folders the user picked in the system dialog and only ever opens those (electron/projectFolders).
+-- A meeting's Ask chat, kept with the meeting. role: user | assistant | note (a note the user wrote).
+-- pinned=1: added to the meeting's notes ("Added to this meeting"); error=1: the engine failed.
+CREATE TABLE IF NOT EXISTS meeting_chat(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  question TEXT,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  error INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')));
+CREATE INDEX IF NOT EXISTS idx_meeting_chat ON meeting_chat(conversation_id, id);
 CREATE TABLE IF NOT EXISTS project_folders(
   project_id INTEGER NOT NULL,
   path TEXT NOT NULL,

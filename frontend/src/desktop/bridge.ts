@@ -83,7 +83,8 @@ export interface DesktopBridge {
     scan(path: string): Promise<FolderScan>;
     /** Write a new AGENTS.md (never overwrites); returns its path. */
     writeAgents(path: string, content: string): Promise<string>;
-    reveal(path: string, rel?: string): Promise<void>;
+    /** Show a folder (or a file inside it) in Finder; false when it isn't there. */
+    reveal(path: string, rel?: string): Promise<boolean>;
   };
   /** Phones paired with this computer (Settings → Phones; electron/pairing/*). */
   pairing?: {

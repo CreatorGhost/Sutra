@@ -88,13 +88,29 @@ A project can link the folders where its code lives (project page → **Code →
   and glossary; the user edits it, and **Save to folder** creates the file (never overwrites one).
 - **Ask reads the code — read-only, and only in Ask.** Asking about a meeting in the project, or Ask
   Sutra with the project selected (the scope chip next to the engine picker, or "Ask about this
-  project"), runs the engine **in the project's folder**: Claude Code with only `Read,Grep,Glob`
-  (pre-approved, `--add-dir` for the other folders), Codex in its `read-only` sandbox (`-C folder`),
-  Gemini in `plan` mode (`--include-directories`), Cursor in `ask` mode; Grok/Droid/Command Code keep
-  their read-only defaults and refused tool permissions. The prompt tells the agent to cite files and
-  never change anything. Notes, minutes and clean-up never get the folder. "Let Ask read the code"
-  turns it off per project.
+  project"), lets the engine read the project's folders. The engine still **runs in Sutra's private empty
+  temp dir**, never inside the project, so the repo's own agent config (`.mcp.json`, `.claude/`,
+  `.gemini/settings.json`, hooks) never loads. Claude Code gets only `Read,Grep,Glob` (pre-approved) with
+  `--add-dir` for every folder and `--strict-mcp-config`; Gemini runs in `plan` mode with
+  `--include-directories`; Codex reads by absolute path in its `read-only` sandbox; Cursor/Grok/Droid/
+  Command Code get the folder's absolute path in the prompt (Cursor in `ask` mode, tool permissions
+  refused). The prompt tells the agent to cite files and never change anything. Notes, minutes and
+  clean-up never get the folder. "Let Ask read the code" turns it off per project.
 - **Paired phone.** The phone has no folder paths: its question names the project and the meeting
   (uid), and the Mac finds that project's folders in its own database before running the agent.
 - **Later:** a one-week copy of each project's brief/people/glossary on the phone, synced from the Mac,
   for answers while the Mac is unreachable. Nothing is stored on a server.
+
+## Meeting chat
+
+Each meeting has a **Chat** tab: the questions asked about it and the answers, saved with the meeting
+(`meeting_chat` table, keyed by the meeting's conversation id — so every recording keeps its own chat,
+on the device it was asked on; it's in backups and is deleted with the meeting). The last few
+exchanges are the context for the next question. Answers render as Markdown (safe: React elements only,
+no HTML; links only http(s)/mailto); a file path in an answer opens in Finder when it's in one of the
+meeting's project folders.
+
+**Add to notes** keeps an answer in the meeting's notes ("Added to this meeting" on the Notes tab), next
+to notes the user writes there. Added items stay when the chat is cleared, are exported with the notes,
+and are given to the AI as part of the meeting's record on later questions.
+
