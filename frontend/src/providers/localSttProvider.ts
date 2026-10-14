@@ -6,7 +6,7 @@
 // voiceprint. ingest/channelAttribution store them exactly like cloud segments (remote channel →
 // "r<speaker>" + voiceprint, owner mic → "me"), so the cross-window clustering and enrolled-person
 // matching in speakerId.ts work unchanged.
-import type { Provider, TranscribeOpts, Transcription, AskScope } from "./provider";
+import type { Provider, TranscribeOpts, Transcription, AskScope, ExtractOpts } from "./provider";
 import { desktop } from "../desktop/bridge";
 
 const unsupported = () => { throw new Error("Local speech-to-text only transcribes."); };
@@ -48,7 +48,8 @@ export class ComposedProvider implements Provider {
     this.canEmbed = text.canEmbed !== false;
   }
   transcribeDiarize(a: Blob, f: string, o?: TranscribeOpts) { return this.stt.transcribeDiarize(a, f, o); }
-  extract(s: object, sys: string, u: string) { return this.text.extract(s, sys, u); }
+  extract(s: object, sys: string, u: string, o?: ExtractOpts) { return this.text.extract(s, sys, u, o); }
+  engineId() { return (this.text as any).engineId?.() ?? Promise.resolve(null); }
   chat(s: object, sys: string, u: string, scope?: AskScope | null) { return this.text.chat(s, sys, u, scope); }
   translate(t: string[]) { return this.text.translate(t); }
   refine(t: string[], o?: any) { return this.text.refine(t, o); }

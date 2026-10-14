@@ -73,9 +73,13 @@ export async function askMeeting(cid: number, question: string, provider: Provid
     : "(no notes yet)";
   const prior = history.slice(-4).map((h) => `Q: ${h.q}\nA: ${h.a}`).join("\n\n");
   // What the user added to this meeting (answers they kept, notes they wrote) is part of its record.
+  const visual = await repo.getMeetingVisual(cid).catch(() => null);
+  const images = await repo.listMeetingImages(cid).catch(() => []);
+  const seen = [...(visual?.facts ?? []), ...images.filter((i) => i.caption).map((i) => `Screenshot kept: ${i.caption}`)];
   const added = (await repo.meetingAdditions(cid).catch(() => []))
     .map((a) => (a.question ? `- (${a.question}) ${a.content}` : `- ${a.content}`)).join("\n").slice(0, 12000);
-  const user = `# Notes\n${notes}\n\n` + (added ? `# Added to this meeting by the user\n${added}\n\n` : "") + `# Transcript\n${transcriptText(d.turns, 60000)}\n\n` +
+  const user = `# Notes\n${notes}\n\n` + (added ? `# Added to this meeting by the user\n${added}\n\n` : "") +
+    (seen.length ? `# On screen during the meeting (from screenshots)\n${seen.map((s) => `- ${s}`).join("\n")}\n\n` : "") + `# Transcript\n${transcriptText(d.turns, 60000)}\n\n` +
     (prior ? `# Earlier questions\n${prior}\n\n` : "") + `# Question\n${question}`;
   // A meeting in a project with linked code folders: the agent may read them too (read-only).
   const scope = await repo.askScopeForConversation(cid).catch(() => null);

@@ -114,3 +114,31 @@ meeting's project folders.
 to notes the user writes there. Added items stay when the chat is cleared, are exported with the notes,
 and are given to the AI as part of the meeting's record on later questions.
 
+
+## Notes that see the screen (screenshots + audio)
+
+Settings → General → **Take screenshots during meetings** (desktop, off by default).
+
+- **While recording:** the display stream the recorder already opens for call audio is sampled every 4 s;
+  a frame is saved only when the screen changed (mean change on a 64×36 grayscale thumbnail ≥ 3.5%, or
+  a still screen re-shot every 5 min; past 400 frames only big changes) as a ≤1600 px JPEG. Mic + call
+  audio is recorded as Opus (~32 kbit/s, 10 s chunks). The primary display is captured — Sutra's own pill
+  is excluded, but anything else on screen (including notifications) can be.
+- **At rest:** `userData/recordings/<session>/`, every file AES-256-GCM with a per-install key sealed in
+  the OS keychain (`electron/recordingMedia.ts`). Only the main process reads or writes them.
+- **After the meeting:** before the notes are written, the engine gets the timestamped transcript and up
+  to 16 screenshots (one per stretch of the meeting, the biggest change in each), decrypted into the run's
+  private temp dir (deleted with it). It returns the **screen facts** the transcript doesn't make clear
+  (fed into the notes, and into later questions) and the **screenshots worth keeping** (≤ 8, captioned),
+  which are copied to `recordings/kept/<meeting>/` and shown under **On screen** in the notes. It's told
+  to skip unrelated apps, notifications, private chats and anything with secrets.
+  - Claude Code opens the images with its `Read` tool only; Codex takes them as `--image` attachments;
+    Gemini reads them in `plan` mode; Cursor/Grok/Droid get ACP image blocks when the agent advertises
+    `promptCapabilities.image`. Command Code can't see images — notes then come from the transcript.
+  - Checked with the real Claude Code CLI: given a slide, code, a private chat and a blank desktop, it
+    kept the slide and the code, skipped the chat and the desktop, and pulled "$1.2M ARR by Sept 30"
+    and `MAX_WEBHOOK_RETRIES = 7` — neither said aloud.
+- **Confirm:** the meeting shows what's still on the Mac (screenshots, minutes of audio) with **Play
+  recording**, **Look again** (re-run, e.g. after switching to an engine that can see) and **Keep notes,
+  delete recording**, which deletes the screenshots and audio (kept screenshots stay). Unconfirmed
+  recordings are deleted after 7 days; deleting the meeting deletes everything.

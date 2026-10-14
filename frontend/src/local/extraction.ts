@@ -11,10 +11,11 @@ import { captureExtraction } from "./training";
 import { generateMinutes } from "./minutes";
 import { deriveSessionPriors } from "./priors";
 import { buildAttributionHints, scoreProjects, type AttributionHint } from "./projectContext";
+import { visualPass } from "./visual";
 
 const clamp = (x: any) => Math.max(0, Math.min(1, Number(x) || 0.5));
 
-export async function extractConversation(convId: number, provider: Provider) {
+export async function extractConversation(convId: number, provider: Provider, screenFacts?: string[] | null) {
   // Redaction-safe source: redacted turns must not be absorbed into memory summaries/facts, which the
   // MCP read layer exposes via search_memory / list_conversations / get_conversation.memory.
   const detail = await repo.conversationDetailSafe(convId);
@@ -30,7 +31,10 @@ export async function extractConversation(convId: number, provider: Provider) {
 
   // Give the model the conversation's date so it can resolve relative times ("kal 11 baje" -> ISO datetime).
   const convDate = String((detail as any)?.conversation?.started_at ?? "").slice(0, 10);
-  const userContent = (convDate ? `Today's date: ${convDate}.\n\n` : "") + transcript;
+  // What the screenshots showed that the transcript doesn't say (visual.ts) — saved, so a re-run reuses it.
+  const facts = screenFacts ?? (await repo.getMeetingVisual(convId).catch(() => null))?.facts ?? [];
+  const onScreen = facts.length ? `\n\n# On screen during the meeting (from screenshots; use it where it makes the notes more precise)\n${facts.map((f) => `- ${f}`).join("\n")}` : "";
+  const userContent = (convDate ? `Today's date: ${convDate}.\n\n` : "") + transcript + onScreen;
   const data = await provider.extract(EXTRACTION_JSON_SCHEMA, EXTRACT_SYSTEM, userContent);
   const entities = (data.entities ?? []) as any[];
   const entTexts = entities.map((e) => `${e.name} (${e.type}): ${e.description ?? ""}`.trim());
@@ -180,7 +184,10 @@ export async function processSession(sessionId: number, provider: Provider) {
   const extracted: any[] = [];
   let lastError: string | null = null;
   for (const cid of toExtract) {
-    try { const r = await extractConversation(cid, provider); if (r) extracted.push(r); }
+    // Screenshots of this recording (desktop, when on): the engine looks at them first; what it saw on
+    // screen goes into the notes. Best-effort — the notes never wait on it failing.
+    const facts = await visualPass(cid, sessionId, provider).catch(() => null);
+    try { const r = await extractConversation(cid, provider, facts); if (r) extracted.push(r); }
     catch (e: any) {
       lastError = String(e?.message ?? e);
       try { await repo.setConversationStatus(cid, "failed"); } catch { /* status best-effort */ }

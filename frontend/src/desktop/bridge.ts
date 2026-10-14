@@ -3,6 +3,9 @@
 import type { Detection } from "../shared/meetingRules";
 import type { AgentId, AgentRequest, AgentStatus } from "../shared/agentProtocol";
 import type { FolderScan } from "../shared/projectFolders";
+
+export interface FrameInfo { name: string; at: number; score: number }
+export interface RecordingStatus { session: number; createdAt: number; frames: number; firstAt: number | null; lastAt: number | null; audioBytes: number; audioMime: string | null }
 import type { RelaySetupState } from "../shared/pairing/relaySetup";
 import type { LocalTranscription, SpeechProgress, SpeechStatus, SpeechTranscribeOpts } from "../shared/speechModels";
 import type { ExecMessage, ExecResult, PairingStatus, PairingUpdate } from "../shared/pairing/hostApi";
@@ -12,7 +15,11 @@ export type SttStatus = SpeechStatus;
 export type SttProgress = SpeechProgress;
 
 export type DetectionState = { active: (Detection & { icon?: string }) | null; visible: boolean };
-export interface DesktopPrefs { detectMeetings: boolean; autoStop: boolean; /** Engines the user uses; null = not chosen yet (all are checked). */ enabledEngines: AgentId[] | null }
+export interface DesktopPrefs {
+  detectMeetings: boolean; autoStop: boolean;
+  /** Engines the user uses; null = not chosen yet (all are checked). */ enabledEngines: AgentId[] | null;
+  /** Take screenshots (and keep the audio) during meetings, for notes that see what was shown. */ captureScreen?: boolean;
+}
 export type PillMode = "hidden" | "detected" | "recording" | "processing" | "done";
 export interface RecorderSnapshot {
   status: "idle" | "starting" | "recording" | "processing";
@@ -74,6 +81,19 @@ export interface DesktopBridge {
     install(id: McpClientId, token: string, url?: string): Promise<McpWriteResult>;
     remove(id: McpClientId): Promise<McpWriteResult>;
     reveal(path: string): Promise<void>;
+  };
+  /** A meeting's screenshots and audio, encrypted, until the notes are confirmed (or 7 days pass). */
+  media?: {
+    frame(sid: number, at: number, bytes: Uint8Array, score: number): Promise<FrameInfo>;
+    audio(sid: number, chunk: Uint8Array, mime: string): Promise<number>;
+    status(sid: number): Promise<RecordingStatus | null>;
+    frames(sid: number): Promise<FrameInfo[]>;
+    readFrame(sid: number, name: string): Promise<Uint8Array>;
+    readAudio(sid: number): Promise<{ bytes: Uint8Array; mime: string | null } | null>;
+    keep(sid: number, name: string, cid: number): Promise<string>;
+    readKept(cid: number, name: string): Promise<Uint8Array>;
+    deleteKept(cid: number, name?: string): Promise<void>;
+    deleteSession(sid: number): Promise<void>;
   };
   /** Code folders linked to projects. Only folders picked in the system dialog are ever opened. */
   folders?: {

@@ -28,6 +28,26 @@ CREATE TABLE IF NOT EXISTS meeting_chat(
   error INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')));
 CREATE INDEX IF NOT EXISTS idx_meeting_chat ON meeting_chat(conversation_id, id);
+-- Notes from screenshots (desktop, "Take screenshots during meetings"): what the AI saw on screen that the
+-- transcript doesn't say, which recording it came from, and whether the user confirmed (then the
+-- recording's screenshots + audio are deleted). meeting_images: the screenshots the AI kept for the notes.
+CREATE TABLE IF NOT EXISTS meeting_visual(
+  conversation_id INTEGER PRIMARY KEY,
+  session_id INTEGER NOT NULL,
+  facts TEXT NOT NULL DEFAULT '[]',
+  frames_seen INTEGER NOT NULL DEFAULT 0,
+  frames_total INTEGER NOT NULL DEFAULT 0,
+  engine TEXT,
+  error TEXT,
+  confirmed INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS meeting_images(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  at INTEGER,
+  caption TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')));
 CREATE TABLE IF NOT EXISTS project_folders(
   project_id INTEGER NOT NULL,
   path TEXT NOT NULL,

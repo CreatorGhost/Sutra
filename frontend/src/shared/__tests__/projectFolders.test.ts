@@ -116,3 +116,19 @@ describe("Ask inside a project folder", () => {
     expect(g[g.indexOf("--include-directories") + 1]).toBe("/code/acme,/code/acme-api");
   });
 });
+
+describe("screenshots in an agent run", () => {
+  const req = { system: "s", user: "u", imageFiles: ["/tmp/run/S01.jpg", "/tmp/run/S02.jpg"] };
+  it("Claude opens them with Read only; Codex attaches each; Command Code refuses", () => {
+    const a = agentInvocation("claude", req, "/tmp/run").args;
+    expect(a[a.indexOf("--tools") + 1]).toBe("Read");
+    expect(a[a.indexOf("--allowedTools") + 1]).toBe("Read");
+    const c = agentInvocation("codex", req, "/tmp/run").args;
+    expect(c.slice(0, 3)).toEqual(["exec", "--image=/tmp/run/S01.jpg", "--image=/tmp/run/S02.jpg"]);
+    expect(c.at(-1)).toBe("-");
+    expect(() => agentInvocation("commandcode", req, "/tmp/run")).toThrow(/can't look at screenshots/);
+    const p = buildAgentPrompt(req, false);
+    expect(p).toContain("Screenshots taken during the meeting are provided (2): S01.jpg, S02.jpg");
+    expect(p).not.toContain("Do not use tools");
+  });
+});

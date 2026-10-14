@@ -74,6 +74,15 @@ describe("ACP one-shot runner", () => {
     expect(e.state.model).toBe("opus[context=300k]");
   });
 
+  it("sends screenshots as image blocks only to an agent that accepts images", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const dir = mkdtempSync(join(require("node:os").tmpdir(), "sutra-img-"));
+    writeFileSync(join(dir, "S01.jpg"), Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+    const e = echo((await runAcpPrompt(opts("images", { images: [join(dir, "S01.jpg")] }), kill)).text);
+    expect(e.state.blocks).toEqual(["text", "text:S01", "image:image/jpeg:4"]);
+    await expect(runAcpPrompt(opts("ok", { images: [join(dir, "S01.jpg")] }), kill)).rejects.toThrow(/can't look at screenshots/);
+  });
+
   it("an unknown parameterized model is reported", async () => {
     await expect(runAcpPrompt(opts("parameterized", { parameterizedModels: true, model: "nope" }), kill)).rejects.toThrow(/couldn't switch to the model “nope”/);
   });

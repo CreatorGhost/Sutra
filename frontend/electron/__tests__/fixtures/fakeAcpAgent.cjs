@@ -21,7 +21,7 @@ async function handle(msg) {
   switch (msg.method) {
     case "initialize":
       state.client = msg.params;
-      return reply({ protocolVersion: 1, authMethods: [{ id: "cached_token", name: "Cached" }] });
+      return reply({ protocolVersion: 1, authMethods: [{ id: "cached_token", name: "Cached" }], agentCapabilities: { promptCapabilities: { image: mode === "images" } } });
     case "authenticate":
       state.auth = msg.params.methodId;
       return mode === "authfail" ? fail("Not authenticated. Run `grok login`.") : reply({});
@@ -63,6 +63,7 @@ async function handle(msg) {
       return reply({ configOptions: [] });
     case "session/prompt": {
       if (mode === "hang") return;
+      state.blocks = msg.params.prompt.map((b) => (b.type === "image" ? `image:${b.mimeType}:${Buffer.from(b.data, "base64").length}` : b.type === "text" && b.text.length < 10 ? `text:${b.text}` : b.type));
       const chunk = (text) => send({ method: "session/update", params: { sessionId: "s1", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } } });
       send({ method: "session/update", params: { sessionId: "s1", update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "(thinking)" } } } });
       if (mode === "permission") {

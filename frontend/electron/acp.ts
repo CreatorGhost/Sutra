@@ -10,6 +10,8 @@
 // AcpSessionRuntime / AcpTextGeneration (T3 Code fork, MIT, © T3 Tools Inc.) without the Effect library;
 // see THIRD_PARTY_NOTICES.md.
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { contextChoices, findContextOption, pickContext, resolveAcpModelId, splitModelParams } from "../src/shared/engineProbes";
 
 export interface AcpOptions {
@@ -21,6 +23,8 @@ export interface AcpOptions {
   model?: string | null;
   /** Cursor's parameterized model picker: bare model ids, the context window as its own option. */
   parameterizedModels?: boolean;
+  /** Screenshot files to send as image blocks (only to an agent that says it accepts images). */
+  images?: string[];
   timeoutMs: number;
   /** Product name for error messages. */
   label: string;
@@ -228,10 +232,15 @@ export async function runAcpPrompt(o: AcpOptions & { prompt: string }, kill: (c:
   };
   try {
     const result = await withTimeout((async () => {
-      const { session, sessionId } = await openSession(o, conn);
+      const { init, session, sessionId } = await openSession(o, conn);
+      if (o.images?.length && init?.agentCapabilities?.promptCapabilities?.image !== true) throw new AcpError(`${o.label} can't look at screenshots.`);
       await configure(o, conn, session, sessionId);
       const viaNotification = new Promise<{ stopReason?: string }>((r) => { completeFromNotification = r; });
-      return Promise.race([conn.request("session/prompt", { sessionId, prompt: [{ type: "text", text: o.prompt }] }), viaNotification]);
+      const prompt: object[] = [{ type: "text", text: o.prompt }];
+      for (const f of o.images ?? []) {
+        prompt.push({ type: "text", text: basename(f).replace(/\.jpg$/, "") }, { type: "image", mimeType: "image/jpeg", data: readFileSync(f).toString("base64") });
+      }
+      return Promise.race([conn.request("session/prompt", { sessionId, prompt }), viaNotification]);
     })(), o.timeoutMs, o.label);
     const stopReason = String(result?.stopReason ?? "end_turn");
     if (stopReason === "cancelled") throw new AcpError(`${o.label} cancelled the request.`);

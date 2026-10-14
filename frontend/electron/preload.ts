@@ -86,6 +86,19 @@ contextBridge.exposeInMainWorld(
         onChange: (cb: (s: unknown) => void) => listen("sutra:relay:changed", cb),
       }),
     }),
+    // A meeting's screenshots + audio until the notes are confirmed (electron/recordings.ts).
+    media: Object.freeze({
+      frame: (sid: number, at: number, bytes: Uint8Array, score: number) => ipcRenderer.invoke("sutra:media:frame", sid, at, bytes, score),
+      audio: (sid: number, chunk: Uint8Array, mime: string) => ipcRenderer.invoke("sutra:media:audio", sid, chunk, mime),
+      status: (sid: number) => ipcRenderer.invoke("sutra:media:status", sid),
+      frames: (sid: number) => ipcRenderer.invoke("sutra:media:frames", sid),
+      readFrame: (sid: number, name: string) => ipcRenderer.invoke("sutra:media:readFrame", sid, name),
+      readAudio: (sid: number) => ipcRenderer.invoke("sutra:media:readAudio", sid),
+      keep: (sid: number, name: string, cid: number) => ipcRenderer.invoke("sutra:media:keep", sid, name, cid),
+      readKept: (cid: number, name: string) => ipcRenderer.invoke("sutra:media:readKept", cid, name),
+      deleteKept: (cid: number, name?: string) => ipcRenderer.invoke("sutra:media:deleteKept", cid, name),
+      deleteSession: (sid: number) => ipcRenderer.invoke("sutra:media:deleteSession", sid),
+    }),
     // Code folders linked to projects (electron/projectFolders.ts).
     folders: Object.freeze({
       pick: () => ipcRenderer.invoke("sutra:folders:pick"),

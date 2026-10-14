@@ -98,7 +98,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     notifyDataChanged();
   }, [patch]);
 
-  const startMeeting = useCallback(async (app: string | null) => {
+  const startMeeting = useCallback(async (app: string | null, screenshots: boolean) => {
     const settings = await api.getSettings();
     const cap = detectCaptureCapability();
     // Once stopped, this recording saves in the background and must not touch the next one's live state.
@@ -110,6 +110,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
       micDeviceId: (settings["mic_device_id"] as string) || undefined,
       output: settings["audio_output"] === "speakers" ? "speakers" : "headphones",
       sourceApp: app,
+      media: screenshots ? desktop?.media ?? null : null,
       onError: (m) => { if (m) patch({ error: friendlyError(m) }); },
       onInflight: (n) => { if (live) patch({ inflight: n }); },
       onTurns: (t) => { if (live) patch((s) => ({ turns: [...s.turns, ...t] })); },
@@ -221,7 +222,9 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     try {
       const notReady = await localSttReady(await api.getSettings());
       if (notReady) throw new Error(notReady);
-      if (meeting) await startMeeting(app);
+      // "Take screenshots during meetings" (Settings → General): screenshots + audio until confirmed.
+      const screenshots = meeting && !!(await desktop?.prefs.get().catch(() => null))?.captureScreen;
+      if (meeting) await startMeeting(app, screenshots);
       else await startMic();
     } catch (e) {
       session.current = null;

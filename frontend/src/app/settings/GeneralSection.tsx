@@ -79,6 +79,9 @@ export function GeneralSection({ settings, put }: SectionProps) {
             checked={prefs.detectMeetings} onChange={(v) => void putPrefs({ detectMeetings: v })} />
           <SwitchRow title="Stop when the call ends" desc="Finish the recording and write notes automatically."
             checked={prefs.autoStop} onChange={(v) => void putPrefs({ autoStop: v })} />
+          <SwitchRow title="Take screenshots during meetings"
+            desc="Sutra saves the screen when it changes (a new slide, code, a doc) and keeps the audio, encrypted on this Mac. Your AI engine sees them with the transcript to write better notes and keeps the screenshots that matter. The rest is deleted when you confirm the notes, or after 7 days."
+            checked={!!prefs.captureScreen} onChange={(v) => void putPrefs({ captureScreen: v })} />
           {perms && desktop.platform === "darwin" && (
             <>
               <PermRow label="Microphone" status={perms.microphone} onGrant={() => void desktop!.permissions.request("microphone").then(() => desktop!.permissions.get().then(setPerms))} />

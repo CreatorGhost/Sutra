@@ -74,15 +74,22 @@ async function runAgentNow(id: AgentId, req: AgentRequest): Promise<{ text: stri
   const bin = await findBinary(agentBinaries(id, process.platform));
   if (!bin) throw new Error(`${info.label} isn't installed. Install it with “${installCommand(id, process.platform)}”, then sign in with “${info.signIn}” — or pick another engine in Settings → Intelligence.`);
 
+  if (req.images?.frames.length && !info.vision) throw new Error(`${info.label} can't look at screenshots.`);
   const dir = await mkdtemp(join(tmpdir(), "sutra-agent-"));
   try {
+    // Screenshots: decrypted into this run's private temp dir only (removed with it below).
+    if (req.images?.frames.length) {
+      const { media } = await import("./recordings"); // loaded only when a run has screenshots
+      req = { ...req, imageFiles: media().exportFrames(req.images.session, req.images.frames, dir) };
+    }
     let retryErrors: string[] | undefined;
     for (let attempt = 0; ; attempt++) {
       const prompt = buildAgentPrompt(req, !!req.schema && !info.nativeSchema, retryErrors);
       // Always runs in the private temp dir — never inside a project's folder, whose own agent config
       // (MCP servers, hooks, settings) would otherwise load and could run commands. The folders are
       // passed for reading (agentInvocation's flags, or by absolute path in the prompt).
-      const r = await runEngine(id, bin, req, prompt, dir, RUN_TIMEOUT_MS);
+      // Looking at screenshots takes longer (one read per image).
+      const r = await runEngine(id, bin, req, prompt, dir, req.imageFiles?.length ? 3 * RUN_TIMEOUT_MS : RUN_TIMEOUT_MS);
       if (!req.schema) {
         if (!r.text) throw new Error(`${info.label} returned an empty answer.`);
         return { text: r.text };

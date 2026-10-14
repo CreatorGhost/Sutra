@@ -2,7 +2,7 @@
 // Command Code) through the Electron bridge. Transcripts and notes go to the agent you're signed into;
 // nothing goes to the Sutra service. Agents can't produce embeddings or rerank, so search runs on
 // keywords with this engine (callers already fall back when embed/rerank throw).
-import type { AskScope, Provider, RefineOpts, Transcription } from "./provider";
+import type { AskScope, ExtractOpts, Provider, RefineOpts, Transcription } from "./provider";
 import type { AgentId } from "../shared/agentProtocol";
 import { desktop } from "../desktop/bridge";
 
@@ -35,14 +35,16 @@ export class AgentProvider implements Provider {
     return pick.id;
   }
 
-  private async json(schema: object, system: string, user: string, workspace?: string[]): Promise<any> {
+  private async json(schema: object, system: string, user: string, workspace?: string[], images?: ExtractOpts["images"]): Promise<any> {
     const id = await this.engine();
-    const r = await desktop!.ai.run(id, { system, user, schema: inner(schema), model: this.modelFor(id), ...(workspace?.length ? { workspace } : {}) });
+    const r = await desktop!.ai.run(id, { system, user, schema: inner(schema), model: this.modelFor(id), ...(workspace?.length ? { workspace } : {}), ...(images?.frames.length ? { images } : {}) });
     return r.json;
   }
 
   async transcribeDiarize(): Promise<Transcription> { throw new Error("AI engines don't transcribe audio."); }
-  extract(schema: object, system: string, user: string) { return this.json(schema, system, user); }
+  extract(schema: object, system: string, user: string, opts?: ExtractOpts) { return this.json(schema, system, user, undefined, opts?.images); }
+  /** The engine Sutra would use now (to know if it can look at screenshots). */
+  async engineId(): Promise<AgentId> { return this.engine(); }
   /** Ask about a project: the agent may read its folders (read-only); main re-checks each one. */
   chat(schema: object, system: string, user: string, scope?: AskScope | null) { return this.json(schema, system, user, scope?.folders); }
 

@@ -108,7 +108,7 @@ export async function runEngine(id: AgentId, bin: string, req: AgentRequest, pro
     const inv = acpInvocation(id, req.model, process.env);
     const r = await runAcpPrompt({
       start: () => spawnTool(bin, inv.args, { cwd }), cwd, authMethodId: inv.authMethodId, mode: inv.mode, model: inv.model,
-      parameterizedModels: inv.parameterizedModels, timeoutMs, label: info.label, prompt,
+      parameterizedModels: inv.parameterizedModels, images: req.imageFiles, timeoutMs, label: info.label, prompt,
     }, killTree);
     return { text: r.text.trim() };
   }

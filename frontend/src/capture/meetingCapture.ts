@@ -11,6 +11,7 @@
 //
 // AUDIO NEVER PERSISTED: PCM becomes a WAV Blob only for the in-flight api.ingestWindow() call.
 
+import { MeetingMedia, type MediaSink } from "./meetingMedia";
 import type { CaptureProvider, CaptureWindow, CaptureStartOptions } from "./CaptureProvider";
 import type { AudioOutputKind } from "./stereoCore";
 import { windowToWavBlob } from "./wav";
@@ -55,6 +56,8 @@ export type ChannelMode = "split" | "stereo";
 export interface MeetingControllerOptions extends MeetingCallbacks {
   provider: CaptureProvider;
   api: MeetingApi;
+  /** Desktop, "Take screenshots during meetings": where screenshots + audio go until confirmed. */
+  media?: MediaSink | null;
   /** Selected mic deviceId (undefined → system default). */
   micDeviceId?: string;
   /** Output kind (headphones/speakers) → echo policy. */
@@ -88,6 +91,7 @@ export class MeetingController {
   private stopping = false;
   /** Wall-clock start of the capture and the running audio offset, so each window's turns get the
    *  real time they were SPOKEN (not the time the window finished). */
+  private media: MeetingMedia | null = null;
   private startedAt = 0;
   private offsetMs = 0;
 
@@ -113,12 +117,21 @@ export class MeetingController {
       const s = await this.api.createSession(this.provider.kind, "meeting", this.opts.sourceApp ?? null);
       this.sid = s.id;
       this.startedAt = Date.now();
+      const sink = this.opts.media;
       const startOpts: CaptureStartOptions = {
         micDeviceId: this.opts.micDeviceId,
         output: this.opts.output,
         onWindow: (w) => this.handleWindow(w),
         onError: (err) => this.handleCaptureError(err),
         onLevel: this.cb.onLevel,
+        ...(sink ? {
+          keepVideo: true,
+          onStreams: (mic: MediaStream, sys: MediaStream, video: MediaStreamTrack | null) => {
+            if (this.sid == null) return;
+            this.media = new MeetingMedia(this.sid, sink, (m) => this.cb.onError?.(m));
+            void this.media.start(video, [mic, sys]);
+          },
+        } : {}),
       };
       await this.provider.start(startOpts);
       if (this.sid == null) return; // a synchronous onError during start already unwound us
@@ -197,6 +210,7 @@ export class MeetingController {
     this.capturing = false;
     try {
       await this.provider.stop(); // flushes the tail window through handleWindow
+      await this.media?.stop();   // every screenshot + audio chunk saved before the notes pass reads them
     } catch {
       /* ignore — still drain + process below */
     }
@@ -220,6 +234,7 @@ export class MeetingController {
     } finally {
       this.uploads = [];
       this.sid = null;
+      this.media = null;
       this.cb.onPhase?.(finalPhase);
       this.stopping = false;
     }
@@ -229,6 +244,7 @@ export class MeetingController {
   private async discardSession(): Promise<void> {
     const sid = this.sid;
     this.sid = null;
+    if (this.media) { await this.media.stop().catch(() => {}); this.media = null; }
     if (sid != null) {
       try {
         await this.api.closeSession(sid);
@@ -243,6 +259,7 @@ export class MeetingController {
   teardown(): void {
     if (this.stopping) return;
     void this.provider.stop().catch(() => {});
+    void this.media?.stop().catch(() => {});
     this.capturing = false;
   }
 

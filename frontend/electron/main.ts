@@ -25,6 +25,7 @@ import { mcpInstall, mcpRemove, mcpSnippet, mcpStatus, type McpClientId } from "
 import { cancelSpeechDownload, deleteSpeechModel, downloadSpeechModel, speechStatus, transcribeSpeech } from "./speech/service";
 import { initPairing, stopPairing } from "./pairing";
 import { grantedWorkspace, registerProjectFolderIpc } from "./projectFolders";
+import { registerRecordingIpc } from "./recordings";
 import { AutoStop, macAppCandidates, type Detection, type TrackerUpdate } from "../src/shared/meetingRules";
 import { isAgentId, type AgentId, type AgentRequest } from "../src/shared/agentProtocol";
 
@@ -52,8 +53,8 @@ if (!app.isPackaged) {
 
 // ---- preferences (main-process owned so detection works before any window loads) -------------------
 
-interface Prefs { detectMeetings: boolean; autoStop: boolean; enabledEngines: AgentId[] | null }
-const DEFAULT_PREFS: Prefs = { detectMeetings: true, autoStop: true, enabledEngines: null };
+interface Prefs { detectMeetings: boolean; autoStop: boolean; enabledEngines: AgentId[] | null; captureScreen: boolean }
+const DEFAULT_PREFS: Prefs = { detectMeetings: true, autoStop: true, enabledEngines: null, captureScreen: false };
 const prefsPath = () => join(app.getPath("userData"), "prefs.json");
 let prefs: Prefs = { ...DEFAULT_PREFS };
 function loadPrefs(): void {
@@ -463,6 +464,7 @@ function registerIpc(): void {
   });
 
   registerProjectFolderIpc();
+  registerRecordingIpc();
 
   // The user's AI agent CLIs (Claude Code, Codex, Cursor, Gemini, Grok, Droid, Command Code) as the text engine.
   ipcMain.handle("sutra:ai:detect", (_e, refresh?: boolean) => detectAgents(refresh === true));
@@ -471,8 +473,12 @@ function registerIpc(): void {
     const schema = req?.schema && typeof req.schema === "object" ? req.schema : undefined;
     // Only folders the user linked through the system picker; anything else is dropped.
     const workspace = grantedWorkspace(req?.workspace);
+    // Screenshots by recording + frame name only (main decrypts them itself); labels are short tokens.
+    const im = req?.images;
+    const frames = Array.isArray(im?.frames) ? im!.frames.filter((f) => typeof f?.name === "string" && /^[A-Za-z0-9_-]{1,16}$/.test(String(f?.label))).slice(0, 30) : [];
+    const images = Number.isInteger(im?.session) && frames.length ? { session: im!.session, frames: frames.map((f) => ({ name: f.name, label: f.label })) } : undefined;
     return runAgent(id, { system: String(req?.system ?? ""), user: String(req?.user ?? ""), schema, model: typeof req?.model === "string" ? req.model : null,
-      ...(workspace.length ? { workspace } : {}) });
+      ...(workspace.length ? { workspace } : {}), ...(images ? { images } : {}) });
   });
 
   // On-device speech: transcription + speaker separation (electron/speech/*, runs in a utility process).

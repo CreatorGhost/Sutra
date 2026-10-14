@@ -13,6 +13,7 @@ import { ProjectChip, useProjects } from "./meeting/ProjectChip";
 import { projectName } from "./projects/model";
 import { EnginePicker } from "./EnginePicker";
 import { Additions, ChatThread, pathOpener, useMeetingChat } from "./meeting/MeetingChat";
+import { OnScreen, RecordingBanner, useMeetingVisual } from "./meeting/MeetingMedia";
 import "./features.css";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof api.conversation>>>;
@@ -48,6 +49,7 @@ export function MeetingView() {
   const [toast, showToast] = useToast();
   const projects = useProjects(version);
   const chat = useMeetingChat(cid);
+  const visual = useMeetingVisual(cid, version);
   const projectId: number | null = (detail as any)?.conversation?.project_id ?? null;
   const [folders, setFolders] = useState<string[]>([]);
   useEffect(() => {
@@ -135,6 +137,8 @@ export function MeetingView() {
             </span>
           </div>
 
+          {!pending && <RecordingBanner cid={cid} v={visual.v} startedAt={c.started_at ?? null} onChanged={() => { void visual.reload(); void load(); }} toast={showToast} />}
+
           <div className="seg" role="tablist">
             <button role="tab" aria-selected={tab === "notes"} onClick={() => setTab("notes")}>Notes</button>
             <button role="tab" aria-selected={tab === "transcript"} onClick={() => setTab("transcript")}>Transcript</button>
@@ -152,6 +156,7 @@ export function MeetingView() {
                 : style === "minutes" ? <MinutesNotes cid={cid} minutes={detail.minutes as any} meetingTitle={title} isMeeting={!!c.is_meeting} toast={showToast} />
                 : style === "detailed" ? <DetailedNotesView cid={cid} actions={detail.actions as any[]} />
                 : <BriefNotes memory={m} actions={detail.actions as any[]} />}
+              {!pending && <OnScreen cid={cid} images={visual.v?.images ?? []} startedAt={c.started_at ?? null} onChanged={() => void visual.reload()} />}
               {!pending && <Additions chat={chat} onPath={openPath} onOpenChat={() => setTab("chat")} />}
             </>
           ) : (

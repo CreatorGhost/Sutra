@@ -15,6 +15,8 @@ import * as notesSvc from "./notes";
 import * as refinementSvc from "./refinement";
 import * as recapSvc from "./recap";
 import * as foldersSvc from "./projectFolders";
+import * as visualSvc from "./visual";
+import { desktop } from "../desktop/bridge";
 import * as repo from "./repo";
 import { searchMemories } from "./search";
 import * as training from "./training";
@@ -57,7 +59,46 @@ export const api = {
 
   listConversations: () => repo.listConversations(),
   conversation: (cid: number) => repo.conversationDetail(cid),
-  deleteConversation: (cid: number) => repo.deleteConversation(cid),
+  deleteConversation: async (cid: number) => {
+    // Its recording (screenshots + audio) and kept screenshots go with it.
+    const sid = await repo.sessionForConversation(cid).catch(() => null);
+    if (desktop?.media) {
+      if (sid != null) await desktop.media.deleteSession(sid).catch(() => {});
+      await desktop.media.deleteKept(cid).catch(() => {});
+    }
+    await repo.deleteConversation(cid);
+  },
+  // Notes that saw the screen: what was looked at, the kept screenshots, the recording awaiting confirmation.
+  meetingVisual: async (cid: number) => {
+    const sid = await repo.sessionForConversation(cid);
+    const [visual, images, recording] = await Promise.all([
+      repo.getMeetingVisual(cid), repo.listMeetingImages(cid),
+      sid != null && desktop?.media ? desktop.media.status(sid).catch(() => null) : Promise.resolve(null),
+    ]);
+    return { session: sid, visual, images, recording };
+  },
+  keptImage: async (cid: number, name: string) => {
+    const bytes = await desktop!.media!.readKept(cid, name);
+    return URL.createObjectURL(new Blob([bytes as BlobPart], { type: "image/jpeg" }));
+  },
+  recordingAudio: async (sid: number) => {
+    const a = await desktop!.media!.readAudio(sid);
+    return a ? URL.createObjectURL(new Blob([a.bytes as BlobPart], { type: a.mime ?? "audio/webm" })) : null;
+  },
+  removeMeetingImage: async (cid: number, img: { id: number; name: string }) => {
+    await repo.deleteMeetingImage(img.id);
+    await desktop?.media?.deleteKept(cid, img.name).catch(() => {});
+  },
+  confirmRecording: (cid: number) => visualSvc.confirmRecording(cid),
+  /** Look at the recording's screenshots again (e.g. after switching to an engine that can see), then
+   *  rewrite the notes with what was on screen. */
+  relookAtScreen: async (cid: number) => {
+    const sid = await repo.sessionForConversation(cid);
+    if (sid == null) throw new Error("This meeting has no recording.");
+    const p = await provider();
+    const facts = await visualSvc.visualPass(cid, sid, p);
+    await extractSvc.extractConversation(cid, p, facts);
+  },
   setTags: (cid: number, tags: string[]) => repo.setConversationTags(cid, tags),
   setTitle: (cid: number, title: string) => repo.setConversationTitle(cid, title),
   /** Re-run extraction for one meeting (e.g. after renaming speakers, or after a failure). */

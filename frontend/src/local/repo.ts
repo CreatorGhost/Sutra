@@ -233,6 +233,8 @@ export async function deleteConversation(cid: number) {
   await run("DELETE FROM events WHERE conversation_id=?", [cid]);
   await run("DELETE FROM notes WHERE conversation_id=?", [cid]);
   await run("DELETE FROM meeting_chat WHERE conversation_id=?", [cid]);
+  await run("DELETE FROM meeting_visual WHERE conversation_id=?", [cid]);
+  await run("DELETE FROM meeting_images WHERE conversation_id=?", [cid]);
   await run("DELETE FROM turns WHERE conversation_id=?", [cid]);
   await run("DELETE FROM conversations WHERE id=?", [cid]);
   await persist();
@@ -801,3 +803,49 @@ export const clearMeetingChat = async (cid: number) => {
 /** What was added to the meeting's notes, oldest first. */
 export const meetingAdditions = async (cid: number): Promise<ChatMessage[]> =>
   (await q("SELECT * FROM meeting_chat WHERE conversation_id=? AND pinned=1 ORDER BY id", [cid])).map(hydrateChat);
+
+// ---- notes from screenshots (desktop recordings with "Take screenshots during meetings") ----
+
+export interface MeetingVisual {
+  conversation_id: number; session_id: number; facts: string[]; frames_seen: number; frames_total: number;
+  engine: string | null; error: string | null; confirmed: boolean; created_at: string;
+}
+export interface MeetingImage { id: number; conversation_id: number; name: string; at: number | null; caption: string | null }
+
+/** The recording (capture session) a conversation came from. */
+export const sessionForConversation = async (cid: number): Promise<number | null> => {
+  const r = (await q("SELECT session_id FROM turns WHERE conversation_id=? AND session_id IS NOT NULL LIMIT 1", [cid]))[0] as any;
+  return r?.session_id != null ? Number(r.session_id) : null;
+};
+
+export async function setMeetingVisual(cid: number, v: { session_id: number; facts?: string[]; frames_seen?: number; frames_total?: number; engine?: string | null; error?: string | null }): Promise<void> {
+  await run(
+    `INSERT INTO meeting_visual(conversation_id,session_id,facts,frames_seen,frames_total,engine,error) VALUES(?,?,?,?,?,?,?)
+     ON CONFLICT(conversation_id) DO UPDATE SET session_id=excluded.session_id, facts=excluded.facts, frames_seen=excluded.frames_seen,
+       frames_total=excluded.frames_total, engine=excluded.engine, error=excluded.error`,
+    [cid, v.session_id, J(v.facts ?? []), v.frames_seen ?? 0, v.frames_total ?? 0, v.engine ?? null, v.error ?? null]);
+  await persist();
+}
+
+export async function getMeetingVisual(cid: number): Promise<MeetingVisual | null> {
+  const r = (await q("SELECT * FROM meeting_visual WHERE conversation_id=?", [cid]))[0] as any;
+  if (!r) return null;
+  let facts: string[] = [];
+  try { facts = JSON.parse(r.facts || "[]"); } catch { /* keep [] */ }
+  return { ...r, facts: Array.isArray(facts) ? facts.map(String) : [], confirmed: !!r.confirmed };
+}
+
+/** The user confirmed the notes: the recording's screenshots + audio can go. */
+export const confirmMeetingVisual = async (cid: number) => {
+  await run("UPDATE meeting_visual SET confirmed=1 WHERE conversation_id=?", [cid]);
+  await persist();
+};
+
+export async function addMeetingImage(cid: number, img: { name: string; at?: number | null; caption?: string | null }): Promise<void> {
+  await run("INSERT INTO meeting_images(conversation_id,name,at,caption) VALUES(?,?,?,?)", [cid, img.name, img.at ?? null, img.caption ?? null]);
+  await persist();
+}
+export const listMeetingImages = async (cid: number): Promise<MeetingImage[]> =>
+  (await q("SELECT id,conversation_id,name,at,caption FROM meeting_images WHERE conversation_id=? ORDER BY at, id", [cid])) as MeetingImage[];
+export const deleteMeetingImage = async (id: number) => { await run("DELETE FROM meeting_images WHERE id=?", [id]); await persist(); };
+export const clearMeetingImages = async (cid: number) => { await run("DELETE FROM meeting_images WHERE conversation_id=?", [cid]); await persist(); };
