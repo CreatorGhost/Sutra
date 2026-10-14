@@ -108,6 +108,30 @@ describe("DetectionTracker", () => {
     expect(end.ended?.key).toBe(meet.key);
   });
 
+  it("the same call seen through another signal is not a new call (no mid-meeting auto-stop)", () => {
+    const t = new DetectionTracker(2, 3);
+    t.update(meet);
+    t.update(meet);
+    // A window title names it "Browser|Google Meet"; the mic alone, before the tab matches, "Google Chrome|".
+    const viaTitle = { app: "Browser", service: "Google Meet", source: "window" as const, key: "Browser|Google Meet" };
+    const viaMic = { app: "Google Chrome", source: "mic" as const, key: "Google Chrome|" };
+    for (const d of [viaTitle, viaTitle, viaTitle, viaMic, viaMic, viaMic]) {
+      const up = t.update(d);
+      expect(up.ended).toBeUndefined();
+      expect(up.active).toMatchObject({ key: meet.key, app: "Google Chrome", service: "Google Meet" });
+    }
+    // Hanging up still ends it — under the key the recording was started with.
+    t.update(null); t.update(null);
+    expect(t.update(null).ended?.key).toBe(meet.key);
+  });
+
+  it("a different meeting service on the same app is a new call", () => {
+    const t = new DetectionTracker(1, 3);
+    t.update(meet);
+    const zoomWeb = { app: "Google Chrome", service: "Zoom", source: "tab" as const, key: "Google Chrome|Zoom" };
+    expect(t.update(zoomWeb).ended?.key).toBe(meet.key);
+  });
+
   it("a single flicker never raises", () => {
     const t = new DetectionTracker(2, 3);
     t.update(meet);
