@@ -227,6 +227,11 @@ export class PairingHost {
     acceptPhone(sock, this.auth())
       .then((conn) => {
         const { link, deviceId } = conn;
+        // Removed (or Sutra quitting) while this handshake was in flight.
+        if (this.stopped || !this.d.store.device(deviceId)) {
+          void link.emit("revoked").catch(() => {}).then(() => link.close("revoked"));
+          return;
+        }
         const list = this.links.get(deviceId) ?? [];
         // A phone that reconnects often leaves a dying link behind; drop the oldest beyond the cap.
         while (list.length >= MAX_LINKS_PER_DEVICE) list.shift()!.link.close("replaced");
