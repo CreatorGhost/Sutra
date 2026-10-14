@@ -14,6 +14,7 @@ import * as minutesSvc from "./minutes";
 import * as notesSvc from "./notes";
 import * as refinementSvc from "./refinement";
 import * as recapSvc from "./recap";
+import * as foldersSvc from "./projectFolders";
 import * as repo from "./repo";
 import { searchMemories } from "./search";
 import * as training from "./training";
@@ -138,7 +139,7 @@ export const api = {
   entities: () => q("SELECT id,type,canonical_name,importance,mention_count,first_seen,last_seen FROM entities ORDER BY mention_count DESC, importance DESC LIMIT 300"),
 
   search: async (qstr: string, topN?: number) => ({ query: qstr, results: await searchMemories(qstr, await provider(), topN) }),
-  chat: async (message: string, history: any[] = []) => chatSvc.chat(message, await provider(), history),
+  chat: async (message: string, history: any[] = [], projectId: number | null = null) => chatSvc.chat(message, await provider(), history, projectId),
 
   actionItems: (status?: string) => repo.listActions(status),
   updateAction: async (id: number, status: string) => { await repo.setActionStatus(id, status); return { id, status }; },
@@ -177,6 +178,13 @@ export const api = {
   addProjectPerson: (projectId: number, member: Parameters<typeof repo.addProjectPerson>[1]) => repo.addProjectPerson(projectId, member),
   setProjectPersonRole: (projectId: number, personId: number, role: string | null) => repo.setProjectPersonRole(projectId, personId, role),
   removeProjectPerson: (projectId: number, personId: number) => repo.removeProjectPerson(projectId, personId),
+  // Code folders (desktop): Ask may read them, read-only; the brief/people/glossary can be suggested from them.
+  linkProjectFolder: (projectId: number) => foldersSvc.linkFolder(projectId),
+  unlinkProjectFolder: (projectId: number, path: string) => foldersSvc.unlinkFolder(projectId, path),
+  scanProjectFolders: (paths: string[]) => foldersSvc.scanFolders(paths),
+  suggestFromFolders: async (projectId: number) => foldersSvc.suggestFromFolders(projectId, await provider()),
+  draftAgentsFile: async (projectId: number, folder: string) => foldersSvc.draftAgentsFile(projectId, folder, await provider()),
+  saveAgentsFile: (folder: string, content: string) => foldersSvc.saveAgentsFile(folder, content),
   // Mapping a conversation is always a USER choice: routes through the people service so it overrides any
   // silent auto-map, clears the pending suggestion, and re-runs that conversation's minutes (best-effort).
   setConversationProject: (convId: number, projectId: number | null) => peopleSvc.setProjectForConversation(convId, projectId),

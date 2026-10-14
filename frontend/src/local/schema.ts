@@ -14,6 +14,13 @@ CREATE TABLE IF NOT EXISTS notes(
   conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   style TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}', generated_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY(conversation_id, style));
+-- Code folders linked to a project (desktop). Ask can read them, read-only; the Mac app also keeps its own
+-- list of folders the user picked in the system dialog and only ever opens those (electron/projectFolders).
+CREATE TABLE IF NOT EXISTS project_folders(
+  project_id INTEGER NOT NULL,
+  path TEXT NOT NULL,
+  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY(project_id, path));
 `;
 
 export const MIGRATIONS: Record<number, string> = {
@@ -200,7 +207,8 @@ CREATE INDEX IF NOT EXISTS idx_priors_status ON priors(status);
 -- "Projects": user-authored, per-project CONTEXT that grounds the AI (cleanup + attribution + minutes).
 -- A project = a one-time, user-written brief (free text, injected verbatim) + a structured people list
 -- (name + role-in-THIS-project, optionally voice-linked to a known person) + canonical terms/glossary.
--- The AI NEVER auto-derives context — the user authors it; the app may only OFFER to save (confirm-only).
+-- The AI never saves context on its own: it may OFFER a brief/people/terms drawn from the project's own linked
+-- files (an empty brief is pre-filled, editable); people and terms are added only when the user accepts them.
 -- v1 is ON-DEVICE ONLY: context_enabled (default 1) gates LOCAL use; share_cloud (default 0) is a UI
 -- placeholder — cloud egress of projects is DEFERRED/disabled in v1 (never conflate the two switches).
 -- Additive & non-destructive: project_id on conversations is NULLABLE; unmapped conversations are the
@@ -268,6 +276,7 @@ export const ENSURED_COLUMNS: ReadonlyArray<readonly [table: string, column: str
   ["conversations", "uid", "TEXT"],             // stable id across devices (a phone meeting saved on the Mac too)
   ["memories", "subtitle", "TEXT"],
   ["memories", "open_questions", "TEXT NOT NULL DEFAULT '[]'"],
+  ["projects", "code_access", "INTEGER NOT NULL DEFAULT 1"], // Ask may read the project's linked folders
 ];
 
 /** Minimal driver ensureSchema needs; both db.ts (Capacitor/sql.js) and the desktop adapter supply one. */
@@ -283,6 +292,7 @@ export async function ensureSchema(d: EnsureDriver): Promise<void> {
   for (const [table, column, decl] of ENSURED_COLUMNS) {
     if (!cache.has(table)) cache.set(table, new Set((await d.columns(table)).map((c) => c.toLowerCase())));
     const cols = cache.get(table)!;
+    if (!cols.size) continue; // the table itself doesn't exist here (an odd prior state) — nothing to extend
     if (cols.has(column)) continue;
     await d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl};`);
     cols.add(column);
@@ -293,7 +303,8 @@ export async function ensureSchema(d: EnsureDriver): Promise<void> {
 export function ensureSchemaSync(d: { exec(sql: string): void; columns(table: string): string[] }): void {
   d.exec(TABLES_ENSURED);
   for (const [table, column, decl] of ENSURED_COLUMNS) {
-    if (d.columns(table).some((c) => c.toLowerCase() === column)) continue;
+    const cols = d.columns(table);
+    if (!cols.length || cols.some((c) => c.toLowerCase() === column)) continue; // missing table: nothing to extend
     d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl};`);
   }
 }

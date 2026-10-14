@@ -6,7 +6,7 @@ import { AI_FNS, type AiFn, type EngineSummary, type HostInfo } from "../../shar
 import type { ExecDevice, ExecMessage } from "../../shared/pairing/hostApi";
 import { autoEngine, isAgentId, safeModel, type AgentId, type AgentStatus } from "../../shared/agentProtocol";
 import { DEFAULT_SPEECH_MODEL } from "../../shared/speechModels";
-import type { Provider, TranscribeOpts } from "../../providers/provider";
+import type { AskScope, Provider, TranscribeOpts } from "../../providers/provider";
 
 export interface HostDeps {
   settings(): Promise<Record<string, unknown>>;
@@ -18,6 +18,8 @@ export interface HostDeps {
   /** The text engine: `engine` null = automatic; `modelFor` picks each engine's model. */
   textProvider(engine: AgentId | null, modelFor: (id: AgentId) => string | null): Pick<Provider, AiFn>;
   importBundle(bundle: unknown): Promise<{ conversationId: number; created: boolean }>;
+  /** A phone's project question: this computer's folders for the meeting / project it names. */
+  askScope?(hint: { meetingUid?: unknown; projectName?: unknown }): Promise<AskScope | null>;
 }
 
 /** Everything about this computer a phone shows, except its name and version (main adds those). */
@@ -58,7 +60,9 @@ const isObj = (v: unknown): v is object => !!v && typeof v === "object" && !Arra
 function checkArgs(fn: AiFn, args: unknown): unknown[] {
   const a = Array.isArray(args) ? args : null;
   const ok = !!a && (
-    fn === "extract" || fn === "chat" ? isObj(a[0]) && typeof a[1] === "string" && typeof a[2] === "string" && a.length === 3
+    fn === "extract" ? isObj(a[0]) && typeof a[1] === "string" && typeof a[2] === "string" && a.length === 3
+    // chat may carry a 4th: which project/meeting the question is about (never folder paths).
+    : fn === "chat" ? isObj(a[0]) && typeof a[1] === "string" && typeof a[2] === "string" && (a.length === 3 || (a.length === 4 && isObj(a[3])))
     : fn === "translate" ? isStrings(a[0]) && a.length === 1
     : fn === "refine" ? isStrings(a[0]) && (a[1] === undefined || a[1] === null || isObj(a[1])) && a.length <= 2
     : typeof a[0] === "string" && isStrings(a[1]) && a.length === 2);
@@ -76,6 +80,12 @@ export async function aiCall(params: unknown, deps: HostDeps): Promise<unknown> 
   const engine = isAgentId(p.engine) ? p.engine : chosenEngine(s);
   const asked = isAgentId(p.engine) ? safeModel(p.model) : null;
   const provider = deps.textProvider(engine, (id) => (asked && id === engine ? asked : engineModel(s, id)));
+  if (fn === "chat" && args.length === 4) {
+    // Resolve the phone's hint to THIS computer's folders for that project; nothing found = plain answer.
+    const hint = args[3] as { meetingUid?: unknown; projectName?: unknown };
+    const scope = deps.askScope ? await deps.askScope(hint).catch(() => null) : null;
+    return provider.chat(args[0] as object, args[1] as string, args[2] as string, scope);
+  }
   return (provider[fn] as (...a: unknown[]) => Promise<unknown>)(...args);
 }
 

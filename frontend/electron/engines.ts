@@ -101,12 +101,12 @@ export const probeEngine = (id: AgentId, bin: string) => PROBES[id](bin);
 
 /** Run one prompt through an engine in `dir` (a private empty temp dir) and return the raw reply text,
  *  plus the structured output when the CLI enforced the schema itself. */
-export async function runEngine(id: AgentId, bin: string, req: AgentRequest, prompt: string, dir: string, timeoutMs: number): Promise<{ text: string; structured?: unknown }> {
+export async function runEngine(id: AgentId, bin: string, req: AgentRequest, prompt: string, dir: string, timeoutMs: number, cwd = dir): Promise<{ text: string; structured?: unknown }> {
   const info = AGENTS[id];
   if (info.protocol === "acp") {
     const inv = acpInvocation(id, req.model, process.env);
     const r = await runAcpPrompt({
-      start: () => spawnTool(bin, inv.args, { cwd: dir }), cwd: dir, authMethodId: inv.authMethodId, mode: inv.mode, model: inv.model,
+      start: () => spawnTool(bin, inv.args, { cwd }), cwd, authMethodId: inv.authMethodId, mode: inv.mode, model: inv.model,
       parameterizedModels: inv.parameterizedModels, timeoutMs, label: info.label, prompt,
     }, killTree);
     return { text: r.text.trim() };
@@ -118,7 +118,7 @@ export async function runEngine(id: AgentId, bin: string, req: AgentRequest, pro
   }
   const inv = agentInvocation(id, req, dir, sep);
   if (inv.schemaFile) await writeFile(inv.schemaFile, JSON.stringify(req.schema));
-  const r = await runProcess(bin, inv.args, { input: prompt, cwd: dir, timeoutMs });
+  const r = await runProcess(bin, inv.args, { input: prompt, cwd, timeoutMs });
   if (r.timedOut) throw new Error(`${info.label} took too long to answer.`);
   const last = inv.outFile ? await readText(inv.outFile) : null;
   try {

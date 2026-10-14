@@ -2,6 +2,7 @@
 // optional-chained so the same UI runs in the browser / on Android where the bridge is absent.
 import type { Detection } from "../shared/meetingRules";
 import type { AgentId, AgentRequest, AgentStatus } from "../shared/agentProtocol";
+import type { FolderScan } from "../shared/projectFolders";
 import type { RelaySetupState } from "../shared/pairing/relaySetup";
 import type { LocalTranscription, SpeechProgress, SpeechStatus, SpeechTranscribeOpts } from "../shared/speechModels";
 import type { ExecMessage, ExecResult, PairingStatus, PairingUpdate } from "../shared/pairing/hostApi";
@@ -73,6 +74,16 @@ export interface DesktopBridge {
     install(id: McpClientId, token: string, url?: string): Promise<McpWriteResult>;
     remove(id: McpClientId): Promise<McpWriteResult>;
     reveal(path: string): Promise<void>;
+  };
+  /** Code folders linked to projects. Only folders picked in the system dialog are ever opened. */
+  folders?: {
+    /** The system folder picker; the chosen folder's real path, or null when cancelled. */
+    pick(): Promise<string | null>;
+    forget(path: string): Promise<void>;
+    scan(path: string): Promise<FolderScan>;
+    /** Write a new AGENTS.md (never overwrites); returns its path. */
+    writeAgents(path: string, content: string): Promise<string>;
+    reveal(path: string, rel?: string): Promise<void>;
   };
   /** Phones paired with this computer (Settings → Phones; electron/pairing/*). */
   pairing?: {

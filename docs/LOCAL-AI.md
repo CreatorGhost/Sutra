@@ -69,3 +69,32 @@ only accepts the suffixed ids its session lists; Sutra falls back to that form (
 - **What the agent does:** extraction (title, summary, decisions, action items, open questions), Detailed notes and Minutes, transcript clean-up (with the project glossary), translation, *Ask about this meeting* and *Ask Sutra*.
 - **If the agent fails, everything after transcription stops** (no title, notes or answers) while the transcript itself is fine — check the engine in Settings → Intelligence first.
 - **Search:** agents can't produce embeddings, so search is keyword-only (SQLite FTS5).
+
+## Projects and code folders (Ask only)
+
+A project can link the folders where its code lives (project page → **Code → Link a folder**, desktop).
+
+- **Who can open what.** The renderer stores which folders a project links, but the Mac app only ever
+  opens folders the user picked in the system folder dialog (`userData/project-folders.json`,
+  `electron/projectFolders.ts`). Every read, the AGENTS.md write and an agent's working directory are
+  checked against that list; reads are capped and never follow a symlink out of the folder.
+- **Linking fills the project.** Sutra reads `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursorrules`,
+  `.cursor/rules/*`, `.github/copilot-instructions.md`, the README and the manifest. An empty brief is
+  filled from them (editable); people and glossary terms are only *suggested* — each is added on a tap.
+  **People come from the git history too:** everyone who commits there (`git log -n 3000 --no-merges`,
+  hooks/fsmonitor off), most active first, one entry per person across emails, bots left out.
+  **Suggest from folder** runs it again.
+- **No AGENTS.md / CLAUDE.md?** "Create AGENTS.md" drafts one from the folder plus the project's people
+  and glossary; the user edits it, and **Save to folder** creates the file (never overwrites one).
+- **Ask reads the code — read-only, and only in Ask.** Asking about a meeting in the project, or Ask
+  Sutra with the project selected (the scope chip next to the engine picker, or "Ask about this
+  project"), runs the engine **in the project's folder**: Claude Code with only `Read,Grep,Glob`
+  (pre-approved, `--add-dir` for the other folders), Codex in its `read-only` sandbox (`-C folder`),
+  Gemini in `plan` mode (`--include-directories`), Cursor in `ask` mode; Grok/Droid/Command Code keep
+  their read-only defaults and refused tool permissions. The prompt tells the agent to cite files and
+  never change anything. Notes, minutes and clean-up never get the folder. "Let Ask read the code"
+  turns it off per project.
+- **Paired phone.** The phone has no folder paths: its question names the project and the meeting
+  (uid), and the Mac finds that project's folders in its own database before running the agent.
+- **Later:** a one-week copy of each project's brief/people/glossary on the phone, synced from the Mac,
+  for answers while the Mac is unreachable. Nothing is stored on a server.

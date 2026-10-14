@@ -1,4 +1,5 @@
 // Typed on-device data access (port of the Postgres-backed services' SQL). JSON columns are TEXT(JSON1).
+import type { AskScope } from "../providers/provider";
 import { q, run, exec, persist } from "./db";
 import { blobToVec, cosine, normName, vecToBlob } from "./util";
 import { coalesceTurns } from "./coalesce";
@@ -546,7 +547,7 @@ export async function createProject(name?: string): Promise<number> {
  *  through parseProjectTerms before storage so the column stays a clean ProjectTerm[] JSON. */
 export async function updateProject(
   id: number,
-  patch: { name?: string; brief?: string; color?: string | null; context_enabled?: boolean; share_cloud?: boolean; terms?: unknown },
+  patch: { name?: string; brief?: string; color?: string | null; context_enabled?: boolean; share_cloud?: boolean; code_access?: boolean; terms?: unknown },
 ): Promise<void> {
   const cols: string[] = [], vals: any[] = [];
   const set = (c: string, v: any) => { cols.push(`${c}=?`); vals.push(v); };
@@ -555,6 +556,7 @@ export async function updateProject(
   if (patch.color !== undefined) set("color", patch.color ?? null);
   if (patch.context_enabled !== undefined) set("context_enabled", patch.context_enabled ? 1 : 0);
   if (patch.share_cloud !== undefined) set("share_cloud", patch.share_cloud ? 1 : 0);
+  if (patch.code_access !== undefined) set("code_access", patch.code_access ? 1 : 0);
   if (patch.terms !== undefined) set("terms", J(parseProjectTerms(patch.terms)));
   if (!cols.length) return;
   await run(`UPDATE projects SET ${cols.join(", ")} WHERE id=?`, [...vals, id]);
@@ -563,16 +565,21 @@ export async function updateProject(
 
 export const deleteProject = async (id: number) => {
   await run("DELETE FROM project_people WHERE project_id=?", [id]);
+  await run("DELETE FROM project_folders WHERE project_id=?", [id]);
   // Unmap any conversations pointing at this project (additive: never deletes the conversation).
   await run("UPDATE conversations SET project_id=NULL WHERE project_id=?", [id]);
   await run("DELETE FROM projects WHERE id=?", [id]);
   await persist();
 };
 
-const hydrateProject = (r: any) => ({ ...r, context_enabled: !!r.context_enabled, share_cloud: !!r.share_cloud, terms: parseProjectTerms(r.terms) });
+const hydrateProject = (r: any) => ({
+  ...r, context_enabled: !!r.context_enabled, share_cloud: !!r.share_cloud, code_access: r.code_access == null ? true : !!r.code_access,
+  terms: parseProjectTerms(r.terms),
+});
 
 export const listProjects = async () =>
   (await q(`SELECT p.*, (SELECT count(*) FROM project_people pp WHERE pp.project_id=p.id) people_count,
+              (SELECT count(*) FROM project_folders pf WHERE pf.project_id=p.id) folder_count,
               (SELECT group_concat(pe.canonical_name, '\x1f') FROM
                  (SELECT pe.canonical_name FROM project_people pp JOIN people pe ON pe.id=pp.person_id
                     WHERE pp.project_id=p.id ORDER BY pe.is_me DESC, pe.canonical_name LIMIT 4) pe) people_names
@@ -588,7 +595,56 @@ export async function getProject(id: number) {
     `SELECT pp.person_id, pp.role, p.canonical_name, p.is_me, (p.voiceprint IS NOT NULL) has_voiceprint
      FROM project_people pp LEFT JOIN people p ON p.id=pp.person_id
      WHERE pp.project_id=? ORDER BY p.is_me DESC, p.canonical_name`, [id]);
-  return { ...hydrateProject(row), people };
+  const folders = (await q("SELECT path FROM project_folders WHERE project_id=? ORDER BY added_at, path", [id])).map((r: any) => String(r.path));
+  return { ...hydrateProject(row), people, folders };
+}
+
+// ---- project folders (desktop): code folders Ask may read, read-only ----
+
+export const addProjectFolder = async (projectId: number, path: string) => {
+  await run("INSERT OR IGNORE INTO project_folders(project_id,path) VALUES(?,?)", [projectId, path]);
+  await persist();
+};
+export const removeProjectFolder = async (projectId: number, path: string) => {
+  await run("DELETE FROM project_folders WHERE project_id=? AND path=?", [projectId, path]);
+  await persist();
+};
+/** Whether any other project still links this folder (the Mac app forgets a folder only when none does). */
+export const folderStillLinked = async (path: string) =>
+  (await q("SELECT 1 FROM project_folders WHERE path=? LIMIT 1", [path])).length > 0;
+
+
+async function scopeOf(projectId: number, meetingUid: string | null = null): Promise<AskScope | null> {
+  const p = (await q("SELECT id, name, code_access FROM projects WHERE id=?", [projectId]))[0] as any;
+  if (!p) return null;
+  const folders = p.code_access === 0 ? [] : (await q("SELECT path FROM project_folders WHERE project_id=? ORDER BY added_at, path", [projectId])).map((r: any) => String(r.path));
+  return { projectId: Number(p.id), projectName: String(p.name ?? "").trim() || "Untitled project", folders, meetingUid };
+}
+
+/** The Ask scope for a meeting: its project (if any) and that project's folders, plus the meeting's uid
+ *  so a paired Mac can find the same meeting (and project) in its own database. */
+export async function askScopeForConversation(convId: number): Promise<AskScope | null> {
+  const row = (await q("SELECT project_id, uid FROM conversations WHERE id=?", [convId]))[0] as any;
+  if (!row) return null;
+  if (row.project_id == null) return row.uid ? { projectId: null, projectName: "", folders: [], meetingUid: String(row.uid) } : null;
+  return scopeOf(Number(row.project_id), row.uid ? String(row.uid) : null);
+}
+export const askScopeForProject = (projectId: number) => scopeOf(projectId);
+export const projectConversationIds = async (projectId: number): Promise<number[]> =>
+  (await q("SELECT id FROM conversations WHERE project_id=?", [projectId])).map((r: any) => Number(r.id));
+
+/** On the Mac, for a paired phone's question: the folders for the meeting it names (by uid), else for the
+ *  project it names (by name, case-insensitive). */
+export async function askScopeFromHint(hint: { meetingUid?: unknown; projectName?: unknown }): Promise<AskScope | null> {
+  const uid = typeof hint.meetingUid === "string" ? hint.meetingUid.slice(0, 200) : "";
+  if (uid) {
+    const row = (await q("SELECT project_id FROM conversations WHERE uid=? LIMIT 1", [uid]))[0] as any;
+    if (row?.project_id != null) return scopeOf(Number(row.project_id), uid);
+  }
+  const name = typeof hint.projectName === "string" ? hint.projectName.trim().slice(0, 200) : "";
+  if (!name) return null;
+  const p = (await q("SELECT id FROM projects WHERE lower(trim(name))=lower(?) ORDER BY id LIMIT 1", [name]))[0] as any;
+  return p ? scopeOf(Number(p.id)) : null;
 }
 
 /** Add a person to a project with a per-project role. Provide an existing person_id, OR a name to create a

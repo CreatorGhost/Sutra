@@ -86,6 +86,14 @@ contextBridge.exposeInMainWorld(
         onChange: (cb: (s: unknown) => void) => listen("sutra:relay:changed", cb),
       }),
     }),
+    // Code folders linked to projects (electron/projectFolders.ts).
+    folders: Object.freeze({
+      pick: () => ipcRenderer.invoke("sutra:folders:pick"),
+      forget: (path: string) => ipcRenderer.invoke("sutra:folders:forget", String(path)),
+      scan: (path: string) => ipcRenderer.invoke("sutra:folders:scan", String(path)),
+      writeAgents: (path: string, content: string) => ipcRenderer.invoke("sutra:folders:writeAgents", String(path), String(content)),
+      reveal: (path: string, rel?: string) => ipcRenderer.invoke("sutra:folders:reveal", String(path), rel == null ? undefined : String(rel)),
+    }),
     backup: Object.freeze({
       save: (json: string, filename: string) => ipcRenderer.invoke("sutra:backup:save", json, filename),
     }),

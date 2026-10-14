@@ -50,6 +50,15 @@ describe("AgentProvider", () => {
     await resolveProvider({ ai_model_grok: "grok-4.5" }).chat({ name: "x", strict: true, schema: { type: "object" } }, "sys", "user");
     expect(calls[0]).toMatchObject({ id: "grok", req: { system: "sys", user: "user", schema: { type: "object" }, model: "grok-4.5" } });
   });
+  it("Ask about a project passes its folders through the composed provider; other jobs never do", async () => {
+    detected = [ready("claude")];
+    const { resolveProvider } = await load();
+    const p = resolveProvider({ ai_engine: "claude" });
+    await p.chat({}, "s", "u", { projectName: "Acme", folders: ["/code/acme"] });
+    await p.chat({}, "s", "u", { projectName: "Acme", folders: [] });
+    await p.extract({}, "s", "u");
+    expect(calls.map((c) => c.req.workspace)).toEqual([["/code/acme"], undefined, undefined]);
+  });
   it("fails with an actionable message when no engine is ready", async () => {
     detected = [{ id: "claude", installed: true, signedIn: false }];
     const { AgentProvider, NO_ENGINE_MESSAGE } = await load();

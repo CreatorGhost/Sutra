@@ -115,7 +115,8 @@ export const CHAT_SYSTEM =
   "A '# Your Context' block may appear first: these are the user's standing priors (people, projects, " +
   "their role) — use them ONLY to understand who or what the user is referring to. They are NOT facts to " +
   "cite, MAY be stale, and are NOT citable; on any conflict, prefer the memories below them. Citations " +
-  "remain conversation ids only.";
+  "remain conversation ids only. If you have the project's code folder (you'll be told), you may also read it " +
+  "to answer questions about the code — name the files you used in the answer; citations stay conversation ids.";
 
 export const ANSWER_SCHEMA = {
   name: "grounded_answer", strict: true,
@@ -154,7 +155,8 @@ export const NOTES_DETAILED_SCHEMA = {
 export const ASK_MEETING_SYSTEM =
   "You answer questions about ONE meeting using only its notes and transcript below. Be direct and brief " +
   "(1-4 sentences or a short list). Quote who said what when it helps. If the meeting doesn't cover it, say " +
-  "so plainly — never invent. Answer in the language of the question.";
+  "so plainly — never invent. Answer in the language of the question. If you have the project's code folder " +
+  "(you'll be told), you may also read it to answer questions about the code, naming the files you used.";
 
 export const ASK_MEETING_SCHEMA = {
   name: "meeting_answer",

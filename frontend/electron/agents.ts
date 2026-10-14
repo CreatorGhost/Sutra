@@ -79,7 +79,9 @@ async function runAgentNow(id: AgentId, req: AgentRequest): Promise<{ text: stri
     let retryErrors: string[] | undefined;
     for (let attempt = 0; ; attempt++) {
       const prompt = buildAgentPrompt(req, !!req.schema && !info.nativeSchema, retryErrors);
-      const r = await runEngine(id, bin, req, prompt, dir, RUN_TIMEOUT_MS);
+      // Asking about a project: the agent works in its folder (read-only); the temp dir still holds
+      // Codex's schema/output files.
+      const r = await runEngine(id, bin, req, prompt, dir, RUN_TIMEOUT_MS, req.workspace?.[0]);
       if (!req.schema) {
         if (!r.text) throw new Error(`${info.label} returned an empty answer.`);
         return { text: r.text };

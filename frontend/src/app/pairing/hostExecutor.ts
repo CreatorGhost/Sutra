@@ -4,6 +4,7 @@
 import { desktop } from "../../desktop/bridge";
 import { api, SETTINGS_CHANGED_EVENT } from "../../local/sutra";
 import { importMeetingBundle } from "../../local/meetingBundle";
+import { askScopeFromHint } from "../../local/repo";
 import { AgentProvider } from "../../providers/agentProvider";
 import { LocalSpeechProvider } from "../../providers/localSttProvider";
 import type { ExecMessage } from "../../shared/pairing/hostApi";
@@ -30,6 +31,7 @@ const deps: HostDeps = {
     notifyDataChanged();
     return r;
   },
+  askScope: (hint) => askScopeFromHint(hint),
 };
 
 let running = 0;

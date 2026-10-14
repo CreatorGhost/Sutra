@@ -24,6 +24,7 @@ import { detectAgents, runAgent, setEnabledEngines } from "./agents";
 import { mcpInstall, mcpRemove, mcpSnippet, mcpStatus, type McpClientId } from "./mcpConnect";
 import { cancelSpeechDownload, deleteSpeechModel, downloadSpeechModel, speechStatus, transcribeSpeech } from "./speech/service";
 import { initPairing, stopPairing } from "./pairing";
+import { grantedWorkspace, registerProjectFolderIpc } from "./projectFolders";
 import { macAppCandidates, type Detection, type TrackerUpdate } from "../src/shared/meetingRules";
 import { isAgentId, type AgentId, type AgentRequest } from "../src/shared/agentProtocol";
 
@@ -462,12 +463,17 @@ function registerIpc(): void {
     return (await appIcon(p)) ?? null;
   });
 
+  registerProjectFolderIpc();
+
   // The user's AI agent CLIs (Claude Code, Codex, Cursor, Gemini, Grok, Droid, Command Code) as the text engine.
   ipcMain.handle("sutra:ai:detect", (_e, refresh?: boolean) => detectAgents(refresh === true));
   ipcMain.handle("sutra:ai:run", (_e, id: AgentId, req: AgentRequest) => {
     if (!isAgentId(id)) throw new Error("unknown AI engine");
     const schema = req?.schema && typeof req.schema === "object" ? req.schema : undefined;
-    return runAgent(id, { system: String(req?.system ?? ""), user: String(req?.user ?? ""), schema, model: typeof req?.model === "string" ? req.model : null });
+    // Only folders the user linked through the system picker; anything else is dropped.
+    const workspace = grantedWorkspace(req?.workspace);
+    return runAgent(id, { system: String(req?.system ?? ""), user: String(req?.user ?? ""), schema, model: typeof req?.model === "string" ? req.model : null,
+      ...(workspace.length ? { workspace } : {}) });
   });
 
   // On-device speech: transcription + speaker separation (electron/speech/*, runs in a utility process).

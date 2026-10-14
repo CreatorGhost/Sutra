@@ -74,7 +74,9 @@ export async function askMeeting(cid: number, question: string, provider: Provid
   const prior = history.slice(-4).map((h) => `Q: ${h.q}\nA: ${h.a}`).join("\n\n");
   const user = `# Notes\n${notes}\n\n# Transcript\n${transcriptText(d.turns, 60000)}\n\n` +
     (prior ? `# Earlier questions\n${prior}\n\n` : "") + `# Question\n${question}`;
-  const out = await provider.chat(ASK_MEETING_SCHEMA, ASK_MEETING_SYSTEM, user);
+  // A meeting in a project with linked code folders: the agent may read them too (read-only).
+  const scope = await repo.askScopeForConversation(cid).catch(() => null);
+  const out = await provider.chat(ASK_MEETING_SCHEMA, ASK_MEETING_SYSTEM, user, scope);
   return String(out?.answer ?? "").trim() || "I couldn't find that in this meeting.";
 }
 

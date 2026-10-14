@@ -37,12 +37,22 @@ export interface Provider {
   embed(texts: string[]): Promise<number[][]>;
   /** Cross-encoder / LLM relevance scores in [0,1]. Text only. */
   rerank(query: string, docs: string[]): Promise<number[]>;
-  /** Grounded chat answer against a strict JSON schema. Text only. */
-  chat(jsonSchema: object, system: string, user: string): Promise<any>;
+  /** Grounded chat answer against a strict JSON schema. Text only. With a `scope` (Ask about a project)
+   *  an agent engine may also read the project's code folders, read-only. */
+  chat(jsonSchema: object, system: string, user: string, scope?: AskScope | null): Promise<any>;
   readonly id: string;
   /** Which engine transcribes, when it differs from `id` ("cloud" | "local"). Voiceprints and the
    *  English translate pass only exist on the cloud path. */
   readonly sttId?: string;
   /** False when this engine can't embed text (local agents): search falls back to keywords only. */
   readonly canEmbed?: boolean;
+}
+
+/** What an Ask is about: the project (by name, for a paired Mac to find), its code folders on THIS
+ *  device (none on a phone, or when code access is off) and the meeting's cross-device uid. */
+export interface AskScope {
+  projectId?: number | null;
+  projectName?: string | null;
+  folders?: string[];
+  meetingUid?: string | null;
 }

@@ -11,6 +11,10 @@
 // (github.com/CreatorGhost/viewcode, a T3 Code fork, MIT, © T3 Tools Inc.) — see THIRD_PARTY_NOTICES.md.
 
 import type { ContextOption } from "./engineProbes";
+import { workspacePreamble } from "./projectFolders";
+
+/** Claude Code tools for reading a project: open, search and list files — nothing that writes or runs. */
+export const READ_ONLY_CLAUDE_TOOLS = "Read,Grep,Glob";
 
 export type AgentId = "claude" | "codex" | "cursor" | "gemini" | "grok" | "droid" | "commandcode";
 
@@ -145,15 +149,17 @@ export interface AgentRequest {
   /** JSON Schema (the inner `schema`, not the OpenAI {name, strict, schema} wrapper). */
   schema?: object;
   model?: string | null;
+  /** Ask about a project: its code folders (already checked by main — only folders the user linked). The
+   *  agent runs in the first, with read-only tools; the rest are added where the CLI supports it. */
+  workspace?: string[];
 }
 
 /** The single prompt the agent receives. When the CLI can't enforce a schema itself we spell it out; on
  *  a retry, the previous reply's validation errors are appended so the model can fix exactly those. */
 export function buildAgentPrompt(req: AgentRequest, enforceSchemaInPrompt: boolean, retryErrors?: string[]): string {
-  const parts = [
-    "You are the text engine of Sutra, a private meeting-notes app. Do not use tools, read or write files, or run commands — answer from the text below only.",
-    req.system.trim(),
-  ];
+  const parts = req.workspace?.length
+    ? ["You are the text engine of Sutra, a private meeting-notes app.", workspacePreamble(req.workspace), req.system.trim()]
+    : ["You are the text engine of Sutra, a private meeting-notes app. Do not use tools, read or write files, or run commands — answer from the text below only.", req.system.trim()];
   if (req.schema && enforceSchemaInPrompt) {
     parts.push(`Reply with ONLY one JSON object (no prose, no code fences) that validates against this JSON Schema. Include every required key; use null or [] when there is nothing for it:\n${JSON.stringify(req.schema)}`);
   }
@@ -175,11 +181,15 @@ export interface AgentInvocation {
  *  private temp dir the call runs in. */
 export function agentInvocation(id: AgentId, req: AgentRequest, tmp: string, sep = "/"): AgentInvocation {
   const model = safeModel(req.model);
+  const ws = req.workspace ?? [];
   switch (id) {
     case "claude": {
-      // Tools, slash commands/skills, hooks and session files all off: a pure text completion.
-      const args = ["-p", "--output-format", "json", "--tools", "", "--disable-slash-commands",
+      // Tools, slash commands/skills, hooks and session files all off: a pure text completion. Asking about
+      // a project's code: only the read-only tools (read, search, list), pre-approved, in its folders.
+      const tools = ws.length ? READ_ONLY_CLAUDE_TOOLS : "";
+      const args = ["-p", "--output-format", "json", "--tools", tools, ...(ws.length ? ["--allowedTools", tools] : []), "--disable-slash-commands",
         "--permission-mode", "dontAsk", "--settings", JSON.stringify({ disableAllHooks: true }), "--no-session-persistence"];
+      for (const dir of ws.slice(1)) args.push("--add-dir", dir);
       if (model) args.push("--model", model);
       if (req.schema) args.push("--json-schema", JSON.stringify(req.schema));
       return { args };
@@ -187,7 +197,9 @@ export function agentInvocation(id: AgentId, req: AgentRequest, tmp: string, sep
     case "codex": {
       const outFile = `${tmp}${sep}last-message.txt`;
       const schemaFile = req.schema ? `${tmp}${sep}schema.json` : undefined;
+      // Read-only sandbox: it may read (a project's folder too, when asked about one) but never write.
       const args = ["exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "--color", "never", "-o", outFile];
+      if (ws.length) args.push("-C", ws[0]);
       if (schemaFile) args.push("--output-schema", schemaFile);
       if (model) args.push("-m", model);
       args.push("-");
@@ -196,6 +208,7 @@ export function agentInvocation(id: AgentId, req: AgentRequest, tmp: string, sep
     case "gemini": {
       // `-p ""` = headless; the real prompt comes on stdin. Plan mode is Gemini's read-only mode.
       const args = ["-p", "", "--output-format", "json", "--approval-mode", "plan", "--skip-trust"];
+      if (ws.length > 1) args.push("--include-directories", ws.slice(1).join(","));
       if (model && model !== "auto") args.push("-m", model);
       return { args };
     }

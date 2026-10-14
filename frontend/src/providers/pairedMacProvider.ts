@@ -2,7 +2,7 @@
 // its own local speech engine (so this behaves like LocalSpeechProvider in ingest: voiceprints, and a
 // translate pass when the model kept the spoken language). Every text job runs on the AI engine
 // chosen on the Mac — or the one picked on the phone (paired_ai_engine / paired_ai_model).
-import type { Provider, RefineOpts, TranscribeOpts, Transcription } from "./provider";
+import type { AskScope, Provider, RefineOpts, TranscribeOpts, Transcription } from "./provider";
 import type { AgentId } from "../shared/agentProtocol";
 import { b64u, randomBytes } from "../shared/pairing/crypto";
 import type { SecureLink } from "../shared/pairing/link";
@@ -53,7 +53,12 @@ export class PairedMacProvider implements Provider {
   }
 
   extract(jsonSchema: object, system: string, user: string) { return this.ai("extract", [jsonSchema, system, user]); }
-  chat(jsonSchema: object, system: string, user: string) { return this.ai("chat", [jsonSchema, system, user]); }
+  /** A project question names the project and meeting; the Mac finds that project's folders itself
+   *  (the phone has no folder paths, and wouldn't be trusted with them). */
+  chat(jsonSchema: object, system: string, user: string, scope?: AskScope | null) {
+    const hint = scope && (scope.projectName || scope.meetingUid) ? { projectName: scope.projectName ?? null, meetingUid: scope.meetingUid ?? null } : null;
+    return this.ai("chat", hint ? [jsonSchema, system, user, hint] : [jsonSchema, system, user]);
+  }
   translate(texts: string[]): Promise<string[]> { return texts.length ? this.ai("translate", [texts]) : Promise.resolve([]); }
   refine(texts: string[], opts?: RefineOpts): Promise<string[]> { return texts.length ? this.ai("refine", [texts, opts ?? {}]) : Promise.resolve([]); }
   rerank(query: string, docs: string[]): Promise<number[]> { return this.ai("rerank", [query, docs]); }

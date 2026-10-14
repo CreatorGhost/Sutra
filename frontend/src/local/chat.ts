@@ -2,13 +2,20 @@ import type { Provider } from "../providers/provider";
 import { isFullTextEngine } from "../providers";
 import { ANSWER_SCHEMA, CHAT_SYSTEM } from "./aiPrompts";
 import { expand, nearestEntities } from "./graph";
-import { getSettings, topPriors } from "./repo";
+import { askScopeForProject, getProject, getSettings, projectConversationIds, topPriors } from "./repo";
 import { searchMemories } from "./search";
 
-export async function chat(message: string, provider: Provider, history: { role: string; content: string }[] = []) {
+/** `projectId`: Ask about one project — only its meetings, its brief, and (desktop, code access on) its
+ *  linked code folders, which the agent may read. */
+export async function chat(message: string, provider: Provider, history: { role: string; content: string }[] = [], projectId: number | null = null) {
   message = (message || "").trim();
   if (!message) return { answer: "Please ask a question.", supported: false, citations: [], retrieved: [] };
-  const memories = await searchMemories(message, provider, 8) as any[];
+  const project = projectId != null ? await getProject(projectId).catch(() => null) as any : null;
+  let memories = await searchMemories(message, provider, project ? 24 : 8) as any[];
+  if (project) {
+    const ids = new Set(await projectConversationIds(project.id));
+    memories = memories.filter((m) => ids.has(m.conversation_id)).slice(0, 8);
+  }
   let seeds: number[] = [];
   if (provider.canEmbed !== false) {
     try { const [qvec] = await provider.embed([message]); seeds = await nearestEntities(qvec, 5); } catch { /* keyword-only */ }
@@ -50,11 +57,15 @@ export async function chat(message: string, provider: Provider, history: { role:
     for (const e of sub.edges as any[]) ctx.push(`${name[e.src] ?? "?"} --${e.relation}--> ${name[e.dst] ?? "?"}`);
   }
   const body = memories.length || sub.nodes.length ? ctx.join("\n") : "(no memories found)";
-  const context = priorsBlock ? priorsBlock + "\n" + body : body;
+  const projectBlock = project
+    ? `# Project: ${project.name || "Untitled project"}\n${project.context_enabled !== false && project.brief ? `<project_brief>\n${project.brief}\n</project_brief>\n` : ""}The user is asking about this project.\n`
+    : "";
+  const context = projectBlock + (priorsBlock ? priorsBlock + "\n" + body : body);
   const hist = history.slice(-6).map((h) => `${h.role}: ${h.content}`).join("\n");
   const user = (hist ? `Conversation so far:\n${hist}\n\n` : "") + `Context:\n${context}\n\nUser question: ${message}`;
 
-  const data = await provider.chat(ANSWER_SCHEMA, CHAT_SYSTEM, user);
+  const scope = project ? await askScopeForProject(project.id).catch(() => null) : null;
+  const data = await provider.chat(ANSWER_SCHEMA, CHAT_SYSTEM, user, scope);
   const cited = new Set<number>(data.citation_conversation_ids ?? []);
   const cite = (m: any) => ({ conversation_id: m.conversation_id, title: m.title, date: m.started_at ? String(m.started_at).slice(0, 10) : null });
   let citations: any[] = [];

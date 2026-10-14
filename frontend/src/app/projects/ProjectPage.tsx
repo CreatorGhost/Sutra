@@ -7,6 +7,7 @@ import { notifyDataChanged } from "../events";
 import { shortDate } from "../format";
 import { Popover, Switch, friendlyError, useToast } from "../ui";
 import { setMeetingFilter } from "./filter";
+import { ProjectFolders } from "./ProjectFolders";
 import { PROJECT_COLORS, addTerm, plural, projectColor, projectName, removeHeardAs, removeTerm, splitVariants } from "./model";
 import "../features.css";
 
@@ -98,7 +99,7 @@ export function ProjectPage() {
             onBlur={() => { const v = name.trim(); if (v !== (project.name ?? "")) void patch({ name: v }); }}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           />
-          <p className="m-sub">The brief and glossary help Sutra spell names and terms right, and fix mishearings in transcripts and notes.</p>
+          <p className="m-sub">Link the project's code, and Ask can look at it. The brief and glossary help Sutra spell names and terms right in transcripts and notes.</p>
 
           <div className="meta">
             <span className="swatches" role="radiogroup" aria-label="Colour">
@@ -108,6 +109,9 @@ export function ProjectPage() {
             </span>
             <span className="faint when">{plural(meetings.length, "meeting")} · {plural(project.people?.length ?? 0, "person", "people")} · {plural(terms.length, "term")}</span>
           </div>
+
+          <ProjectFolders pid={pid} project={project} act={act} notify={showToast}
+            onBrief={async (b) => { const v = clampBrief(b); setBrief(v); await patch({ brief: v }); }} />
 
           <section className="sec">
             <h2>Brief</h2>

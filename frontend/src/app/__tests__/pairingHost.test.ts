@@ -114,6 +114,19 @@ describe("host request dispatch", () => {
     expect(auto.calls[0].engine).toBeNull();             // automatic
   });
 
+  it("a phone's project question gets this computer's folders for that project", async () => {
+    const askScope = vi.fn(async (hint: any) => (hint.projectName === "Acme" ? { projectName: "Acme", folders: ["/code/acme"] } : null));
+    const { deps, calls } = fakeDeps({ ai_engine: "claude" }, { askScope });
+    await aiCall({ fn: "chat", args: [{}, "sys", "user", { projectName: "Acme", meetingUid: "u1" }] }, deps);
+    expect(askScope).toHaveBeenCalledWith({ projectName: "Acme", meetingUid: "u1" });
+    expect(calls[0].args).toEqual([{}, "sys", "user", { projectName: "Acme", folders: ["/code/acme"] }]);
+    await aiCall({ fn: "chat", args: [{}, "sys", "user", { projectName: "Other" }] }, deps);
+    expect(calls[1].args).toEqual([{}, "sys", "user", null]);        // unknown project: a plain answer
+    // The phone can't pass folder paths, or anything but an object.
+    await expect(aiCall({ fn: "chat", args: [{}, "s", "u", "/etc"] }, deps)).rejects.toThrow(/didn't make sense/);
+    await expect(aiCall({ fn: "extract", args: [{}, "s", "u", {}] }, deps)).rejects.toThrow(/didn't make sense/);
+  });
+
   it("rejects unknown jobs and malformed arguments", async () => {
     const { deps, calls } = fakeDeps();
     await expect(aiCall({ fn: "embed", args: [["x"]] }, deps)).rejects.toThrow(/doesn't know that AI job/);

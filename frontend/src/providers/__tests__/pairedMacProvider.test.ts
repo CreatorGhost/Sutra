@@ -79,6 +79,13 @@ describe("PairedMacProvider", () => {
     calls.length = 0;
     await provider().chat({}, "s", "u");
     expect(calls[0].p).toMatchObject({ engine: null, model: null });
+    // A project question names the project and meeting — never folder paths (the Mac finds its own).
+    calls.length = 0;
+    await provider().chat({}, "s", "u", { projectId: 3, projectName: "Acme", folders: ["/phone/never"], meetingUid: "u1" });
+    expect(calls[0].p.args).toEqual([{}, "s", "u", { projectName: "Acme", meetingUid: "u1" }]);
+    calls.length = 0;
+    await provider().chat({}, "s", "u", { projectId: null, projectName: "", folders: [] });
+    expect(calls[0].p.args).toEqual([{}, "s", "u"]);
   });
 
   it("can't embed (search falls back to keywords) and says so when the Mac is away", async () => {
