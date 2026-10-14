@@ -15,6 +15,7 @@
 import { app, BrowserWindow, Menu, Tray, desktopCapturer, dialog, ipcMain, nativeImage, screen, session, shell, systemPreferences } from "electron";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { realpath } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { initDesktopStorage } from "./storage";
 import { userPath } from "./proc";
@@ -201,6 +202,10 @@ function showMain(path?: string): void {
 
 const PILL_H = 64; // capsule (44) + room for its soft shadow
 let pillWidth = 360;
+/** On a notched screen the window is a fixed stage under the camera; the island animates inside it and
+ *  everything around it is click-through (the renderer says when the pointer is on the island). */
+const NOTCH_STAGE = { width: 520, height: 160 };
+let lastPillMode: PillMode = "hidden";
 
 function createPillWindow(): void {
   const win = new BrowserWindow({
@@ -219,6 +224,8 @@ function createPillWindow(): void {
     alwaysOnTop: true,
     focusable: !isMac ? false : true,
     ...(isMac ? { type: "panel" as const } : {}),
+    // Lets the notch island sit over the menu bar (macOS otherwise pushes windows below it).
+    enableLargerThanScreen: true,
     backgroundColor: "#00000000",
     webPreferences: {
       preload: join(__dirname, "../preload/preload.cjs"),
@@ -232,23 +239,61 @@ function createPillWindow(): void {
   win.setAlwaysOnTop(true, "screen-saver");
   // Keep the pill out of screen shares and recordings, so a call never sees "Recording".
   win.setContentProtection(true);
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // skipTransformProcessType: joining every Space otherwise makes the Dock icon flicker.
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
   win.on("closed", () => { pillWin = null; });
   win.webContents.on("did-finish-load", () => pushPill());
   load(win, "pill");
 }
 
+// ---- notch (MacBooks since 2021): the pill wraps the camera housing like a menu-bar island ---------
+// Electron doesn't expose the notch, so it's read from NSScreen through JXA (osascript ships with macOS,
+// no Xcode needed). `left` = where the notch starts and `width` its size, in points from the screen's left.
+interface Notch { x: number; w: number; left: number; width: number; height: number }
+let notches: Notch[] = [];
+const NOTCH_JXA = `ObjC.import("AppKit"); const o = []; const ss = $.NSScreen.screens;
+for (let i = 0; i < ss.count; i++) { const s = ss.objectAtIndex(i), f = s.frame;
+  if (!s.respondsToSelector("auxiliaryTopLeftArea")) continue;
+  const l = s.auxiliaryTopLeftArea, r = s.auxiliaryTopRightArea;
+  if (l.size.width > 0 && r.size.width > 0) o.push({ x: f.origin.x, w: f.size.width, left: l.size.width, width: r.origin.x - l.size.width, height: s.safeAreaInsets.top }); }
+JSON.stringify(o)`;
+function readNotches(): void {
+  if (!isMac) return;
+  execFile("osascript", ["-l", "JavaScript", "-e", NOTCH_JXA], { timeout: 5000 }, (err, out) => {
+    try { notches = err ? [] : (JSON.parse(out) as Notch[]).filter((n) => n.width > 0 && n.width < 400); } catch { notches = []; }
+    if (pillWin?.isVisible()) placePill();
+    pushPill();
+  });
+}
+const pillDisplay = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+const notchOf = (d: Electron.Display) => notches.find((n) => Math.round(n.x) === d.bounds.x && Math.round(n.w) === d.bounds.width) ?? null;
+/** On a notched screen: the notch size the island grows out of. */
+function pillNotch(d = pillDisplay()): { width: number; height: number } | null {
+  const n = notchOf(d);
+  // The camera housing's own height (not the menu bar's), so the island's edge lines up with the notch.
+  return n ? { width: Math.round(n.width), height: Math.round(n.height) || Math.max(24, d.workArea.y - d.bounds.y) } : null;
+}
+
 function placePill(): void {
   if (!pillWin) return;
-  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const display = pillDisplay();
+  const n = notchOf(display), bar = pillNotch(display);
+  if (n && bar) {
+    // Flush with the top edge, centred on the camera.
+    const x = Math.round(display.bounds.x + n.left + n.width / 2 - NOTCH_STAGE.width / 2);
+    pillWin.setBounds({ x, y: display.bounds.y, ...NOTCH_STAGE });
+    pillWin.setIgnoreMouseEvents(true, { forward: true });
+    return;
+  }
+  pillWin.setIgnoreMouseEvents(false);
   const wa = display.workArea;
   const x = Math.round(wa.x + (wa.width - pillWidth) / 2);
   pillWin.setBounds({ x, y: wa.y + 6, width: pillWidth, height: PILL_H });
 }
 
 type PillMode = "hidden" | "detected" | "recording" | "processing" | "done";
-function pillState(): { mode: PillMode; app?: string | null; service?: string; icon?: string; recorder: RecorderSnapshot; conversationId?: number | null } {
-  const base = { recorder, app: detection.active?.app ?? recorder.app, service: detection.active?.service, icon: detection.active?.icon };
+function pillState(): { mode: PillMode; app?: string | null; service?: string; icon?: string; recorder: RecorderSnapshot; conversationId?: number | null; notch: { width: number; height: number } | null } {
+  const base = { recorder, app: detection.active?.app ?? recorder.app, service: detection.active?.service, icon: detection.active?.icon, notch: pillNotch() };
   if (pillHidden && recorder.status !== "idle") return { ...base, mode: "hidden" };
   if (recorder.status === "recording" || recorder.status === "starting") return { ...base, mode: "recording", app: recorder.app ?? base.app };
   if (recorder.status === "processing") return { ...base, mode: "processing", app: recorder.app ?? base.app };
@@ -263,6 +308,16 @@ function pushPill(): void {
   refreshTray();
   if (!pillWin) return;
   pillWin.webContents.send("sutra:pill:state", st);
+  const was = lastPillMode;
+  lastPillMode = st.mode;
+  if (st.notch) {
+    // Notch: the window stays shown — transparent and click-through — so the island can grow out of and
+    // shrink back into the camera, and its animations start on the first frame (a freshly shown window
+    // only begins painting ~400 ms later). It moves to the cursor's screen when something new appears.
+    if (!pillWin.isVisible() || (was === "hidden" && st.mode !== "hidden")) placePill();
+    if (!pillWin.isVisible()) pillWin.showInactive();
+    return;
+  }
   if (st.mode === "hidden") {
     if (pillWin.isVisible()) pillWin.hide();
   } else if (!pillWin.isVisible()) {
@@ -371,6 +426,10 @@ function registerIpc(): void {
   ipcMain.handle("sutra:prefs:set", (_e, patch: Partial<Prefs>) => setPrefs(patch ?? {}));
   ipcMain.handle("sutra:detection:get", () => ({ active: detection.active, visible: detection.visible && prefs.detectMeetings }));
   ipcMain.on("sutra:recorder:state", (_e, snap: RecorderSnapshot) => onRecorderState(snap ?? { status: "idle" }));
+  // Notch island: take clicks only while the pointer is over it.
+  ipcMain.on("sutra:pill:hover", (_e, on: boolean) => {
+    if (pillWin && pillNotch()) pillWin.setIgnoreMouseEvents(!on, { forward: true });
+  });
   ipcMain.on("sutra:pill:resize", (_e, width: number) => {
     const w = Math.max(200, Math.min(640, Math.round(Number(width) || 360)));
     if (w === pillWidth) return;
@@ -490,7 +549,9 @@ if (!app.requestSingleInstanceLock()) {
     tray.on("click", () => { if (!isMac) showMain(); });
     refreshTray();
     if (prefs.detectMeetings) detector.start();
-    screen.on("display-metrics-changed", () => placePill());
+    readNotches();
+    // Notches come and go with displays (lid closed, external monitor as main…).
+    for (const ev of ["display-metrics-changed", "display-added", "display-removed"] as const) screen.on(ev as "display-added", () => readNotches());
     void initAutoUpdate();
 
     app.on("activate", () => showMain());

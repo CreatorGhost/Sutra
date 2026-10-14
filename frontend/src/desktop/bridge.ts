@@ -27,6 +27,8 @@ export interface PillState {
   icon?: string;
   recorder: RecorderSnapshot;
   conversationId?: number | null;
+  /** Set on a MacBook's notched screen: the pill becomes an island around the camera. */
+  notch?: { width: number; height: number } | null;
 }
 
 export type McpClientId = "claude-code" | "codex" | "cursor" | "gemini" | "claude-desktop";
@@ -49,7 +51,7 @@ export interface DesktopBridge {
   platform: string;
   detection: { get(): Promise<DetectionState>; onChange(cb: (s: DetectionState) => void): Unsub };
   recorder: { publish(s: RecorderSnapshot): void };
-  pill: { onState(cb: (s: PillState) => void): Unsub; action(type: "record" | "stop" | "dismiss" | "open" | "hide"): void; resize(width: number): void };
+  pill: { onState(cb: (s: PillState) => void): Unsub; action(type: "record" | "stop" | "dismiss" | "open" | "hide"): void; resize(width: number): void; hover(on: boolean): void };
   prefs: { get(): Promise<DesktopPrefs>; set(patch: Partial<DesktopPrefs>): Promise<DesktopPrefs> };
   permissions: { get(): Promise<{ microphone: string; screen: string }>; request(kind: "microphone" | "screen"): Promise<boolean> };
   onNavigate(cb: (path: string) => void): Unsub;

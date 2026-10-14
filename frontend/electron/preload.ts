@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld(
       onState: (cb: (s: unknown) => void) => listen("sutra:pill:state", cb),
       action: (type: "record" | "stop" | "dismiss" | "open" | "hide") => ipcRenderer.send("sutra:pill:action", { type }),
       resize: (width: number) => ipcRenderer.send("sutra:pill:resize", width),
+      hover: (on: boolean) => ipcRenderer.send("sutra:pill:hover", on === true),
     }),
     prefs: Object.freeze({
       get: () => ipcRenderer.invoke("sutra:prefs:get"),
