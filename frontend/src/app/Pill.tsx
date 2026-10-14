@@ -122,12 +122,14 @@ function NotchIsland({ st, notch }: { st: PillState; notch: { width: number; hei
 
   const s = shown ?? st;
   const now = useNow(s.mode === "recording", 500);
-  const expanded = open && (hover || peek);
+  // Hidden by the user: tucked behind the camera (nothing shows), but hovering the notch still opens Stop.
+  const tucked = !!st.tucked;
+  const expanded = open && (hover || (peek && !tucked));
   // Hug the camera: just enough beside it for an icon, or the dot + timer while recording.
   const started = s.recorder.startedAt ?? null;
   const time = started ? clock(now - started) : "0:00";
   const wing = s.mode === "recording" ? (time.length > 5 ? 66 : 56) : 30;
-  const size = !open
+  const size = !open || (tucked && !expanded)
     ? { width: notch.width, height: notch.height }
     : expanded
       ? { width: Math.max(notch.width + 145, 330), height: notch.height + 50 }
@@ -152,7 +154,7 @@ function NotchIsland({ st, notch }: { st: PillState; notch: { width: number; hei
     actions = <>
       <button className="ni-btn" onClick={() => act("stop")} disabled={s.recorder.status === "starting"}><Square size={9} fill="currentColor" /> Stop</button>
       <button className="ni-icon" onClick={() => act("open")} aria-label="Open Sutra" title="Open Sutra"><ArrowUpRight size={13} /></button>
-      <button className="ni-icon" onClick={() => act("hide")} aria-label="Hide" title="Hide until the next recording"><EyeOff size={12} /></button>
+      <button className="ni-icon" onClick={() => act("hide")} aria-label="Hide" title="Hide — hover the notch to bring it back"><EyeOff size={12} /></button>
     </>;
   } else if (s.mode === "processing") {
     left = <Loader2 size={15} className="spin" />;
@@ -161,7 +163,7 @@ function NotchIsland({ st, notch }: { st: PillState; notch: { width: number; hei
     title = "Writing your notes…"; sub = "You can record again";
     actions = <>
       <button className="ni-btn rec" onClick={() => act("record")}><span className="rec-ring" /> Record</button>
-      <button className="ni-icon" onClick={() => act("hide")} aria-label="Hide" title="Hide until the next recording"><EyeOff size={12} /></button>
+      <button className="ni-icon" onClick={() => act("hide")} aria-label="Hide" title="Hide — hover the notch to bring it back"><EyeOff size={12} /></button>
     </>;
   } else if (s.mode === "done") {
     left = <Check size={16} className="ok" />;
@@ -173,7 +175,7 @@ function NotchIsland({ st, notch }: { st: PillState; notch: { width: number; hei
 
   return (
     <div className="ni-stage">
-      <div className={`ni${expanded ? " expanded" : ""}${open ? " open" : ""}`} style={size} role="status"
+      <div className={`ni${expanded ? " expanded" : ""}${open && !(tucked && !expanded) ? " open" : ""}`} style={size} role="status"
         onMouseEnter={() => enter(true)} onMouseLeave={() => enter(false)}>
         <div className="ni-row" style={{ height: notch.height, gridTemplateColumns: `1fr ${notch.width}px 1fr` }}>
           <div className="ni-wing l">{left}</div>

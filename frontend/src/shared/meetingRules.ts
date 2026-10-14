@@ -238,6 +238,9 @@ export class DetectionTracker {
         // its identity — the key auto-stop and dismissal match on — and the best name/service seen so far.
         const a = this.active;
         this.active = { ...det, key: a.key, app: det.app === "Browser" ? a.app : det.app, service: det.service ?? a.service, appPath: det.appPath ?? a.appPath };
+        // Reported when the evidence changes (mic → window title): auto-stop treats "only the title is
+        // left" as the call being over once the mic has been seen (see AutoStop).
+        if (det.source !== a.source) changed = true;
       } else {
         if (this.pending && sameCall(this.pending, det)) this.hits++;
         else { this.pending = det; this.hits = 1; }
@@ -285,26 +288,38 @@ export class DetectionTracker {
 export class AutoStop {
   private call: Detection | null = null;
   private timer: unknown = null;
+  /** The call was seen holding the mic: from then on, losing the mic means it's over, whatever the window
+   *  title says (Meet's tab keeps "Meet – …" after you leave). */
+  private micSeen = false;
 
   constructor(
     private readonly stop: () => void,
     private readonly graceMs = 45_000,
+    /** Only the window title left after the call held the mic: likely left — or muted in an app that
+     *  releases the mic while muted, so wait longer before calling it over. */
+    private readonly titleOnlyGraceMs = 120_000,
     private readonly timers: { set: (fn: () => void, ms: number) => unknown; clear: (t: unknown) => void } =
       { set: (fn, ms) => setTimeout(fn, ms), clear: (t) => clearTimeout(t as ReturnType<typeof setTimeout>) },
   ) {}
 
-  /** A recording started for this call (null: not tied to a detected call — never auto-stopped). */
-  recording(call: Detection | null): void { this.cancel(); this.call = call; }
+  /** A recording started (for this call, when one is detected — else the first call seen during it). */
+  recording(call: Detection | null): void { this.cancel(); this.call = call; this.micSeen = call?.source === "mic"; }
   /** The recording ended for any reason. */
-  idle(): void { this.cancel(); this.call = null; }
+  idle(): void { this.cancel(); this.call = null; this.micSeen = false; }
 
   /** Each detector change while recording. */
   update(up: Pick<TrackerUpdate, "active" | "ended">, enabled: boolean): void {
+    // A recording started before the call was detected (or from the app window) follows the first call seen.
+    if (!this.call && up.active) { this.call = up.active; this.micSeen = up.active.source === "mic"; }
     const call = this.call;
     if (!call) return;
-    if (up.active && sameCall(up.active, call)) { this.cancel(); return; } // it's back (or never left)
-    if (enabled && up.ended && sameCall(up.ended, call) && !this.timer) {
-      this.timer = this.timers.set(() => { this.timer = null; if (this.call === call) this.stop(); }, this.graceMs);
+    const same = !!up.active && sameCall(up.active, call);
+    if (same && up.active!.source === "mic") this.micSeen = true;
+    const present = same && !(this.micSeen && up.active!.source !== "mic");
+    if (present) { this.cancel(); return; } // it's back (or never left)
+    if (enabled && !this.timer) {
+      const wait = same ? this.titleOnlyGraceMs : this.graceMs;
+      this.timer = this.timers.set(() => { this.timer = null; if (this.call === call) this.stop(); }, wait);
     }
   }
 
