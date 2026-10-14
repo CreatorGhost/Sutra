@@ -7,7 +7,8 @@ import { desktop, type AgentStatus } from "../desktop/bridge";
 import { AGENTS, AGENT_IDS, agentReady, autoEngine, type AgentId } from "../shared/agentProtocol";
 import { engineChoice } from "../providers";
 import { EngineLogo } from "./engineLogos";
-import { engineOptions } from "./modelPicker";
+import { carryContext, engineOptions, listedModel, modelContext } from "./modelPicker";
+import { withContext, type ContextOption } from "../shared/engineProbes";
 import "./engines.css";
 
 export { autoEngine };
@@ -181,6 +182,7 @@ function EngineRow({ st, id, active, model, onPick, onModel }: {
         {st && active && st.installed && (
           <div className="model-input">Model <ModelSelect key={id} st={st} model={model} onModel={onModel} /></div>
         )}
+        {st && active && st.installed && model && <ContextRow st={st} model={model} onModel={onModel} />}
       </div>
     </div>
   );
@@ -192,14 +194,15 @@ function ModelSelect({ st, model, onModel }: { st: AgentStatus; model: string; o
   const [custom, setCustom] = useState("");
   const ref = useRef<HTMLDivElement | null>(null);
   const options = engineOptions(st, model || null);
-  const cur = options.find((o) => (o.model ?? "") === model) ?? options[0];
+  const listed = listedModel(st, model || null) ?? "";
+  const cur = options.find((o) => (o.model ?? "") === listed) ?? options[0];
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
-  const pick = (m: string) => { setOpen(false); if (m !== model) onModel(m); };
+  const pick = (m: string) => { setOpen(false); if (m !== listed) onModel(m ? carryContext(st, model || null, m) : m); };
 
   return (
     <div className="ms" ref={ref} onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}>
@@ -226,6 +229,29 @@ function ModelSelect({ st, model, onModel }: { st: AgentStatus; model: string; o
             onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && custom.trim()) pick(custom.trim()); }} />
         </div>
       )}
+    </div>
+  );
+}
+
+/** The context window, for models that offer a choice (Cursor: 300K or 1M). Sutra defaults to 300K —
+ *  plenty for meeting notes; 1M is there for very long transcripts. */
+function ContextRow({ st, model, onModel }: { st: AgentStatus; model: string; onModel: (m: string) => void }) {
+  const ctx = modelContext(st, model);
+  if (ctx.choices.length < 2) return null;
+  return (
+    <div className="model-input">Context <ContextSwitch choices={ctx.choices} value={ctx.value} onPick={(v) => onModel(withContext(model, v))} /></div>
+  );
+}
+
+export function ContextSwitch({ choices, value, onPick }: { choices: ContextOption[]; value: string | null; onPick: (v: string) => void }) {
+  return (
+    <div className="ctx-seg" role="radiogroup" aria-label="Context window">
+      {choices.map((c) => (
+        <button key={c.value} type="button" role="radio" aria-checked={c.value === value} className={c.value === value ? "on" : ""}
+          onClick={() => { if (c.value !== value) onPick(c.value); }}>
+          {c.label}
+        </button>
+      ))}
     </div>
   );
 }

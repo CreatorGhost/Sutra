@@ -10,9 +10,10 @@ import { api } from "../local/sutra";
 import { desktop, isMacDesktop, type AgentStatus } from "../desktop/bridge";
 import { AGENTS, agentReady, safeModel, type AgentId } from "../shared/agentProtocol";
 import { engineChoice } from "../providers";
-import { autoEngine } from "./EngineSettings";
+import { autoEngine, ContextSwitch } from "./EngineSettings";
 import { EngineLogo } from "./engineLogos";
-import { agentsFromHost, FAVORITES_KEY, optionKey, parseFavorites, prettyModel, toggleFavorite, visibleOptions, type ModelOption } from "./modelPicker";
+import { agentsFromHost, carryContext, FAVORITES_KEY, listedModel, modelContext, modelName, optionKey, parseFavorites, toggleFavorite, visibleOptions, type ModelOption } from "./modelPicker";
+import { pickContext, withContext, type ContextOption } from "../shared/engineProbes";
 import { PAIRED_ENGINE_KEY, PAIRED_MODEL_KEY, pairedAiChoice } from "../pairing/model";
 import { useMac } from "../pairing/runtime";
 
@@ -32,8 +33,16 @@ interface EngineSource {
   /** The engines run on the paired Mac (set up there, not here). */
   remote: boolean;
   pick(o: ModelOption): void;
+  /** Set the active model's context window (Cursor: 300K / 1M). */
+  context(value: string): void;
   favorite(key: string): void;
 }
+
+/** The id to save for a picked row: within the same engine, the context window carries over. */
+const pickedModel = (agents: AgentStatus[], o: ModelOption, activeId: AgentId | null, current: string | null) => {
+  const st = agents.find((a) => a.id === o.engine);
+  return !o.model ? "" : st && o.engine === activeId ? carryContext(st, current, o.model) : o.model;
+};
 
 function useEngineSource(): EngineSource | null {
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
@@ -64,7 +73,8 @@ function useEngineSource(): EngineSource | null {
     const model = active ? safeModel(settings[`ai_model_${active.id}`]) : null;
     return {
       agents, settings, active, model, remote: false, favorite,
-      pick: (o) => void save({ ai_engine: o.engine, [`ai_model_${o.engine}`]: o.model ?? "" }),
+      pick: (o) => void save({ ai_engine: o.engine, [`ai_model_${o.engine}`]: pickedModel(agents, o, active?.id ?? null, model) }),
+      context: (v) => { if (active && model) void save({ [`ai_model_${active.id}`]: withContext(model, v) }); },
     };
   }
 
@@ -78,7 +88,8 @@ function useEngineSource(): EngineSource | null {
   return {
     agents: remoteAgents, active, model, remote: true, favorite,
     settings: { [FAVORITES_KEY]: settings[FAVORITES_KEY], ...(active && model ? { [`ai_model_${active.id}`]: model } : {}) },
-    pick: (o) => void save({ [PAIRED_ENGINE_KEY]: o.engine, [PAIRED_MODEL_KEY]: o.model }),
+    pick: (o) => void save({ [PAIRED_ENGINE_KEY]: o.engine, [PAIRED_MODEL_KEY]: pickedModel(remoteAgents, o, active?.id ?? null, model) || null }),
+    context: (v) => { if (active && model) void save({ [PAIRED_ENGINE_KEY]: active.id, [PAIRED_MODEL_KEY]: withContext(model, v) }); },
   };
 }
 
@@ -87,17 +98,22 @@ export function EnginePicker() {
   const [open, setOpen] = useState(false);
   if (!src) return null;
   const { agents, settings, active, model } = src;
+  // The chip names a non-default context window ("Opus 4.6 · 1M"); 300K is the default and goes unsaid.
+  const ctx = active ? modelContext(active, model) : { choices: [], value: null };
+  const ctxLabel = ctx.value && ctx.value !== pickContext(ctx.choices, null) ? ctx.choices.find((c) => c.value === ctx.value)?.label : null;
+  const chipName = active ? (model ? modelName(active, model) + (ctxLabel ? ` · ${ctxLabel}` : "") : AGENTS[active.id].label) : "No AI engine";
 
   return (
     <div className="mp-wrap">
       <button type="button" className="engine-chip" onClick={() => setOpen((v) => !v)} aria-haspopup="dialog" aria-expanded={open}
-        title="Switch AI engine or model" aria-label={active ? `AI: ${AGENTS[active.id].label}${model ? `, ${prettyModel(model)}` : ""}` : "No AI engine"}>
+        title="Switch AI engine or model" aria-label={active ? `AI: ${AGENTS[active.id].label}${model ? `, ${chipName}` : ""}` : "No AI engine"}>
         {active ? <EngineLogo id={active.id} size={15} /> : <span className="engine-chip-dot" />}
-        <span className="engine-chip-name">{active ? (model ? prettyModel(model) : AGENTS[active.id].label) : "No AI engine"}</span>
+        <span className="engine-chip-name">{chipName}</span>
         <ChevronDown size={14} className="engine-chip-caret" />
       </button>
       {open && (
-        <PickerPanel agents={agents} settings={settings} activeId={active?.id ?? null} activeModel={model} remote={src.remote}
+        <PickerPanel agents={agents} settings={settings} activeId={active?.id ?? null} activeModel={active ? listedModel(active, model) : model} remote={src.remote}
+          context={ctx.choices.length > 1 && model && active ? { name: modelName(active, model), ...ctx } : null} onContext={src.context}
           onClose={() => setOpen(false)}
           onPick={(o) => { setOpen(false); src.pick(o); }}
           onFavorite={src.favorite} />
@@ -106,8 +122,9 @@ export function EnginePicker() {
   );
 }
 
-function PickerPanel({ agents, settings, activeId, activeModel, remote, onClose, onPick, onFavorite }: {
+function PickerPanel({ agents, settings, activeId, activeModel, remote, context, onContext, onClose, onPick, onFavorite }: {
   agents: AgentStatus[]; settings: Record<string, unknown>; activeId: AgentId | null; activeModel: string | null; remote: boolean;
+  context: { name: string; choices: ContextOption[]; value: string | null } | null; onContext: (v: string) => void;
   onClose: () => void; onPick: (o: ModelOption) => void; onFavorite: (key: string) => void;
 }) {
   const favorites = parseFavorites(settings[FAVORITES_KEY]);
@@ -199,6 +216,12 @@ function PickerPanel({ agents, settings, activeId, activeModel, remote, onClose,
             );
           })}
         </div>
+        {context && (
+          <div className="mp-ctx">
+            <span className="mp-ctx-label" title={context.name}>Context · {context.name}</span>
+            <ContextSwitch choices={context.choices} value={context.value} onPick={onContext} />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -69,8 +69,9 @@ export async function rescheduleRecap(): Promise<void> {
 
 let modelsChecked = false;
 /** Desktop, once per launch: rewrite saved engine models to the exact ids the engines list now, so the
- *  picker doesn't show a stale duplicate (Cursor's bare "…opus-5" vs the "…opus-5[context=300k]" its
- *  sessions accept). Calls already resolve stale ids on their own; this just tidies Settings. */
+ *  picker doesn't show a stale duplicate (a bare "…opus-5" saved where an engine lists "…opus-5[context=300k]").
+ *  Cursor lists bare ids, and a saved "…[context=1m]" there is the user's context choice: kept as is.
+ *  Calls already resolve stale ids on their own; this just tidies Settings. */
 export async function upgradeSavedModels(): Promise<void> {
   if (!desktop || modelsChecked) return;
   modelsChecked = true;

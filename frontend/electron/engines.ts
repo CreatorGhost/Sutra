@@ -8,13 +8,16 @@ import { homedir, tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { AGENTS, acpInvocation, agentInvocation, parseAgentOutput, type AgentId, type AgentRequest } from "../src/shared/agentProtocol";
 import {
-  parseAcpModels, parseClaudeAuthStatus, parseCodexAuthFile, parseCodexLoginStatus, parseCommandCodeModelList, parseCommandCodeStatus,
-  parseCursorAbout, parseDroidModelList, parseGeminiAuth, parseGrokModels, parseVersion, type AuthProbe,
+  parseAcpModels, parseClaudeAuthStatus, parseCursorModels, parseCodexAuthFile, parseCodexLoginStatus, parseCommandCodeModelList, parseCommandCodeStatus,
+  parseCursorAbout, parseDroidModelList, parseGeminiAuth, parseGrokModels, parseVersion, type AuthProbe, type ContextOption,
 } from "../src/shared/engineProbes";
 import { probeAcpSession, runAcpPrompt } from "./acp";
 import { killTree, runProcess, spawnTool } from "./proc";
 
-export interface ProbeResult extends AuthProbe { version: string | null; models: string[]; defaultModel: string | null; hint?: string | null }
+export interface ProbeResult extends AuthProbe {
+  version: string | null; models: string[]; defaultModel: string | null; hint?: string | null;
+  modelNames?: Record<string, string>; contexts?: Record<string, ContextOption[]>;
+}
 
 const PROBE_MS = 10000;
 const out = (r: { stdout: string; stderr: string }) => `${r.stdout}\n${r.stderr}`;
@@ -30,8 +33,13 @@ async function acpModels(id: AgentId, bin: string, extMethod?: string) {
   try {
     const { session, ext } = await probeAcpSession({
       start: () => spawnTool(bin, inv.args, { cwd: tmpdir() }), cwd: tmpdir(), authMethodId: inv.authMethodId,
-      timeoutMs: 15000, label: AGENTS[id].label, extMethod,
+      parameterizedModels: inv.parameterizedModels, timeoutMs: 15000, label: AGENTS[id].label, extMethod,
     }, killTree);
+    // Cursor (parameterized): its full list of bare ids, with names and context windows.
+    if (inv.parameterizedModels) {
+      const cursor = parseCursorModels(ext);
+      if (cursor.models.length) return cursor;
+    }
     return parseAcpModels(ext, session);
   } catch {
     return { models: [], defaultModel: null };
@@ -99,7 +107,7 @@ export async function runEngine(id: AgentId, bin: string, req: AgentRequest, pro
     const inv = acpInvocation(id, req.model, process.env);
     const r = await runAcpPrompt({
       start: () => spawnTool(bin, inv.args, { cwd: dir }), cwd: dir, authMethodId: inv.authMethodId, mode: inv.mode, model: inv.model,
-      timeoutMs, label: info.label, prompt,
+      parameterizedModels: inv.parameterizedModels, timeoutMs, label: info.label, prompt,
     }, killTree);
     return { text: r.text.trim() };
   }

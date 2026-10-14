@@ -1,8 +1,9 @@
 // A tiny fake ACP agent for electron/__tests__/acp.test.ts. Behaviour via FAKE_ACP_MODE:
-//   ok | permission | notify-complete | authfail | crash | hang | refuse-model
+//   ok | permission | notify-complete | authfail | crash | hang | refuse-model | suffixed | parameterized
 const mode = process.env.FAKE_ACP_MODE || "ok";
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\n");
 const state = { calls: [], answers: {} };
+const CONTEXTS = { "claude-opus": [["300k", "1m"], "1m"], "gpt-5": [["272k", "1m"], "1m"] };
 let nextId = 1000;
 const waiting = new Map();
 
@@ -32,13 +33,31 @@ async function handle(msg) {
         sessionId: "s1",
         configOptions: [
           { id: "mode", category: "mode", type: "select", currentValue: "agent", options: [{ value: "agent" }, { value: "ask" }] },
-          mode === "suffixed"
+          mode === "parameterized"
+            // Like cursor-agent with `parameterizedModelPicker`: bare ids; the context window is its own option.
+            ? { id: "model", category: "model", type: "select", currentValue: "default", options: [{ value: "default" }, { value: "claude-opus" }, { value: "gpt-5" }] }
+            : mode === "suffixed"
             // Like cursor-agent: ids carry their config inline and only that exact form is accepted.
             ? { id: "model", category: "model", type: "select", currentValue: "opus[context=300k]", options: [{ value: "opus[context=300k]" }, { value: "sonnet[context=200k]" }] }
             : { id: "model", category: "model", type: "select", currentValue: "m1", options: [{ value: "m1" }, { value: "m2" }] },
         ],
       });
     case "session/set_config_option":
+      if (mode === "parameterized") {
+        const flagged = state.client?.clientCapabilities?._meta?.parameterizedModelPicker === true;
+        if (msg.params.configId === "model") {
+          if (!flagged || !CONTEXTS[msg.params.value]) return fail(`Invalid value ${msg.params.value}`);
+          state.model = msg.params.value;
+          // The agent's own default is the big window, so Sutra's 300K default has to be sent.
+          const [choices, current] = CONTEXTS[state.model];
+          return reply({ configOptions: [{ id: "context", category: "model_config", name: "Context", type: "select", currentValue: current, options: choices.map((v) => ({ value: v, name: v.toUpperCase() })) }] });
+        }
+        if (msg.params.configId === "context") {
+          if (!CONTEXTS[state.model]?.[0].includes(msg.params.value)) return fail(`Invalid value ${msg.params.value}`);
+          state.context = msg.params.value;
+          return reply({ configOptions: [] });
+        }
+      }
       if (msg.params.configId === "model" && (mode === "refuse-model" || msg.params.value !== (mode === "suffixed" ? "opus[context=300k]" : "m2"))) return fail(`Invalid value ${msg.params.value}`);
       state[msg.params.configId] = msg.params.value;
       return reply({ configOptions: [] });

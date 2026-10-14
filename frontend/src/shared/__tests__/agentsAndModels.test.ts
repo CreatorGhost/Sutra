@@ -53,8 +53,9 @@ describe("agent invocations", () => {
     expect(inv.args).not.toContain("--yolo");
   });
   it("ACP agents: cursor in ask mode with its cached login; grok's model as a flag; droid's API key only when set", () => {
-    expect(acpInvocation("cursor", "auto")).toEqual({ args: ["acp"], authMethodId: "cursor_login", mode: "ask", model: null });
+    expect(acpInvocation("cursor", "auto")).toEqual({ args: ["acp"], authMethodId: "cursor_login", mode: "ask", parameterizedModels: true, model: null });
     expect(acpInvocation("cursor", "gpt-5").model).toBe("gpt-5");
+    expect(acpInvocation("cursor", "claude-opus-5[context=1m]").model).toBe("claude-opus-5[context=1m]");
     expect(acpInvocation("grok", "grok-4.6")).toEqual({ args: ["agent", "--no-leader", "-m", "grok-4.6", "stdio"], authMethodId: "cached_token" });
     expect(acpInvocation("grok", null, { XAI_API_KEY: "k" }).authMethodId).toBe("xai.api_key");
     expect(acpInvocation("droid", "auto")).toEqual({ args: ["exec", "--output-format", "acp"], authMethodId: undefined, model: null });

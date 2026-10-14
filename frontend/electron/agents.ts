@@ -31,6 +31,7 @@ async function detectOne(id: AgentId): Promise<AgentStatus> {
     return {
       ...base, installed: true, path, version: p.version, signedIn: p.signedIn, account: p.account,
       models: p.models.length ? p.models : info.models, defaultModel: p.defaultModel,
+      ...(p.modelNames ? { modelNames: p.modelNames } : {}), ...(p.contexts ? { contexts: p.contexts } : {}),
       hint: p.signedIn === false ? `Sign in with: ${info.signIn}` : p.hint ?? null,
     };
   } catch (e: any) {

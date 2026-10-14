@@ -2,6 +2,7 @@
 // "Default" (the engine's own choice) first, then the models the engine reports — plus favorites and
 // search. The picker writes ai_engine / ai_model_<id>, the same settings as Settings → Intelligence.
 import { AGENTS, agentReady, safeModel, type AgentId, type AgentStatus } from "../shared/agentProtocol";
+import { pickContext, splitModelParams, withContext, type ContextOption } from "../shared/engineProbes";
 import type { EngineSummary } from "../shared/pairing/protocol";
 
 export interface ModelOption {
@@ -32,11 +33,47 @@ export function prettyModel(slug: string): string {
   return out.join(" ") || slug;
 }
 
+/** The listed model a saved id stands for: itself, or its bare id when the engine lists bare ids and
+ *  the suffix is the user's context choice (Cursor's "…opus-5[context=1m]"). */
+export function listedModel(st: Pick<AgentStatus, "models">, model: string | null): string | null {
+  if (!model) return null;
+  const base = splitModelParams(model).base;
+  return !st.models?.includes(model) && st.models?.includes(base) ? base : model;
+}
+
+/** A model's name as the engine gives it (Cursor's "Opus 4.6"), else made readable from its id. */
+export function modelName(st: Pick<AgentStatus, "models" | "modelNames">, model: string): string {
+  const id = listedModel(st, model) ?? model;
+  return st.modelNames?.[id] ?? prettyModel(id);
+}
+
+/** The context windows a model offers (Cursor: 300K / 1M) and the one in use — the user's choice on
+ *  the id, else Sutra's 300K default. Empty when the model offers no choice. */
+export function modelContext(st: Pick<AgentStatus, "models" | "contexts">, model: string | null): { choices: ContextOption[]; value: string | null } {
+  const id = listedModel(st, model);
+  const choices = (id && st.contexts?.[id]) || [];
+  return { choices, value: choices.length ? pickContext(choices, splitModelParams(model ?? "").params["context"] ?? null) : null };
+}
+
+/** Switching to `next` keeps the context window chosen for the current model when `next` offers it. */
+export function carryContext(st: Pick<AgentStatus, "models" | "contexts">, current: string | null, next: string): string {
+  const wanted = splitModelParams(current ?? "").params["context"];
+  if (!wanted || listedModel(st, next) !== next) return next;
+  return modelContext(st, withContext(next, wanted)).choices.some((c) => c.value === wanted) ? withContext(next, wanted) : next;
+}
+
+/** Listed ids that mean "the CLI's own pick" — the same as the Default row (Cursor's "default" is its Auto). */
+const OWN_PICK: Partial<Record<AgentId, string[]>> = { cursor: ["default", "auto"] };
+
 export function engineOptions(st: AgentStatus, current: string | null): ModelOption[] {
-  const models = [...new Set([...(st.models ?? []), ...(current ? [current] : [])])].filter((m) => safeModel(m));
+  const cur = listedModel(st, current);
+  const own = OWN_PICK[st.id] ?? [];
+  const models = [...new Set([...(st.models ?? []), ...(cur ? [cur] : [])])].filter((m) => safeModel(m) && !own.includes(m));
+  const ownName = own.map((m) => st.modelNames?.[m]).find(Boolean);
+  const hint = st.defaultModel && !own.includes(st.defaultModel) ? modelName(st, st.defaultModel) : ownName ?? null;
   return [
-    { key: optionKey(st.id, null), engine: st.id, model: null, name: "Default", hint: st.defaultModel ? prettyModel(st.defaultModel) : null },
-    ...models.map((m) => ({ key: optionKey(st.id, m), engine: st.id, model: m, name: prettyModel(m), hint: null })),
+    { key: optionKey(st.id, null), engine: st.id, model: null, name: "Default", hint },
+    ...models.map((m) => ({ key: optionKey(st.id, m), engine: st.id, model: m, name: modelName(st, m), hint: null })),
   ];
 }
 
@@ -78,6 +115,7 @@ export function agentsFromHost(engines: EngineSummary[]): AgentStatus[] {
   return engines.map((e) => ({
     id: e.id, label: e.label, installed: e.ready, path: null, version: null, signedIn: e.ready ? true : null,
     account: e.account, models: e.models, defaultModel: e.defaultModel, install: "", signIn: "",
+    ...(e.modelNames ? { modelNames: e.modelNames } : {}), ...(e.contexts ? { contexts: e.contexts } : {}),
     hint: e.ready ? null : "Set it up on your Mac",
   }));
 }

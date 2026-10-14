@@ -189,14 +189,107 @@ function optionValues(opt: any): string[] {
 }
 
 /** "…opus-5[context=300k]" → "…opus-5". */
-const acpBaseModel = (id: string) => (id.includes("[") ? id.slice(0, id.indexOf("[")) : id).trim().toLowerCase();
+const acpBaseModel = (id: string) => splitModelParams(id).base.toLowerCase();
 
 /** A saved model id matched against the ids an engine now lists: exact, else the first with the same
- *  base name (a bare "…opus-5" saved before ids carried their config suffix). Unchanged when nothing
- *  matches — a missing model is reported when it's used, not silently dropped here. */
+ *  base name (a bare "…opus-5" saved before ids carried their config suffix). An engine that lists bare
+ *  ids (Cursor) keeps a saved "…opus-5[context=1m]" as is: the suffix is the user's context choice.
+ *  Unchanged when nothing matches — a missing model is reported when it's used, not dropped here. */
 export function upgradeModelId(saved: string, offered: string[]): string {
-  if (!saved || offered.includes(saved)) return saved;
+  if (!saved || offered.includes(saved) || offered.includes(splitModelParams(saved).base)) return saved;
   return offered.find((id) => acpBaseModel(id) === acpBaseModel(saved)) ?? saved;
+}
+
+// ---- Cursor's parameterized model picker (after ViewCode's CursorProvider / CursorAcpSupport) ----
+// With `parameterizedModelPicker` in the client's capabilities, Cursor's ACP sessions take bare model
+// ids ("claude-opus-5") and expose the context window as its own `model_config` option. Sutra stores
+// the user's context choice on the model id in Cursor's own syntax ("claude-opus-5[context=1m]"), so it
+// travels with the model everywhere a model goes (Settings, the Ask-bar picker, a paired phone).
+
+export interface ContextOption { value: string; label: string }
+
+/** "x[context=1m, fast=true]" → { base: "x", params: { context: "1m", fast: "true" } }. */
+export function splitModelParams(id: string): { base: string; params: Record<string, string> } {
+  const at = id.indexOf("[");
+  if (at < 0) return { base: id.trim(), params: {} };
+  const params: Record<string, string> = {};
+  for (const kv of id.slice(at + 1).replace(/\].*$/, "").split(",")) {
+    const eq = kv.indexOf("=");
+    if (eq > 0) params[kv.slice(0, eq).trim().toLowerCase()] = kv.slice(eq + 1).trim();
+  }
+  return { base: id.slice(0, at).trim(), params };
+}
+
+/** The model id carrying a context choice; null = the default (see pickContext). */
+export function withContext(model: string, context: string | null): string {
+  const base = splitModelParams(model).base;
+  return context ? `${base}[context=${context}]` : base;
+}
+
+const optionToken = (v: unknown) => String(v ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "-");
+
+/** Cursor's context-window option among a model's config options. */
+export function findContextOption(configOptions: unknown): any | null {
+  if (!Array.isArray(configOptions)) return null;
+  return configOptions.find((o: any) => {
+    if (o?.category !== "model_config") return false;
+    const id = optionToken(o?.id);
+    return id === "context" || id === "context-size" || String(o?.name ?? "").toLowerCase().includes("context");
+  }) ?? null;
+}
+
+export function contextChoices(opt: any): ContextOption[] {
+  const out: ContextOption[] = [];
+  for (const o of opt?.options ?? []) {
+    for (const e of Array.isArray(o?.options) ? o.options : [o]) {
+      if (e?.value != null && String(e.value)) out.push({ value: String(e.value), label: String(e.name ?? e.value) });
+    }
+  }
+  return out;
+}
+
+/** "300k" → 300000, "1m" → 1000000 (NaN when it isn't a size). */
+const contextTokens = (v: string) => {
+  const m = /^(\d+(?:\.\d+)?)\s*([km]?)/i.exec(v.trim());
+  return m ? Number(m[1]) * (m[2].toLowerCase() === "m" ? 1e6 : m[2].toLowerCase() === "k" ? 1e3 : 1) : NaN;
+};
+
+/** Sutra's default context window: 300K — meeting notes don't need a million tokens. A model without a
+ *  300K option gets its largest one under 1M (e.g. GPT's 272K), else its smallest. */
+export const DEFAULT_CONTEXT = "300k";
+
+/** The option value to send for a wanted context ("1m", "300K", or null for the default); null when
+ *  the model has no context options at all. */
+export function pickContext(choices: ContextOption[], wanted: string | null | undefined): string | null {
+  if (!choices.length) return null;
+  const token = optionToken(wanted ?? DEFAULT_CONTEXT);
+  const exact = choices.find((c) => optionToken(c.value) === token || optionToken(c.label) === token);
+  if (exact) return exact.value;
+  const sized = choices.map((c) => ({ c, n: contextTokens(c.value) || contextTokens(c.label) })).filter((x) => x.n > 0).sort((a, b) => a.n - b.n);
+  if (!sized.length) return choices[0].value;
+  const want = contextTokens(wanted ?? DEFAULT_CONTEXT);
+  // The largest at or under what was asked for, else the smallest offered.
+  const under = sized.filter((x) => !(want > 0) || x.n <= want);
+  return (under.length ? under[under.length - 1] : sized[0]).c.value;
+}
+
+/** Cursor's `cursor/list_available_models`: every model (bare id), its display name, and the context
+ *  windows it offers. */
+export function parseCursorModels(listResponse: unknown): ModelsProbe & { modelNames: Record<string, string>; contexts: Record<string, ContextOption[]> } {
+  const modelNames: Record<string, string> = {};
+  const contexts: Record<string, ContextOption[]> = {};
+  const models: string[] = [];
+  const listed = (listResponse as any)?.models;
+  for (const m of Array.isArray(listed) ? listed : []) {
+    const id = splitModelParams(String(m?.value ?? m?.modelId ?? "")).base;
+    if (!id || models.includes(id)) continue;
+    models.push(id);
+    const name = String(m?.name ?? "").trim();
+    if (name) modelNames[id] = name;
+    const ctx = contextChoices(findContextOption(m?.configOptions));
+    if (ctx.length > 1) contexts[id] = ctx;
+  }
+  return { models, defaultModel: null, modelNames, contexts };
 }
 
 /** The exact model id this session accepts for a saved choice. A saved id can be stale or missing its

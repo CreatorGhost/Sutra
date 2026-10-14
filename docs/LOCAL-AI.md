@@ -55,11 +55,15 @@ expected JSON schema, with one retry.
 | Grok | **ACP**: `grok agent --no-leader [-m M] stdio` | schema in the prompt, validated |
 | Droid | **ACP**: `droid exec --output-format acp` | schema in the prompt, validated |
 
-**Cursor model ids.** Without the `parameterizedModelPicker` client capability, an ACP session only
-accepts the ids it lists itself, which carry their config inline (`…opus-5[context=300k]`).
-`cursor/list_available_models` returns bare ids (`…opus-5`) and also models the session rejects, so
-Sutra reads the session's list, and maps a saved bare or stale id onto the session's form before
-sending it (`resolveAcpModelId`). A model that is really gone gets a clear "no longer offers" error.
+**Cursor models and context window.** Sutra drives Cursor the way ViewCode does: `initialize` advertises
+`clientCapabilities._meta.parameterizedModelPicker`, so the model list is `cursor/list_available_models`
+(every model, as bare ids like `claude-opus-5`, with display names), the model is selected by its bare
+id, and the context window is set afterwards through the session's `model_config` "Context" option.
+The window is the user's choice — **300K (default) or 1M** — in Settings → Intelligence and in the
+Ask-bar model picker, for models that offer both. It is saved on the model id in Cursor's own syntax
+(`claude-opus-5[context=1m]`), so it follows the model to a paired phone too. A model without a 300K
+option (GPT's 272K) gets its nearest window under 300K by default. A Cursor CLI too old for the flag
+only accepts the suffixed ids its session lists; Sutra falls back to that form (`resolveAcpModelId`).
 
 - **PATH:** read from your login shell, so CLIs installed with Homebrew, `npm -g` or `~/.local/bin` are found even when Sutra is opened from the Dock. Windows npm `.cmd` launchers are handled without passing text through `cmd.exe`.
 - **What the agent does:** extraction (title, summary, decisions, action items, open questions), Detailed notes and Minutes, transcript clean-up (with the project glossary), translation, *Ask about this meeting* and *Ask Sutra*.

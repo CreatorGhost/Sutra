@@ -10,6 +10,8 @@
 // Invocation details for Claude, Cursor, Grok, Droid and Command Code are ported from ViewCode
 // (github.com/CreatorGhost/viewcode, a T3 Code fork, MIT, © T3 Tools Inc.) — see THIRD_PARTY_NOTICES.md.
 
+import type { ContextOption } from "./engineProbes";
+
 export type AgentId = "claude" | "codex" | "cursor" | "gemini" | "grok" | "droid" | "commandcode";
 
 /** How the CLI is driven: one-shot print mode with JSON output, `codex exec`, or the Agent Client
@@ -113,6 +115,10 @@ export interface AgentStatus {
   account: string | null;
   models: string[];
   defaultModel: string | null;
+  /** Display names by model id, when the engine reports them (Cursor). */
+  modelNames?: Record<string, string>;
+  /** Context windows each model offers, when it offers a choice (Cursor: 300K / 1M). */
+  contexts?: Record<string, ContextOption[]>;
   install: string;
   signIn: string;
   /** Why it isn't usable, in one line, when we know. */
@@ -212,6 +218,8 @@ export interface AcpInvocation {
   mode?: string;
   /** Model to select through the session's config options (ACP agents that don't take `-m`). */
   model?: string | null;
+  /** Cursor: advertise `parameterizedModelPicker` — bare model ids, the context window set separately. */
+  parameterizedModels?: boolean;
 }
 
 /** How to start each ACP agent and set it up for a read-only, one-shot prompt. */
@@ -219,7 +227,9 @@ export function acpInvocation(id: AgentId, model: string | null | undefined, env
   const m = safeModel(model);
   switch (id) {
     // Cursor: "ask" mode is read-only; a stored `cursor-agent login` is used via `cursor_login`.
-    case "cursor": return { args: ["acp"], authMethodId: "cursor_login", mode: "ask", model: m && m !== "auto" && m !== "default" ? m : null };
+    // The model id may carry the context choice ("…[context=1m]"); see engineProbes splitModelParams.
+    case "cursor": return { args: ["acp"], authMethodId: "cursor_login", mode: "ask", parameterizedModels: true,
+      model: m && m !== "auto" && m !== "default" ? m : null };
     // Grok: its own process (no shared leader), the model as a flag, the cached login token.
     case "grok": return {
       args: ["agent", "--no-leader", ...(m ? ["-m", m] : []), "stdio"],

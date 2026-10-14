@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseAcpModels, resolveAcpModelId, upgradeModelId, parseClaudeAuthStatus, parseCodexAuthFile, parseCodexLoginStatus, parseCommandCodeModelList, parseCommandCodeStatus,
   parseCursorAbout, parseDroidModelList, parseGeminiAuth, parseGrokModels, parseVersion,
+  parseCursorModels, pickContext, splitModelParams, withContext,
 } from "../engineProbes";
 import { validateJson } from "../jsonSchemaLite";
 
@@ -122,5 +123,44 @@ describe("JSON schema validation (the subset Sutra's AI schemas use)", () => {
     ]));
     expect(errs.length).toBeLessThanOrEqual(8);
     expect(validateJson(schema, [])).toEqual(["(root): expected object, got array"]);
+  });
+});
+
+describe("Cursor parameterized models", () => {
+  const ctx = (...v: string[]) => v.map((x) => ({ value: x, label: x.toUpperCase() }));
+
+  it("splits and rebuilds a model id's inline params", () => {
+    expect(splitModelParams("opus-5[context=1m, fast=true]")).toEqual({ base: "opus-5", params: { context: "1m", fast: "true" } });
+    expect(splitModelParams("opus-5")).toEqual({ base: "opus-5", params: {} });
+    expect(withContext("opus-5[context=300k]", "1m")).toBe("opus-5[context=1m]");
+    expect(withContext("opus-5[context=1m]", null)).toBe("opus-5");
+  });
+
+  it("defaults to 300K, else the nearest window under it; honours an explicit pick", () => {
+    expect(pickContext(ctx("300k", "1m"), null)).toBe("300k");
+    expect(pickContext(ctx("272k", "1m"), null)).toBe("272k");
+    expect(pickContext(ctx("1m", "2m"), null)).toBe("1m");      // nothing smaller: the smallest
+    expect(pickContext(ctx("300k", "1m"), "1M")).toBe("1m");    // by label, any case
+    expect(pickContext(ctx("272k", "1m"), "300k")).toBe("272k");
+    expect(pickContext([], "1m")).toBeNull();
+  });
+
+  it("lists every model as a bare id, with names and context windows", () => {
+    const r = parseCursorModels({ models: [
+      { value: "claude-opus-5", name: "Opus 5", configOptions: [
+        { id: "context", category: "model_config", name: "Context", type: "select", currentValue: "300k", options: [{ value: "300k", name: "300K" }, { value: "1m", name: "1M" }] },
+        { id: "fast", category: "model_config", name: "Fast", type: "select", currentValue: "false", options: [{ value: "false" }, { value: "true" }] },
+      ] },
+      { value: "composer-2", name: "Composer 2", configOptions: [] },
+      { value: "claude-opus-5[context=1m]", name: "dupe" },
+    ] });
+    expect(r.models).toEqual(["claude-opus-5", "composer-2"]);
+    expect(r.modelNames).toEqual({ "claude-opus-5": "Opus 5", "composer-2": "Composer 2" });
+    expect(r.contexts).toEqual({ "claude-opus-5": [{ value: "300k", label: "300K" }, { value: "1m", label: "1M" }] });
+  });
+
+  it("keeps a saved context choice when the engine lists bare ids", () => {
+    expect(upgradeModelId("claude-opus-5[context=1m]", ["claude-opus-5", "gpt-5"])).toBe("claude-opus-5[context=1m]");
+    expect(upgradeModelId("claude-opus-5", ["claude-opus-5[context=300k]"])).toBe("claude-opus-5[context=300k]");
   });
 });

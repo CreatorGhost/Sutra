@@ -7,6 +7,7 @@
 // TEXT messages; everything after the welcome is a sealed BINARY frame (see crypto.ts FrameCipher)
 // holding one JSON Message.
 import type { AgentId } from "../agentProtocol";
+import type { ContextOption } from "../engineProbes";
 
 export const PROTOCOL_VERSION = 1;
 export const PAIR_LINK_PREFIX = "sutra-pair:1:";
@@ -120,6 +121,9 @@ export interface EngineSummary {
   account: string | null;
   models: string[];
   defaultModel: string | null;
+  /** Optional (newer Macs): model display names, and the context windows a model offers (Cursor). */
+  modelNames?: Record<string, string>;
+  contexts?: Record<string, ContextOption[]>;
 }
 
 export interface HostInfo {

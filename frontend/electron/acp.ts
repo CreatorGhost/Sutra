@@ -10,7 +10,7 @@
 // AcpSessionRuntime / AcpTextGeneration (T3 Code fork, MIT, © T3 Tools Inc.) without the Effect library;
 // see THIRD_PARTY_NOTICES.md.
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { resolveAcpModelId } from "../src/shared/engineProbes";
+import { contextChoices, findContextOption, pickContext, resolveAcpModelId, splitModelParams } from "../src/shared/engineProbes";
 
 export interface AcpOptions {
   /** Starts the agent (already resolved binary + args, cwd and env applied). */
@@ -19,6 +19,8 @@ export interface AcpOptions {
   authMethodId?: string;
   mode?: string;
   model?: string | null;
+  /** Cursor's parameterized model picker: bare model ids, the context window as its own option. */
+  parameterizedModels?: boolean;
   timeoutMs: number;
   /** Product name for error messages. */
   label: string;
@@ -37,6 +39,8 @@ export class AcpConnection {
   private buf = "";
   stderr = "";
   private closed: Error | null = null;
+  /** The session's latest config options, when the agent pushed an update (they change with the model). */
+  configOptions: any[] | null = null;
   onNotification: (method: string, params: any) => void = () => {};
 
   constructor(readonly child: ChildProcessWithoutNullStreams) {
@@ -92,7 +96,11 @@ export class AcpConnection {
       return;
     }
     if (msg.method && msg.id != null) { this.answer(msg.id, msg.method, msg.params); return; }
-    if (msg.method) this.onNotification(msg.method, msg.params);
+    if (msg.method) {
+      const u = msg.params?.update;
+      if (msg.method === "session/update" && u?.sessionUpdate === "config_option_update" && Array.isArray(u.configOptions)) this.configOptions = u.configOptions;
+      this.onNotification(msg.method, msg.params);
+    }
   }
 
   /** Agent → client requests. Tool permissions are always refused (with the agent's own "reject"
@@ -122,7 +130,10 @@ const findConfig = (session: any, kind: string) =>
 async function openSession(o: AcpOptions, conn: AcpConnection) {
   const init = await conn.request("initialize", {
     protocolVersion: 1,
-    clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+    clientCapabilities: {
+      fs: { readTextFile: false, writeTextFile: false }, terminal: false,
+      ...(o.parameterizedModels ? { _meta: { parameterizedModelPicker: true } } : {}),
+    },
     clientInfo: { name: "sutra", version: "1" },
   });
   const methods: any[] = Array.isArray(init?.authMethods) ? init.authMethods : [];
@@ -144,7 +155,8 @@ async function configure(o: AcpOptions, conn: AcpConnection, session: any, sessi
       else if (session?.modes?.availableModes?.some((m: any) => m?.id === o.mode)) await conn.request("session/set_mode", { sessionId, modeId: o.mode });
     } catch { /* read-only mode is a nicety; the empty cwd + refused permissions still apply */ }
   }
-  if (o.model) {
+  if (o.model && o.parameterizedModels) await configureParameterized(o, conn, session, sessionId, o.model);
+  else if (o.model) {
     // A saved id may be stale or lack the session's config suffix; send the form the session accepts.
     const model = resolveAcpModelId(o.model, session);
     if (!model) throw new AcpError(`${o.label} no longer offers the model “${o.model}”. Pick another model in Settings → Intelligence.`);
@@ -155,6 +167,39 @@ async function configure(o: AcpOptions, conn: AcpConnection, session: any, sessi
     } catch (e: any) {
       throw new AcpError(`${o.label} couldn't switch to the model “${model}”: ${e?.message ?? e}. Pick another model in Settings → Intelligence.`);
     }
+  }
+}
+
+/** Cursor with `parameterizedModelPicker`: select the bare model, then the context window the user
+ *  chose on the id ("…[context=1m]"), else Sutra's 300K default (the nearest the model offers). A Cursor
+ *  CLI too old for the flag only takes suffixed ids: then fall back to the session's own form. After
+ *  ViewCode's applyCursorAcpModelSelection. */
+async function configureParameterized(o: AcpOptions, conn: AcpConnection, session: any, sessionId: string, wanted: string) {
+  const { base, params } = splitModelParams(wanted);
+  const modelOpt = findConfig(session, "model");
+  const select = (value: string) => modelOpt
+    ? conn.request("session/set_config_option", { sessionId, configId: modelOpt.id, value })
+    : conn.request("session/set_model", { sessionId, modelId: value });
+  let options: any = session?.configOptions;
+  try {
+    const r = await select(base);
+    options = conn.configOptions ?? (Array.isArray(r?.configOptions) ? r.configOptions : options);
+  } catch (e: any) {
+    const legacy = resolveAcpModelId(wanted, session);
+    if (!legacy || legacy === base) throw new AcpError(`${o.label} couldn't switch to the model “${base}”: ${e?.message ?? e}. Pick another model in Settings → Intelligence.`);
+    try { await select(legacy); } catch (e2: any) {
+      throw new AcpError(`${o.label} couldn't switch to the model “${legacy}”: ${e2?.message ?? e2}. Pick another model in Settings → Intelligence.`);
+    }
+    return; // the suffixed id already carries its context
+  }
+  const ctxOpt = findContextOption(options);
+  const value = ctxOpt ? pickContext(contextChoices(ctxOpt), params["context"] ?? null) : null;
+  if (!ctxOpt || !value || value === ctxOpt.currentValue) return;
+  try {
+    await conn.request("session/set_config_option", { sessionId, configId: ctxOpt.id, value });
+  } catch (e: any) {
+    // The default is a nicety; a window the user picked is not silently dropped.
+    if (params["context"]) throw new AcpError(`${o.label} couldn't use the ${value.toUpperCase()} context window: ${e?.message ?? e}. Pick another in Settings → Intelligence.`);
   }
 }
 

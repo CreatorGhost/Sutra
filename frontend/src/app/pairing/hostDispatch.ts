@@ -33,6 +33,7 @@ export async function hostInfo(deps: HostDeps): Promise<HostInfoBody> {
   const agents = await deps.detect().catch(() => [] as AgentStatus[]);
   const engines: EngineSummary[] = agents.map((a) => ({
     id: a.id, label: a.label, ready: a.installed && a.signedIn !== false, account: a.account, models: a.models, defaultModel: a.defaultModel,
+    ...(a.modelNames ? { modelNames: a.modelNames } : {}), ...(a.contexts ? { contexts: a.contexts } : {}),
   }));
   const activeEngine = chosenEngine(s) ?? autoEngine(agents)?.id ?? null;
   const error = await deps.speechProblem(s).catch((e) => String(e?.message ?? e));

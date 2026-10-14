@@ -55,6 +55,29 @@ describe("ACP one-shot runner", () => {
     expect(e.state.model).toBe("opus[context=300k]");
   });
 
+  it("Cursor's parameterized picker: flag sent, bare model, then Sutra's 300K default context", async () => {
+    const e = echo((await runAcpPrompt(opts("parameterized", { parameterizedModels: true, model: "claude-opus" }), kill)).text);
+    expect(e.state.client.clientCapabilities._meta).toEqual({ parameterizedModelPicker: true });
+    expect(e.state).toMatchObject({ model: "claude-opus", context: "300k" });
+  });
+
+  it("the user's 1M pick rides on the id; a model without 300K gets its nearest window", async () => {
+    const big = echo((await runAcpPrompt(opts("parameterized", { parameterizedModels: true, model: "claude-opus[context=1m]" }), kill)).text);
+    expect(big.state).toMatchObject({ model: "claude-opus" });
+    expect(big.state.context).toBeUndefined(); // already the session's window — nothing to send
+    const gpt = echo((await runAcpPrompt(opts("parameterized", { parameterizedModels: true, model: "gpt-5" }), kill)).text);
+    expect(gpt.state).toMatchObject({ model: "gpt-5", context: "272k" });
+  });
+
+  it("a Cursor CLI too old for the flag gets the suffixed id it accepts", async () => {
+    const e = echo((await runAcpPrompt(opts("suffixed", { parameterizedModels: true, model: "opus" }), kill)).text);
+    expect(e.state.model).toBe("opus[context=300k]");
+  });
+
+  it("an unknown parameterized model is reported", async () => {
+    await expect(runAcpPrompt(opts("parameterized", { parameterizedModels: true, model: "nope" }), kill)).rejects.toThrow(/couldn't switch to the model “nope”/);
+  });
+
   it("reports the agent's stderr when it dies, and times out a hung agent", async () => {
     await expect(runAcpPrompt(opts("crash"), kill)).rejects.toThrow("boom: not logged in");
     const t0 = Date.now();
