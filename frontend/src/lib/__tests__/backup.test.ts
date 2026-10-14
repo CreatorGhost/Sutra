@@ -81,6 +81,19 @@ describe("desktop backup (SQL dump / restore)", () => {
     expect(raw.pragma("foreign_keys", { simple: true })).toBe(1);
   });
 
+  it("never writes the phone's pairing secrets into a backup", async () => {
+    await repo.putSettings({ paired_mac: { hostId: "h", linkKey: "k", identity: { privateJwk: { d: "x" } } }, recap_time: "07:15" });
+    const dump = await backup.buildSqlDump();
+    const settings = (dump.data as any).tables.find((t: any) => t.name === "settings");
+    const data = JSON.parse(settings.values[0][settings.schema.findIndex((c: any) => c.column === "data")]);
+    expect(data.paired_mac).toBeUndefined();
+    expect(data.recap_time).toBe("07:15");
+    // A phone (Capacitor) export goes through the same scrub.
+    const phone = backup.stripDeviceSecrets({ tables: [{ name: "settings", schema: [{ column: "id" }, { column: "data" }, { constraint: "CHECK(id=1)" }], values: [[1, JSON.stringify({ paired_mac: { linkKey: "k" }, a: 1 })]] }] });
+    expect(JSON.parse(phone.tables[0].values[0][1])).toEqual({ a: 1 });
+    await repo.putSettings({ paired_mac: null });
+  });
+
   it("rejects bad files before touching anything", async () => {
     const before = snapshot();
     await expect(backup.restoreSqlDump("not json")).rejects.toThrow(/valid JSON/);

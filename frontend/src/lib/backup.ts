@@ -17,6 +17,8 @@ import { Share } from "@capacitor/share";
 import { DB_NAME, exec, getConnection, getSqlite, openDb, persist, q, resetConnectionCache } from "../local/db";
 import { SCHEMA_VERSION } from "../local/schema";
 import { desktop } from "../desktop/bridge";
+import { getSettings, putSettings } from "../local/repo";
+import { PAIRING_KEY } from "../pairing/model";
 
 const ENVELOPE_APP = "sutra";
 
@@ -73,6 +75,30 @@ function sanitizeForImport(data: any): any {
   return { ...data, tables };
 }
 
+/** Settings that must never leave the device: the phone ↔ Mac pairing (link key, private key, audio
+ *  queue key). A backup is a plaintext file — whoever held it could talk to the Mac as this phone. */
+const DEVICE_SECRET_SETTINGS = [PAIRING_KEY];
+
+/** Drop DEVICE_SECRET_SETTINGS from the settings row of a JsonSQLite dump. */
+export function stripDeviceSecrets(data: any): any {
+  const tables = (data.tables ?? []).map((t: any) => {
+    if (t?.name !== "settings" || !Array.isArray(t.schema) || !Array.isArray(t.values)) return t;
+    const cols = t.schema.filter((c: any) => typeof c?.column === "string" && c.column && !c.foreignkey && !c.constraint);
+    const at = cols.findIndex((c: any) => c.column === "data");
+    if (at < 0) return t;
+    const values = t.values.map((row: unknown[]) => {
+      let obj: Record<string, unknown>;
+      try { obj = JSON.parse(String(row[at] ?? "{}")); } catch { return row; }
+      for (const k of DEVICE_SECRET_SETTINGS) delete obj[k];
+      const out = [...row];
+      out[at] = JSON.stringify(obj);
+      return out;
+    });
+    return { ...t, values };
+  });
+  return { ...data, tables };
+}
+
 async function userVersion(): Promise<number> {
   try {
     const c = await getConnection();
@@ -106,7 +132,7 @@ export async function exportBackup(): Promise<{ filename: string; bytes: number;
     app: ENVELOPE_APP,
     schema_version: await userVersion(),
     exported_at: new Date().toISOString(),
-    data: sanitizeForImport(dump.export),
+    data: stripDeviceSecrets(sanitizeForImport(dump.export)),
   };
   const json = JSON.stringify(envelope);
   const bytes = json.length;
@@ -174,6 +200,9 @@ async function readEnvelope(file: File | string): Promise<Envelope> {
 export async function importBackup(file: File | string): Promise<{ changes: number }> {
   const envelope = await readEnvelope(file);
   if (desktop) return restoreSqlDump(envelope);
+  // The backup never carries this phone's pairing; keep the live one across the wipe-and-replace.
+  const current = await getSettings().catch(() => ({} as Record<string, unknown>));
+  const keep = Object.fromEntries(DEVICE_SECRET_SETTINGS.filter((k) => current[k] != null).map((k) => [k, current[k]]));
   // Force a clean full overwrite into the SAME db name regardless of what flags the file carried:
   // mode 'full' (re-create schema + all rows) + overwrite (drop the existing DB first). We keep the
   // exported database name as-is so it lands on "sutra". Re-run sanitize defensively so older backup
@@ -212,6 +241,7 @@ export async function importBackup(file: File | string): Promise<{ changes: numb
   // The FTS mirror was dropped from the backup, and migrate() won't re-create it (user_version is
   // already current after a full import), so re-create + repopulate it from the restored memories.
   await rebuildFts();
+  if (Object.keys(keep).length) await putSettings(keep);
 
   // Web: flush jeep-sqlite's in-memory DB back to its IndexedDB store so the reload sees it.
   await persist();
@@ -283,7 +313,7 @@ export async function buildSqlDump(): Promise<Envelope> {
     app: ENVELOPE_APP,
     schema_version: version,
     exported_at: new Date().toISOString(),
-    data: { database: DB_NAME, version, encrypted: false, mode: "full", tables },
+    data: stripDeviceSecrets({ database: DB_NAME, version, encrypted: false, mode: "full", tables }),
   };
 }
 
