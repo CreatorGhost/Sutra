@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { initDesktopStorage } from "./storage";
 import { userPath } from "./proc";
 import { MeetingDetector } from "./meetingDetector";
-import { detectAgents, runAgent } from "./agents";
+import { detectAgents, runAgent, setEnabledEngines } from "./agents";
 import { mcpInstall, mcpRemove, mcpSnippet, mcpStatus, type McpClientId } from "./mcpConnect";
 import { cancelSpeechDownload, deleteSpeechModel, downloadSpeechModel, speechStatus, transcribeSpeech } from "./speech/service";
 import { initPairing, stopPairing } from "./pairing";
@@ -49,12 +49,14 @@ if (!app.isPackaged) {
 
 // ---- preferences (main-process owned so detection works before any window loads) -------------------
 
-interface Prefs { detectMeetings: boolean; autoStop: boolean; }
-const DEFAULT_PREFS: Prefs = { detectMeetings: true, autoStop: true };
+interface Prefs { detectMeetings: boolean; autoStop: boolean; enabledEngines: AgentId[] | null }
+const DEFAULT_PREFS: Prefs = { detectMeetings: true, autoStop: true, enabledEngines: null };
 const prefsPath = () => join(app.getPath("userData"), "prefs.json");
 let prefs: Prefs = { ...DEFAULT_PREFS };
 function loadPrefs(): void {
   try { if (existsSync(prefsPath())) prefs = { ...DEFAULT_PREFS, ...JSON.parse(readFileSync(prefsPath(), "utf8")) }; } catch { /* defaults */ }
+  prefs.enabledEngines = Array.isArray(prefs.enabledEngines) ? prefs.enabledEngines.filter(isAgentId) : null;
+  setEnabledEngines(prefs.enabledEngines);
 }
 function savePrefs(): void {
   try { writeFileSync(prefsPath(), JSON.stringify(prefs, null, 2)); } catch { /* best-effort */ }
@@ -322,7 +324,7 @@ function refreshTray(): void {
     { type: "separator" },
     rec
       ? { label: "Stop recording", click: () => stopRecording() }
-      : { label: detection.active ? `Record ${detection.active.app} call` : "Start recording", enabled: recorder.status === "idle", click: () => startRecording() },
+      : { label: detection.active ? `Record ${detection.active.app} call` : "Start recording", click: () => startRecording() },
     { type: "separator" },
     { label: "Detect meetings automatically", type: "checkbox", checked: prefs.detectMeetings, click: (i) => setPrefs({ detectMeetings: i.checked }) },
     { label: "Stop when the call ends", type: "checkbox", checked: prefs.autoStop, click: (i) => setPrefs({ autoStop: i.checked }) },
@@ -336,6 +338,10 @@ function refreshTray(): void {
 const detector = new MeetingDetector({ onChange: (up) => void onDetection(up) });
 
 function setPrefs(patch: Partial<Prefs>): Prefs {
+  if ("enabledEngines" in patch) {
+    patch = { ...patch, enabledEngines: Array.isArray(patch.enabledEngines) ? patch.enabledEngines.filter(isAgentId) : null };
+    setEnabledEngines(patch.enabledEngines ?? null);
+  }
   prefs = { ...prefs, ...patch };
   savePrefs();
   if (prefs.detectMeetings) detector.start();

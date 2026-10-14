@@ -13,6 +13,8 @@ describe("prettyModel", () => {
     expect(prettyModel("gpt-5-codex")).toBe("GPT-5 Codex");
     expect(prettyModel("gemini-2.5-pro")).toBe("Gemini 2.5 Pro");
     expect(prettyModel("auto")).toBe("Auto");
+    expect(prettyModel("claude-sonnet-5-5")).toBe("Claude Sonnet 5.5");
+    expect(prettyModel("gpt-6.1-sol")).toBe("GPT-6.1 Sol");
   });
 });
 

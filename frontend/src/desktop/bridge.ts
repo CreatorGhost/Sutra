@@ -10,7 +10,7 @@ export type SttStatus = SpeechStatus;
 export type SttProgress = SpeechProgress;
 
 export type DetectionState = { active: (Detection & { icon?: string }) | null; visible: boolean };
-export interface DesktopPrefs { detectMeetings: boolean; autoStop: boolean }
+export interface DesktopPrefs { detectMeetings: boolean; autoStop: boolean; /** Engines the user uses; null = not chosen yet (all are checked). */ enabledEngines: AgentId[] | null }
 export type PillMode = "hidden" | "detected" | "recording" | "processing" | "done";
 export interface RecorderSnapshot {
   status: "idle" | "starting" | "recording" | "processing";

@@ -22,7 +22,13 @@ import { outbox } from "../pairing/runtime";
 export type RecStatus = RecorderSnapshot["status"];
 
 export interface RecorderState {
+  /** Derived (see withStatus): "recording"/"starting" while capturing, else "processing" while any
+   *  stopped recording is still being written up, else "idle". */
   status: RecStatus;
+  /** The microphone/call capture itself. A new one can start while earlier ones are still saving. */
+  capture: "idle" | "starting" | "recording";
+  /** Stopped recordings still being transcribed / written into notes in the background. */
+  saving: number;
   startedAt: number | null;
   /** The meeting app being recorded ("Google Chrome"), when known. */
   app: string | null;
@@ -48,12 +54,15 @@ interface Recorder {
 interface ActiveSession { stop(): Promise<void>; teardown(): void }
 
 const INITIAL: RecorderState = {
-  status: "idle", startedAt: null, app: null, mode: null, level: 0, turns: [], inflight: 0,
+  status: "idle", capture: "idle", saving: 0, startedAt: null, app: null, mode: null, level: 0, turns: [], inflight: 0,
   error: null, notice: null, sessionId: null, lastConversationId: null,
 };
 
 export const SAVED_FOR_MAC = "Saved on your phone — it'll be transcribed when your Mac is reachable.";
 const PART_FAILED = "Part of this recording couldn't be transcribed. It's kept on your phone — retry it in Settings → Your Mac.";
+
+export const withStatus = (s: RecorderState): RecorderState =>
+  ({ ...s, status: s.capture !== "idle" ? s.capture : s.saving > 0 ? "processing" : "idle" });
 
 const Ctx = createContext<Recorder | null>(null);
 
@@ -68,20 +77,20 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
   const patch = useCallback((p: Partial<RecorderState> | ((s: RecorderState) => Partial<RecorderState>)) => {
-    setState((s) => ({ ...s, ...(typeof p === "function" ? p(s) : p) }));
+    setState((s) => withStatus({ ...s, ...(typeof p === "function" ? p(s) : p) }));
   }, []);
   const session = useRef<ActiveSession | null>(null);
   const level = useRef(0);
 
   // Keep the screen (and, on Android, the mic service) alive while recording.
-  useWakeLock(state.status === "recording");
+  useWakeLock(state.capture === "recording");
 
   // Level meter → state at ~8 Hz while recording (not on every audio chunk).
   useEffect(() => {
-    if (state.status !== "recording") { patch({ level: 0 }); return; }
+    if (state.capture !== "recording") { patch({ level: 0 }); return; }
     const t = setInterval(() => patch({ level: level.current }), 125);
     return () => clearInterval(t);
-  }, [state.status, patch]);
+  }, [state.capture, patch]);
 
   const finished = useCallback(async (sid: number) => {
     const cid = await api.conversationForSession(sid).catch(() => null);
@@ -92,6 +101,9 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const startMeeting = useCallback(async (app: string | null) => {
     const settings = await api.getSettings();
     const cap = detectCaptureCapability();
+    // Once stopped, this recording saves in the background and must not touch the next one's live state.
+    let live = true;
+    const mine: ActiveSession = { stop: () => ctrl.stop(), teardown: () => ctrl.teardown() };
     const ctrl: MeetingController = new MeetingController({
       provider: createCaptureProvider(cap),
       api,
@@ -99,17 +111,20 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
       output: settings["audio_output"] === "speakers" ? "speakers" : "headphones",
       sourceApp: app,
       onError: (m) => { if (m) patch({ error: friendlyError(m) }); },
-      onInflight: (n) => patch({ inflight: n }),
-      onTurns: (t) => patch((s) => ({ turns: [...s.turns, ...t] })),
-      onLevel: (me, them) => { level.current = Math.max(me, them); },
+      onInflight: (n) => { if (live) patch({ inflight: n }); },
+      onTurns: (t) => { if (live) patch((s) => ({ turns: [...s.turns, ...t] })); },
+      onLevel: (me, them) => { if (live) level.current = Math.max(me, them); },
       onPhase: (phase) => {
-        if (phase === "capturing") patch({ status: "recording", startedAt: Date.now(), sessionId: ctrl.sessionId });
-        else if (phase === "processing") patch({ status: "processing" });
-        else { session.current = null; patch({ status: "idle", sessionId: null, inflight: 0 }); }
+        if (phase === "capturing") { patch({ capture: "recording", startedAt: Date.now(), sessionId: ctrl.sessionId }); return; }
+        if (!live) { patch((s) => ({ saving: Math.max(0, s.saving - 1) })); return; } // background save finished
+        live = false;
+        if (session.current === mine) session.current = null;
+        // Capture is released before "processing", so Record is free again right away.
+        patch((s) => ({ capture: "idle", sessionId: null, inflight: 0, saving: s.saving + (phase === "processing" ? 1 : 0) }));
       },
       onProcessed: (_r, sid) => finished(sid),
     });
-    session.current = { stop: () => ctrl.stop(), teardown: () => ctrl.teardown() };
+    session.current = mine;
     await ctrl.start();
   }, [patch, finished]);
 
@@ -120,34 +135,37 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     const uploads: Promise<unknown>[] = [];
     let inflight = 0;
     let lastCut = Date.now();
+    let live = true; // false once stopped: the rest saves in the background
     // Paired with a Mac: windows go to the phone's encrypted queue, and the Mac's transcript comes back
     // through it whenever the Mac is reachable.
     const queue = !desktop && pairingActive(await api.getSettings()) ? outbox() : null;
     queue?.begin(s.id);
     const unsubscribe = queue?.subscribe((e) => {
       if ((e.t !== "ingested" && e.t !== "failed") || e.sessionId !== s.id) return;
-      patch({ inflight: --inflight });
+      --inflight;
+      if (live) patch({ inflight });
       if (e.t === "failed") patch({ error: PART_FAILED });
-      else if (e.result?.turns?.length) patch((st) => ({ turns: [...st.turns, ...e.result.turns] }));
+      else if (live && e.result?.turns?.length) patch((st) => ({ turns: [...st.turns, ...e.result.turns] }));
     });
     const ctrl = new CaptureController({
       onWindow: (blob, idx) => {
         const windowStartMs = lastCut;
         lastCut = Date.now();
-        patch({ inflight: ++inflight });
+        ++inflight;
+        if (live) patch({ inflight });
         if (queue) {
           uploads.push(queue.enqueue(s.id, idx, blob, { filename: `window-${idx}.${ext}`, windowStartMs })
-            .catch((e) => patch({ error: friendlyError(e), inflight: --inflight })));
+            .catch((e) => { --inflight; patch(live ? { error: friendlyError(e), inflight } : { error: friendlyError(e) }); }));
           return;
         }
         uploads.push(
           api.ingestWindow(s.id, blob, idx, `window-${idx}.${ext}`, windowStartMs)
-            .then((r: any) => { if (r?.turns?.length) patch((st) => ({ turns: [...st.turns, ...r.turns] })); })
+            .then((r: any) => { if (live && r?.turns?.length) patch((st) => ({ turns: [...st.turns, ...r.turns] })); })
             .catch((e) => patch({ error: friendlyError(e) }))
-            .finally(() => patch({ inflight: --inflight })),
+            .finally(() => { --inflight; if (live) patch({ inflight }); }),
         );
       },
-      onLevel: (rms) => { level.current = rms; },
+      onLevel: (rms) => { if (live) level.current = rms; },
       onError: (m) => patch({ error: friendlyError(m) }),
     });
     let stopped = false;
@@ -157,7 +175,10 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
         if (stopped) return;
         stopped = true;
         await ctrl.stop();
-        patch({ status: "processing" });
+        // Capture is over: free Record now and finish this one in the background.
+        live = false;
+        session.current = null;
+        patch((st) => ({ capture: "idle", sessionId: null, inflight: 0, saving: st.saving + 1 }));
         try {
           await Promise.allSettled(uploads);
           await api.closeSession(s.id);
@@ -176,8 +197,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
           patch({ error: friendlyError(e) });
         } finally {
           unsubscribe?.();
-          session.current = null;
-          patch({ status: "idle", sessionId: null, inflight: 0 });
+          patch((st) => ({ saving: Math.max(0, st.saving - 1) }));
         }
       },
     };
@@ -190,14 +210,14 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
       await queue?.closeSession(s.id).catch(() => {});
       throw e;
     }
-    patch({ status: "recording", startedAt: Date.now(), sessionId: s.id });
+    patch({ capture: "recording", startedAt: Date.now(), sessionId: s.id });
   }, [patch, finished]);
 
   const start = useCallback(async (opts?: { app?: string | null }) => {
-    if (stateRef.current.status !== "idle") return;
+    if (stateRef.current.capture !== "idle") return;
     const meeting = detectCaptureCapability().supported;
     const app = opts?.app ?? null;
-    patch({ ...INITIAL, status: "starting", app, mode: meeting ? "meeting" : "mic", lastConversationId: stateRef.current.lastConversationId });
+    patch((s) => ({ ...INITIAL, capture: "starting", app, mode: meeting ? "meeting" : "mic", lastConversationId: s.lastConversationId, saving: s.saving }));
     try {
       const notReady = await localSttReady(await api.getSettings());
       if (notReady) throw new Error(notReady);
@@ -205,13 +225,13 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
       else await startMic();
     } catch (e) {
       session.current = null;
-      patch({ status: "idle", error: friendlyError(e) });
+      patch({ capture: "idle", error: friendlyError(e) });
     }
   }, [patch, startMeeting, startMic]);
 
   const stop = useCallback(async () => {
     const s = session.current;
-    if (!s || stateRef.current.status !== "recording") return;
+    if (!s || stateRef.current.capture !== "recording") return;
     await s.stop();
   }, []);
 

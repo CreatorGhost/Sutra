@@ -39,11 +39,19 @@ async function detectOne(id: AgentId): Promise<AgentStatus> {
 }
 
 let detected: { at: number; result: Promise<AgentStatus[]> } | null = null;
+/** The engines the user said they use (first-run "Which AI do you use?"); null = not chosen yet → all. */
+let enabled: AgentId[] | null = null;
 
-/** Probe every engine in parallel (short timeouts each). Cached for a few minutes; `refresh` re-probes. */
+export function setEnabledEngines(ids: AgentId[] | null): void {
+  enabled = ids ? AGENT_IDS.filter((id) => ids.includes(id)) : null;
+  detected = null;
+}
+
+/** Probe the user's engines in parallel (short timeouts each) — CLIs they didn't pick are never run.
+ *  Cached for a few minutes; `refresh` re-probes. */
 export function detectAgents(refresh = false): Promise<AgentStatus[]> {
   if (refresh || !detected || Date.now() - detected.at > DETECT_TTL_MS) {
-    const result = Promise.all(AGENT_IDS.map(detectOne));
+    const result = Promise.all((enabled ?? AGENT_IDS).map(detectOne));
     detected = { at: Date.now(), result };
     result.catch(() => { detected = null; });
   }

@@ -8,6 +8,7 @@ import { desktop } from "../desktop/bridge";
 import { pairingActive } from "../pairing/model";
 import { startPairingRuntime } from "../pairing/runtime";
 import { AskAll } from "./AskAll";
+import { DownloadChip } from "./DownloadChip";
 import { useIntegrations } from "./integrations";
 import { Home } from "./Home";
 import { LiveView } from "./LiveView";
@@ -109,6 +110,7 @@ function Shell() {
         </Routes>
       </main>
       {settingsOpen && <SettingsSheet initialSection={settingsSection} onClose={() => setSettingsOpen(false)} />}
+      <DownloadChip onDone={showToast} />
       {toast}
     </div>
   );

@@ -62,7 +62,11 @@ export function Pill() {
             <>
               <Loader2 size={16} className="spin" />
               <span className="who">Writing notes…</span>
-              <span style={{ width: 8 }} />
+              {/* Notes save in the background, so the next call can be recorded right away. */}
+              <button className="pill-btn" onClick={() => act("record")} title="Record a new call">
+                <span className="rec-ring" /> Record
+              </button>
+              <span style={{ width: 2 }} />
             </>
           )}
           {st.mode === "done" && (

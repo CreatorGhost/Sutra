@@ -171,8 +171,8 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
             {rec.status === "starting" ? "Starting…" : <>Stop <span className="timer">{rec.startedAt ? clock(now - rec.startedAt) : ""}</span></>}
           </button>
         ) : (
-          <button className="record-btn" disabled={rec.status === "processing"} onClick={() => { void start({ app: detection.active?.app ?? null }); nav("/live"); }}>
-            {rec.status === "processing" ? <><Loader2 size={16} className="spin" /> Saving…</> : "Start recording"}
+          <button className="record-btn" onClick={() => { void start({ app: detection.active?.app ?? null }); nav("/live"); }}>
+            Start recording
           </button>
         )}
       </div>

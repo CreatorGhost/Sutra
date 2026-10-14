@@ -1,27 +1,37 @@
 // AI engine settings: which of the user's own agent CLIs writes summaries, notes, minutes, clean-ups,
 // translations and answers. Detection (installed / signed in / models) comes from the main process.
-import { useEffect, useState } from "react";
-import { Check, Copy, RotateCw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, ChevronDown, Copy, RotateCw, SlidersHorizontal } from "lucide-react";
 import { api } from "../local/sutra";
 import { desktop, type AgentStatus } from "../desktop/bridge";
 import { AGENTS, AGENT_IDS, agentReady, autoEngine, type AgentId } from "../shared/agentProtocol";
 import { engineChoice } from "../providers";
 import { EngineLogo } from "./engineLogos";
+import { engineOptions } from "./modelPicker";
 import "./engines.css";
 
 export { autoEngine };
 
 const rank = (s: AgentStatus) => (agentReady(s) ? 0 : s.installed ? 1 : 2);
 
-export function EngineSettings({ settings, onChange, variant = "settings", onStatus }: {
+export function EngineSettings({ settings, onChange, variant = "settings", onStatus, onChoosing, onSkip }: {
   settings: Record<string, unknown>;
   onChange: (patch: Record<string, unknown>) => Promise<void>;
   variant?: "settings" | "setup";
   onStatus?: (list: AgentStatus[]) => void;
+  /** True while the "which AIs do you use?" chooser is showing (setup hides its own buttons then). */
+  onChoosing?: (choosing: boolean) => void;
+  /** Setup only: leave first-run setup without picking an engine. */
+  onSkip?: () => void;
 }) {
   const choice = engineChoice(settings);
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
   const [busy, setBusy] = useState(false);
+  // The engines the user uses (after ViewCode's onboarding): only these CLIs are ever checked.
+  // undefined = still loading; null = never chosen (older installs keep checking all of them).
+  const [enabled, setEnabled] = useState<AgentId[] | null | undefined>(undefined);
+  const [choosing, setChoosingState] = useState(false);
+  const setChoosing = (v: boolean) => { setChoosingState(v); onChoosing?.(v); };
 
   const load = async (refresh: boolean) => {
     if (!desktop) return;
@@ -36,26 +46,51 @@ export function EngineSettings({ settings, onChange, variant = "settings", onSta
       setBusy(false);
     }
   };
-  useEffect(() => { void load(false); }, []);
+  useEffect(() => {
+    if (!desktop) return;
+    void desktop.prefs.get().then((p) => {
+      const ids = p.enabledEngines ?? null;
+      setEnabled(ids);
+      // First run: ask before running anyone's CLI.
+      if (ids === null && variant === "setup") setChoosing(true);
+      else void load(false);
+    }).catch(() => { setEnabled(null); void load(false); });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveChoice = async (ids: AgentId[]) => {
+    await desktop!.prefs.set({ enabledEngines: ids });
+    setEnabled(ids);
+    setAgents(null);
+    setChoosing(false);
+    await load(true);
+  };
 
   if (!desktop) {
     return <p className="muted" style={{ fontSize: 14 }}>AI engines (Claude Code, Codex, Cursor, Gemini…) are available in the desktop app.</p>;
+  }
+
+  if (enabled === undefined) return null;
+  if (choosing) {
+    return <EngineChooser initial={enabled ?? []} variant={variant} onSave={(ids) => void saveChoice(ids)} onCancel={enabled === null && variant === "setup" ? undefined : () => setChoosing(false)} onSkip={onSkip} />;
   }
 
   const auto = autoEngine(agents);
   const active: AgentId | null = choice.ai !== "auto" && choice.ai !== "cloud" ? choice.ai : auto?.id ?? null;
   const rows: AgentStatus[] = agents
     ? [...agents].sort((a, b) => rank(a) - rank(b))
-    : AGENT_IDS.map((id) => ({ id, label: AGENTS[id].label } as AgentStatus));
+    : (enabled ?? AGENT_IDS).map((id) => ({ id, label: AGENTS[id].label } as AgentStatus));
   const activeInfo = active ? agents?.find((a) => a.id === active) : null;
 
   return (
     <div className="intel">
       <div className="eng-head">
         <div className="set-label">{variant === "setup" ? "On this computer" : "Notes & questions"}</div>
-        <button className="eng-refresh" onClick={() => void load(true)} disabled={busy} aria-label="Check again">
-          <RotateCw size={13} className={busy ? "spin" : ""} /> {busy ? "Checking…" : "Refresh"}
-        </button>
+        <div className="eng-head-actions">
+          <button className="eng-refresh" onClick={() => setChoosing(true)}><SlidersHorizontal size={13} /> Choose AIs</button>
+          <button className="eng-refresh" onClick={() => void load(true)} disabled={busy} aria-label="Check again">
+            <RotateCw size={13} className={busy ? "spin" : ""} /> {busy ? "Checking…" : "Refresh"}
+          </button>
+        </div>
       </div>
       <div className="set-card">
         {rows.map((st) => (
@@ -73,6 +108,40 @@ export function EngineSettings({ settings, onChange, variant = "settings", onSta
           Runs with your own {activeInfo.label} sign-in, tools off, in an empty folder. Nothing goes through Sutra's servers. Search uses keywords.
         </p>
       ) : null}
+    </div>
+  );
+}
+
+/** "Which AI do you use?" — tick the engines; nothing is run until you continue, and only those are checked. */
+function EngineChooser({ initial, variant, onSave, onCancel, onSkip }: {
+  initial: AgentId[]; variant: "settings" | "setup"; onSave: (ids: AgentId[]) => void; onCancel?: () => void; onSkip?: () => void;
+}) {
+  const [picked, setPicked] = useState<Set<AgentId>>(() => new Set(initial));
+  const toggle = (id: AgentId) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  return (
+    <div className="intel">
+      <div className="set-label">{variant === "setup" ? "Pick the ones you have" : "AIs Sutra can use"}</div>
+      <div className="eng-choose" role="group" aria-label="AI engines">
+        {AGENT_IDS.map((id) => {
+          const on = picked.has(id);
+          return (
+            <button key={id} type="button" className={`eng-tile${on ? " on" : ""}`} aria-pressed={on} onClick={() => toggle(id)}>
+              <span className="eng-glyph" aria-hidden="true"><EngineLogo id={id} size={17} /></span>
+              <span className="eng-tile-text">
+                <span className="eng-tile-name">{AGENTS[id].label}</span>
+                <span className="eng-vendor">{AGENTS[id].vendor}</span>
+              </span>
+              <span className="eng-tick" aria-hidden="true">{on && <Check size={12} strokeWidth={3} />}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className={`eng-choose-actions${variant === "setup" ? " setup-actions" : ""}`}>
+        {onCancel ? <button className="btn" onClick={onCancel}>Cancel</button> : onSkip && <button className="btn" onClick={onSkip}>Skip for now</button>}
+        <button className="btn primary" disabled={picked.size === 0} onClick={() => onSave(AGENT_IDS.filter((id) => picked.has(id)))}>
+          {variant === "setup" ? "Continue" : "Save"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -110,13 +179,53 @@ function EngineRow({ st, id, active, model, onPick, onModel }: {
         {st && state === "missing" && showInstall && <Cmd text={st.install} label="install" onCopy={copy} />}
         {st && state === "signin" && <Cmd text={st.signIn} label="sign-in" onCopy={copy} />}
         {st && active && st.installed && (
-          <label className="model-input">Model
-            <input key={id} list={`models-${id}`} defaultValue={model} placeholder={st.defaultModel ? `default (${st.defaultModel})` : "default"}
-              spellCheck={false} onBlur={(e) => { const v = e.target.value.trim(); if (v !== model) onModel(v); }} />
-            <datalist id={`models-${id}`}>{st.models.map((m) => <option key={m} value={m} />)}</datalist>
-          </label>
+          <div className="model-input">Model <ModelSelect key={id} st={st} model={model} onModel={onModel} /></div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The engine's models as name + id (after ViewCode's model list); free text still works for ids we don't list. */
+function ModelSelect({ st, model, onModel }: { st: AgentStatus; model: string; onModel: (m: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState("");
+  const ref = useRef<HTMLDivElement | null>(null);
+  const options = engineOptions(st, model || null);
+  const cur = options.find((o) => (o.model ?? "") === model) ?? options[0];
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const pick = (m: string) => { setOpen(false); if (m !== model) onModel(m); };
+
+  return (
+    <div className="ms" ref={ref} onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}>
+      <button type="button" className="ms-btn" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span className="ms-name">{cur.name}</span>
+        <code className="ms-id">{cur.model ?? cur.hint ?? ""}</code>
+        <ChevronDown size={14} className="engine-chip-caret" />
+      </button>
+      {open && (
+        <div className="ms-pop">
+          <div className="mp-list" role="listbox" aria-label="Models">
+            {options.map((o) => {
+              const sel = o.key === cur.key;
+              return (
+                <div key={o.key} role="option" aria-selected={sel} tabIndex={0} className={`mp-row${sel ? " sel" : ""}`}
+                  onClick={() => pick(o.model ?? "")} onKeyDown={(e) => { if (e.key === "Enter") pick(o.model ?? ""); }}>
+                  <div className="mp-name">{o.name}<code className="ms-id">{o.model ?? (o.hint ? `uses ${o.hint}` : "the CLI's own choice")}</code></div>
+                  {sel && <Check size={14} className="mp-check" />}
+                </div>
+              );
+            })}
+          </div>
+          <input className="ms-custom" value={custom} placeholder="Other model id…" spellCheck={false} aria-label="Other model id"
+            onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && custom.trim()) pick(custom.trim()); }} />
+        </div>
+      )}
     </div>
   );
 }

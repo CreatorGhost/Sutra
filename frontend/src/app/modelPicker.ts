@@ -16,7 +16,7 @@ export const FAVORITES_KEY = "ai_model_favorites";
 export const optionKey = (engine: AgentId, model: string | null) => `${engine}:${model ?? ""}`;
 
 const UPPER = new Set(["gpt", "ai", "asr", "cli", "xl"]);
-/** "gpt-5-codex" → "GPT-5 Codex", "gemini-2.5-pro" → "Gemini 2.5 Pro", "sonnet" → "Sonnet". */
+/** "gpt-5-codex" → "GPT-5 Codex", "gemini-2.5-pro" → "Gemini 2.5 Pro", "claude-sonnet-5-5" → "Claude Sonnet 5.5". */
 export function prettyModel(slug: string): string {
   const parts = slug.split(/[-_\s]+/).filter(Boolean);
   const out: string[] = [];
@@ -25,6 +25,8 @@ export function prettyModel(slug: string): string {
     const word = UPPER.has(lower) ? lower.toUpperCase() : /^\d/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1);
     // Glue a version straight onto "GPT" ("GPT-5"), as vendors write it.
     if (/^\d/.test(word) && out.length && out[out.length - 1] === "GPT") out[out.length - 1] = `GPT-${word}`;
+    // Anthropic writes versions as dashed digits ("claude-opus-5-5" → "Opus 5.5").
+    else if (/^\d+$/.test(word) && out.length && /^\d+$/.test(out[out.length - 1])) out[out.length - 1] += `.${word}`;
     else out.push(word);
   }
   return out.join(" ") || slug;

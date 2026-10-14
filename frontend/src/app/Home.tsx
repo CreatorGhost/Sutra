@@ -76,6 +76,7 @@ export function Home() {
 function EngineSetup({ settings, put }: { settings: Record<string, unknown>; put: (patch: Record<string, unknown>) => Promise<void> }) {
   const [step, setStep] = useState<1 | 2>(1);
   const [detected, setDetected] = useState<AgentStatus[] | null>(null);
+  const [choosing, setChoosing] = useState(false);
   const done = () => void put({ setup_engines: true });
   // Continuing without touching the list keeps the engine Sutra picked for them — make it explicit.
   const next = async () => {
@@ -92,11 +93,11 @@ function EngineSetup({ settings, put }: { settings: Record<string, unknown>; put
           <>
             <p className="hero-title">Which AI do you use?</p>
             <p className="hero-text">Sutra writes your notes and answers with the AI you already pay for. No API keys, nothing extra to buy.</p>
-            <EngineSettings settings={settings} onChange={put} variant="setup" onStatus={setDetected} />
-            <div className="setup-actions">
+            <EngineSettings settings={settings} onChange={put} variant="setup" onStatus={setDetected} onChoosing={setChoosing} onSkip={done} />
+            {!choosing && <div className="setup-actions">
               <button className="btn" onClick={done}>Skip for now</button>
               <button className="btn primary" onClick={() => void next()}>Continue</button>
-            </div>
+            </div>}
           </>
         ) : (
           <>

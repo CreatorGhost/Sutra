@@ -47,14 +47,14 @@ export const AGENTS: Record<AgentId, AgentInfo> = {
     protocol: "print", nativeSchema: true,
     install: same("npm install -g @anthropic-ai/claude-code"), signIn: "claude auth login",
     docs: "https://docs.claude.com/en/docs/claude-code",
-    models: ["sonnet", "opus", "haiku"],
+    models: ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
   },
   codex: {
     id: "codex", label: "Codex", vendor: "OpenAI", initials: "Cx", binaries: same(["codex"]),
     protocol: "exec", nativeSchema: true,
     install: same("npm install -g @openai/codex"), signIn: "codex login",
     docs: "https://github.com/openai/codex",
-    models: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.5"],
+    models: ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
   },
   cursor: {
     id: "cursor", label: "Cursor Agent", vendor: "Cursor", initials: "Cu", binaries: same(["cursor-agent", "agent"]),
