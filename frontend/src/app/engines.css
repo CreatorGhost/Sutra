@@ -151,3 +151,14 @@
   /* Pinned to the screen, not the chip, so it never pushes the page sideways. */
   .mp { position: fixed; left: 12px; right: 12px; width: auto; max-width: none; bottom: calc(76px + var(--sab, 0px)); }
 }
+
+/* phone first run: connect to your Mac (Home.tsx PhoneSetup) */
+.phone-setup .hero-text { margin-bottom: 18px; }
+.phone-steps { text-align: left; margin: 0 auto 22px; padding-left: 22px; max-width: 420px; display: flex; flex-direction: column; gap: 8px; color: var(--text-2); font-size: 15px; line-height: 1.45; }
+.phone-steps b { color: var(--text); font-weight: 600; }
+.phone-setup .pair-controls { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.phone-setup .pair-controls .actions { display: flex; flex-direction: column-reverse; gap: 10px; width: 100%; max-width: 340px; }
+.phone-setup .pair-controls .actions .btn { width: 100%; justify-content: center; height: 48px; font-size: 16px; }
+.phone-setup .mac-paste { width: 100%; max-width: 340px; }
+.phone-setup .mac-error { max-width: 340px; text-align: center; }
+.phone-setup .phone-skip { align-self: center; margin: 22px auto 0; display: block; font-size: 14px; }

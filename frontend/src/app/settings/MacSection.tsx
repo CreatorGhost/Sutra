@@ -26,17 +26,13 @@ function statusLine(s: MacStatus, q: QueueStats | null): { kind?: "ok" | "err"; 
   }
 }
 
-export function MacSection({ settings, put, toast }: SectionProps) {
-  const mac = useMac();
-  const paired = !!mac.pairing;
-  const stats = useQueueStats(paired);
+/** Scan the Mac's pairing code (or paste its link) and pair. Used here and on the phone's first screen. */
+export function PairControls({ onPaired, large = false }: { onPaired: (hostName: string) => void; large?: boolean }) {
   const [scanning, setScanning] = useState(false);
   const [pasting, setPasting] = useState(false);
   const [link, setLink] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [justPaired, setJustPaired] = useState<string | null>(null);
-  const [confirmUnpair, setConfirmUnpair] = useState(false);
 
   const connect = async (text: string) => {
     setScanning(false);
@@ -44,15 +40,40 @@ export function MacSection({ settings, put, toast }: SectionProps) {
     setBusy(true);
     try {
       const p = await pair(decodePairLink(text));
-      setJustPaired(p.hostName);
       setPasting(false);
       setLink("");
+      onPaired(p.hostName);
     } catch (e) {
       setError(friendlyError(e));
     } finally {
       setBusy(false);
     }
   };
+  const size = large ? "" : " sm";
+  return (
+    <div className="pair-controls">
+      <div className="actions">
+        <button className={`btn${size}`} onClick={() => setPasting((v) => !v)} disabled={busy}><ClipboardPaste size={14} /> Paste link</button>
+        <button className={`btn${size} primary`} onClick={() => { setError(null); setScanning(true); }} disabled={busy}><QrCode size={14} /> {busy ? "Pairing…" : "Scan pairing code"}</button>
+      </div>
+      {pasting && (
+        <form className="mac-paste" onSubmit={(e) => { e.preventDefault(); if (link.trim()) void connect(link); }}>
+          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="sutra-pair:1:…" aria-label="Pairing link" autoFocus spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+          <button className="btn sm" disabled={busy || !link.trim()}>Pair</button>
+        </form>
+      )}
+      {error && <div className="d mac-error">{error}</div>}
+      {scanning && <QrScanner onCode={(t) => void connect(t)} onClose={() => setScanning(false)} />}
+    </div>
+  );
+}
+
+export function MacSection({ settings, put, toast }: SectionProps) {
+  const mac = useMac();
+  const paired = !!mac.pairing;
+  const stats = useQueueStats(paired);
+  const [justPaired, setJustPaired] = useState<string | null>(null);
+  const [confirmUnpair, setConfirmUnpair] = useState(false);
 
   const doUnpair = async () => {
     setConfirmUnpair(false);
@@ -69,22 +90,7 @@ export function MacSection({ settings, put, toast }: SectionProps) {
     void (stats?.failed ? outbox().retryFailed() : outbox().drain());
   };
 
-  const scanner = scanning && <QrScanner onCode={(t) => void connect(t)} onClose={() => setScanning(false)} />;
-  const pairButtons = (
-    <div className="actions">
-      <button className="btn sm" onClick={() => setPasting((v) => !v)} disabled={busy}><ClipboardPaste size={14} /> Paste link</button>
-      <button className="btn sm primary" onClick={() => { setError(null); setScanning(true); }} disabled={busy}><QrCode size={14} /> {busy ? "Pairing…" : "Scan pairing code"}</button>
-    </div>
-  );
-  const pasteRow = pasting && (
-    <div className="set-row stack">
-      <form className="mac-paste" onSubmit={(e) => { e.preventDefault(); if (link.trim()) void connect(link); }}>
-        <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="sutra-pair:1:…" aria-label="Pairing link" autoFocus spellCheck={false} autoCapitalize="off" autoCorrect="off" />
-        <button className="btn sm" disabled={busy || !link.trim()}>Pair</button>
-      </form>
-    </div>
-  );
-  const errorRow = error && <div className="set-row"><div className="grow"><div className="d mac-error">{error}</div></div></div>;
+  const pairButtons = <PairControls onPaired={setJustPaired} />;
 
   if (!mac.pairing) {
     return (
@@ -93,10 +99,7 @@ export function MacSection({ settings, put, toast }: SectionProps) {
           <Row title="Let your Mac do the work"
             desc="Pair this phone with Sutra on your Mac. Your Mac transcribes your recordings and writes the notes with the AI you use there, and every meeting shows up on both. Nothing goes to the Sutra cloud." />
           <Row title="Pair with your Mac" className="stack">{pairButtons}</Row>
-          {pasteRow}
-          {errorRow}
         </Group>
-        {scanner}
       </>
     );
   }
@@ -123,8 +126,6 @@ export function MacSection({ settings, put, toast }: SectionProps) {
               desc={`Your Mac no longer recognises this phone.${stats?.recordings ? ` ${plural(stats.recordings, "recording")} still waiting here will be sent once you pair again.` : ""}`}>
               {pairButtons}
             </Row>
-            {pasteRow}
-            {errorRow}
           </>
         ) : info && (
           <>
@@ -170,7 +171,6 @@ export function MacSection({ settings, put, toast }: SectionProps) {
           </Row>
         )}
       </Group>
-      {scanner}
     </>
   );
 }

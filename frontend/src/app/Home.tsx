@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { AudioLines, Sparkles } from "lucide-react";
+import { AudioLines, Check, Laptop, Sparkles } from "lucide-react";
+import { useMac } from "../pairing/runtime";
+import { PairControls } from "./settings/MacSection";
 import { api } from "../local/sutra";
 import { desktop, type AgentStatus } from "../desktop/bridge";
 import { isAgentId } from "../shared/agentProtocol";
@@ -65,6 +67,41 @@ export function Home() {
           </form>
         ) : (
           <button className="btn" onClick={() => void start()}>Start recording</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The phone's first screen: pair with Sutra on the Mac (scan its code, or paste the link). The phone
+ *  records; the Mac transcribes and writes the notes, reached through the user's own relay. Skippable. */
+export function PhoneSetup({ put }: { put: (patch: Record<string, unknown>) => Promise<void> }) {
+  const mac = useMac();
+  const [paired, setPaired] = useState<string | null>(null);
+  const done = () => void put({ setup_pairing: true });
+  const name = paired ?? (mac.pairing && !mac.pairing.revokedAt ? mac.pairing.hostName : null);
+  return (
+    <div className="scroll">
+      <div className="setup phone-setup">
+        <div className="hero-mark">{name ? <Check size={24} /> : <Laptop size={24} />}</div>
+        {name ? (
+          <>
+            <p className="hero-title">Connected to {name}</p>
+            <p className="hero-text">Record here — your Mac transcribes it and writes the notes, from any network. Every meeting shows up on both.</p>
+            <div className="setup-actions"><button className="btn primary" onClick={done}>Start using Sutra</button></div>
+          </>
+        ) : (
+          <>
+            <p className="hero-title">Connect to your Mac</p>
+            <p className="hero-text">Sutra on your phone records. Your Mac transcribes and writes the notes with its own AI, over an encrypted link that works from anywhere.</p>
+            <ol className="phone-steps">
+              <li>On your Mac, open Sutra → <b>Settings → Phones</b>.</li>
+              <li>Click <b>Pair a phone</b> (connect Cloudflare first if it asks).</li>
+              <li>Scan the code it shows.</li>
+            </ol>
+            <PairControls large onPaired={setPaired} />
+            <button className="set-disclosure phone-skip" onClick={done}>Skip for now</button>
+          </>
         )}
       </div>
     </div>

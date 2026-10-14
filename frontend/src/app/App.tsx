@@ -10,7 +10,7 @@ import { startPairingRuntime } from "../pairing/runtime";
 import { AskAll } from "./AskAll";
 import { DownloadChip } from "./DownloadChip";
 import { useIntegrations } from "./integrations";
-import { Home } from "./Home";
+import { Home, PhoneSetup } from "./Home";
 import { LiveView } from "./LiveView";
 import { MeetingView } from "./MeetingView";
 import { ProjectPage } from "./projects/ProjectPage";
@@ -45,6 +45,12 @@ function Shell() {
   }, []);
   const [toast, showToast] = useToast();
   const detail = pathname !== "/";
+  // Phone, first run: connect to the Mac before anything else (skippable). Desktop never sees this.
+  const phone = !desktop && Capacitor.isNativePlatform();
+  const [pairingSetup, setPairingSetup] = useState<boolean | null>(phone ? null : true);
+  useEffect(() => {
+    if (phone) void api.getSettings().then((s) => setPairingSetup(!!(s as Record<string, unknown>)["setup_pairing"])).catch(() => setPairingSetup(true));
+  }, [phone]);
 
   // Desktop: the main process can deep-link us (pill "Open", tray).
   useEffect(() => desktop?.onNavigate((p) => nav(p)), [nav]);
@@ -93,6 +99,9 @@ function Shell() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  if (pairingSetup === null) return null;
+  if (!pairingSetup) return <PhoneSetup put={async (patch) => { await api.putSettings(patch); setPairingSetup(true); }} />;
 
   return (
     <div className={`shell${detail ? " detail" : ""}`}>
