@@ -2,6 +2,7 @@
 // optional-chained so the same UI runs in the browser / on Android where the bridge is absent.
 import type { Detection } from "../shared/meetingRules";
 import type { AgentId, AgentRequest, AgentStatus } from "../shared/agentProtocol";
+import type { RelaySetupState } from "../shared/pairing/relaySetup";
 import type { LocalTranscription, SpeechProgress, SpeechStatus, SpeechTranscribeOpts } from "../shared/speechModels";
 import type { ExecMessage, ExecResult, PairingStatus, PairingUpdate } from "../shared/pairing/hostApi";
 
@@ -89,6 +90,16 @@ export interface DesktopBridge {
     result(r: ExecResult): void;
     /** Something phones care about changed (engine, model, speech). */
     hostChanged(): void;
+    /** One-click "Reach from anywhere" on the user's own Cloudflare account. */
+    relay: {
+      state(): Promise<RelaySetupState>;
+      start(o?: { rotateSecret?: boolean }): Promise<RelaySetupState>;
+      chooseAccount(id: string): Promise<RelaySetupState>;
+      continueSetup(): Promise<RelaySetupState>;
+      remove(o?: { localOnly?: boolean }): Promise<RelaySetupState>;
+      cancel(): Promise<RelaySetupState>;
+      onChange(cb: (s: RelaySetupState) => void): Unsub;
+    };
   };
   /** Save a backup file via the native save dialog; null when cancelled. */
   backup?: { save(json: string, filename: string): Promise<string | null> };

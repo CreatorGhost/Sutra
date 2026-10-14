@@ -75,6 +75,16 @@ contextBridge.exposeInMainWorld(
       },
       result: (r: unknown) => ipcRenderer.send("sutra:pair:result", r),
       hostChanged: () => ipcRenderer.send("sutra:pair:hostChanged"),
+      // One-click relay on the user's own Cloudflare account (electron/pairing/relaySetup.ts).
+      relay: Object.freeze({
+        state: () => ipcRenderer.invoke("sutra:relay:state"),
+        start: (o?: { rotateSecret?: boolean }) => ipcRenderer.invoke("sutra:relay:start", { rotateSecret: o?.rotateSecret === true }),
+        chooseAccount: (id: string) => ipcRenderer.invoke("sutra:relay:chooseAccount", String(id)),
+        continueSetup: () => ipcRenderer.invoke("sutra:relay:continue"),
+        remove: (o?: { localOnly?: boolean }) => ipcRenderer.invoke("sutra:relay:remove", { localOnly: o?.localOnly === true }),
+        cancel: () => ipcRenderer.invoke("sutra:relay:cancel"),
+        onChange: (cb: (s: unknown) => void) => listen("sutra:relay:changed", cb),
+      }),
     }),
     backup: Object.freeze({
       save: (json: string, filename: string) => ipcRenderer.invoke("sutra:backup:save", json, filename),

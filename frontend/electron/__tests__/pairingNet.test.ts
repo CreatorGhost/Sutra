@@ -84,7 +84,11 @@ describe("LAN pairing, end to end", () => {
     expect(host.status().devices).toMatchObject([{ id: phone.deviceId, name: "Pixel 9", connected: true, via: ["lan"] }]);
 
     expect(await phone.link.request("ping", {})).toHaveProperty("t");
-    expect(await phone.link.request("host.info", {})).toEqual({ engines: [], activeEngine: "claude", hostName: "Test Mac", appVersion: "9.9.9" });
+    const info = await phone.link.request("host.info", {});
+    expect(info).toMatchObject({ engines: [], activeEngine: "claude", hostName: "Test Mac", appVersion: "9.9.9" });
+    // The Mac's current routes travel with it, so phones stay up to date without re-pairing.
+    expect(info.routes?.length).toBeGreaterThan(0);
+    expect(info.routes!.every((r) => r.kind === "lan" && r.url.startsWith("ws://"))).toBe(true);
 
     // A 400 KiB "recording" in chunks, then transcribe it.
     const audio = new Uint8Array(400 * 1024).map((_, i) => i % 251);

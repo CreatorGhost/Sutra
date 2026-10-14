@@ -103,17 +103,23 @@ export class PairingHost {
 
   // ---- offers ----
 
-  /** A fresh pairing offer (replacing any open one), listing every route a phone could use. */
-  async newOffer(): Promise<PairingStatus> {
+  /** Every way a phone can reach this Mac right now. */
+  currentRoutes(): Route[] {
     const { store } = this.d;
-    if (store.lanEnabled) await this.ensureLan();
     const relay = store.relay;
-    const routes = offerRoutes({
+    return offerRoutes({
       addresses: lanAddresses(this.d.interfaces()),
       port: store.lanEnabled ? this.lan?.port ?? null : null,
       relayBase: relay.enabled && relay.url && relay.hostSecret ? relay.url : null,
       hostId: store.hostId,
     });
+  }
+
+  /** A fresh pairing offer (replacing any open one), listing every route a phone could use. */
+  async newOffer(): Promise<PairingStatus> {
+    const { store } = this.d;
+    if (store.lanEnabled) await this.ensureLan();
+    const routes = this.currentRoutes();
     if (!routes.length) {
       throw new Error(store.lanEnabled
         ? (this.lanError ?? "This Mac isn't on a network right now. Connect to Wi-Fi, or set up your relay under Reach from anywhere.")
@@ -151,6 +157,8 @@ export class PairingHost {
     this.d.store.setRelay(patch);
     this.applyRelay();
     this.changed();
+    // Connected phones re-read host.info and pick up the new routes.
+    this.broadcast("host.changed");
     return this.status();
   }
 
@@ -273,7 +281,7 @@ export class PairingHost {
         return this.blobs.put(deviceId, p);
       case "host.info": {
         const r = (await this.d.exec.call("host.info", {}, who)) as Record<string, unknown>;
-        return { ...r, hostName: this.d.hostName(), appVersion: this.d.appVersion };
+        return { ...r, hostName: this.d.hostName(), appVersion: this.d.appVersion, routes: this.currentRoutes() };
       }
       case "stt.transcribe": {
         const audio = typeof q.blobId === "string" ? this.blobs.take(deviceId, q.blobId) : null;

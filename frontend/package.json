@@ -5,11 +5,11 @@
   "type": "module",
   "main": "out/main/main.cjs",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/build-relay-worker.mjs && electron-vite dev",
     "dev:web": "vite",
     "build": "tsc -b && vite build",
     "build:pwa": "tsc -b && vite build",
-    "build:desktop": "npm run typecheck && npm run build:mcp && node scripts/build-mac-helper.mjs && electron-vite build && electron-builder --config electron-builder.json",
+    "build:desktop": "npm run typecheck && npm run build:mcp && node scripts/build-mac-helper.mjs && electron-vite build && node scripts/build-relay-worker.mjs && electron-builder --config electron-builder.json",
     "typecheck": "tsc -b && tsc -p tsconfig.electron.json",
     "preview": "vite preview",
     "test": "vitest run",

@@ -87,7 +87,8 @@ class FakeLink {
   startKeepalive() { this.keepalive = true; }
   onEvent(h: (e: string, d: unknown) => void) { this.events.push(h); return () => {}; }
   onClose(h: (r: string) => void) { if (!this.isOpen) h("closed"); else this.closes.push(h); }
-  async request(m: string) { if (m !== "host.info") throw new Error(m); this.infoCalls++; return { hostName: "Mac", speech: { ready: true } }; }
+  info: Record<string, unknown> = { hostName: "Mac", speech: { ready: true } };
+  async request(m: string) { if (m !== "host.info") throw new Error(m); this.infoCalls++; return this.info; }
   close() { if (!this.isOpen) return; this.isOpen = false; this.closes.forEach((h) => h("closed")); }
   emit(e: string) { this.events.forEach((h) => h(e, null)); }
 }
@@ -106,6 +107,33 @@ const online = (link: FakeLink, kind: Route["kind"] = "lan") => async () => ({ c
 
 describe("connection supervisor", () => {
   afterEach(() => { vi.useRealTimers(); });
+
+  it("learns the Mac's current routes (a relay set up after pairing) and saves them", async () => {
+    const link = new FakeLink();
+    const fresh: Route[] = [lan2, { kind: "relay", url: "wss://sutra-relay.me.workers.dev/phone/h1" }];
+    link.info = { hostName: "Mac", speech: { ready: true }, routes: [...fresh, { kind: "lan", url: "http://bad" }] };
+    const saveRoutes = vi.fn(async () => {});
+    const sup = new ConnectionSupervisor({ load: async () => pairing(), dial: online(link), revoke: async () => {}, saveRoutes, random: () => 0 });
+    await sup.start();
+    await vi.waitFor(() => expect(saveRoutes).toHaveBeenCalledWith(fresh));
+    expect(sup.snapshot().pairing?.routes).toEqual(fresh);
+    // Nothing new on the next refresh: nothing saved again.
+    link.emit("host.changed");
+    await vi.waitFor(() => expect(link.infoCalls).toBe(2));
+    expect(saveRoutes).toHaveBeenCalledTimes(1);
+    sup.stop();
+  });
+
+  it("keeps the paired routes when an older Mac sends none", async () => {
+    const link = new FakeLink();
+    const saveRoutes = vi.fn(async () => {});
+    const sup = new ConnectionSupervisor({ load: async () => pairing(), dial: online(link), revoke: async () => {}, saveRoutes, random: () => 0 });
+    await sup.start();
+    await vi.waitFor(() => expect(link.infoCalls).toBe(1));
+    expect(saveRoutes).not.toHaveBeenCalled();
+    expect(sup.snapshot().pairing?.routes).toEqual([lan1, relay]);
+    sup.stop();
+  });
 
   it("redials with backoff while the Mac is away, and kick() skips the wait", async () => {
     vi.useFakeTimers();

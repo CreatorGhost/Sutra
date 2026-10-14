@@ -130,6 +130,17 @@ export interface HostInfo {
   activeEngine: AgentId | null;
   activeModel: string | null;
   speech: { ready: boolean; model: string | null; error: string | null };
+  /** How phones can reach this Mac right now (its Wi-Fi addresses, its relay). Phones keep these up to
+   *  date, so a relay set up after pairing — or a new Wi-Fi address — needs no re-pairing. */
+  routes?: Route[];
+}
+
+/** Routes worth keeping from the Mac: LAN over ws://, relay over wss:// (or ws:// for a local relay). */
+export function sanitizeRoutes(v: unknown): Route[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((r): r is Route => !!r && typeof r === "object"
+    && ((r.kind === "lan" && /^ws:\/\/[^\s]+$/.test(r.url)) || (r.kind === "relay" && /^wss?:\/\/[^\s]+$/.test(r.url))))
+    .slice(0, 12).map((r) => ({ kind: r.kind, url: r.url }));
 }
 
 /** Every request the phone can make, with its params and result. */

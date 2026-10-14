@@ -5,7 +5,14 @@ the house, it can't find the Mac anymore. The **relay** fixes that. It's a tiny 
 Cloudflare account. The Mac keeps one connection open to it, and your phone reaches the Mac through it from any
 network: mobile data, a café, the office.
 
-Setting it up takes about five minutes, and you only do it once.
+**The easy way:** in Sutra on your Mac, open Settings → Phones → Reach from anywhere and click **Connect**. Sign in
+to Cloudflare in the page that opens (a free account is enough) and Sutra deploys the relay, creates your
+`workers.dev` address, stores a fresh secret and checks it works — about a minute. No Terminal, and no Node.js
+install: Sutra fetches what it needs (an official Node.js release, checked against a pinned checksum) the first time.
+Phones you already paired pick up the new route on their own.
+
+The rest of this page is the manual way, if you'd rather deploy it yourself. It takes about five minutes, and you
+only do it once.
 
 ## Is it private?
 

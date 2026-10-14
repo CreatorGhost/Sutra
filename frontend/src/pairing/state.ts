@@ -14,6 +14,12 @@ export async function savePairing(p: Pairing): Promise<void> {
   await repo.putSettings({ [PAIRING_KEY]: p });
 }
 
+/** The Mac's current routes, learned over the secure link (connection.ts). */
+export async function saveRoutes(routes: Route[]): Promise<void> {
+  const p = await getPairing();
+  if (p) await savePairing({ ...p, routes });
+}
+
 /** The Mac removed this phone: stop using it, but keep the record (and the queue) until the user acts. */
 export async function markRevoked(): Promise<void> {
   const p = await getPairing();

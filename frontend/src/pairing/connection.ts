@@ -3,10 +3,10 @@
 // or the network returns. If the Mac says it no longer knows this phone (or tells us it removed it),
 // the pairing is marked removed and retrying stops; recordings waiting on the phone stay put.
 import { connectPhone, HandshakeFailed, type PhoneConnection, type SecureLink } from "../shared/pairing/link";
-import type { HostInfo, Route } from "../shared/pairing/protocol";
+import { sanitizeRoutes, type HostInfo, type Route } from "../shared/pairing/protocol";
 import type { Pairing } from "./model";
 import { dialRoutes, MAC_UNREACHABLE } from "./routes";
-import { getPairing, markRevoked } from "./state";
+import { getPairing, markRevoked, saveRoutes } from "./state";
 
 export type MacStatus =
   | { state: "unpaired" }
@@ -21,6 +21,8 @@ export interface SupervisorDeps {
   load(): Promise<Pairing | null>;
   dial(p: Pairing): Promise<{ conn: PhoneConnection; route: Route }>;
   revoke(): Promise<void>;
+  /** Persist the Mac's current routes (it may have gained a relay, or a new Wi-Fi address). */
+  saveRoutes?(routes: Route[]): Promise<void>;
   random?: () => number;
 }
 
@@ -173,7 +175,15 @@ export class ConnectionSupervisor {
   private async refreshInfo(link: SecureLink): Promise<void> {
     try {
       const info = await link.request("host.info", {}, 15_000);
-      if (this.current === link) this.set({ hostInfo: info });
+      if (this.current !== link) return;
+      this.set({ hostInfo: info });
+      // An older Mac sends no routes: keep the ones from pairing.
+      const routes = sanitizeRoutes(info.routes);
+      const p = this.snap.pairing;
+      if (p && routes.length && JSON.stringify(routes) !== JSON.stringify(p.routes)) {
+        this.set({ pairing: { ...p, routes } });
+        await this.deps.saveRoutes?.(routes).catch(() => {});
+      }
     } catch { /* an older or busy Mac — keep what we had */ }
   }
 
@@ -202,5 +212,5 @@ export function dialPairing(p: Pairing, open?: Parameters<typeof dialRoutes>[2])
 let shared: ConnectionSupervisor | null = null;
 /** The app's one connection to the paired Mac (created on first use; started by the pairing runtime). */
 export function macConnection(): ConnectionSupervisor {
-  return (shared ??= new ConnectionSupervisor({ load: getPairing, dial: (p) => dialPairing(p), revoke: markRevoked }));
+  return (shared ??= new ConnectionSupervisor({ load: getPairing, dial: (p) => dialPairing(p), revoke: markRevoked, saveRoutes: saveRoutes }));
 }
