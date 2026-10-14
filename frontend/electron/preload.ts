@@ -27,7 +27,7 @@ contextBridge.exposeInMainWorld(
     }),
     pill: Object.freeze({
       onState: (cb: (s: unknown) => void) => listen("sutra:pill:state", cb),
-      action: (type: "record" | "stop" | "dismiss" | "open") => ipcRenderer.send("sutra:pill:action", { type }),
+      action: (type: "record" | "stop" | "dismiss" | "open" | "hide") => ipcRenderer.send("sutra:pill:action", { type }),
       resize: (width: number) => ipcRenderer.send("sutra:pill:resize", width),
     }),
     prefs: Object.freeze({

@@ -1,11 +1,12 @@
 // The pill: a tiny always-on-top window at the top-centre of the screen (see electron/main.ts).
 //   detected   → [app icon] Google Chrome in call      (● Record)  ×
 //   recording  → ● 12:04  ▂▅▇▅▂  Google Chrome          (■ Stop)
-//   processing → ◌ Writing notes…
+//   processing → ◌ Writing notes…                          (● Record)  ⊘
+// ⊘ hides the pill until the next recording (tray → "Show recording pill" brings it back).
 //   done       → ✓ Notes ready                           (Open)
 // It renders from state pushed by the main process and sends actions back; it owns no data itself.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, Loader2, Square, X } from "lucide-react";
+import { Check, EyeOff, Loader2, Square, X } from "lucide-react";
 import { desktop, type PillState } from "../desktop/bridge";
 import { clock } from "./format";
 import { useNow } from "./recorder";
@@ -28,7 +29,8 @@ export function Pill() {
     return () => ro.disconnect();
   }, [st.mode]);
 
-  const act = (a: "record" | "stop" | "dismiss" | "open") => desktop?.pill.action(a);
+  const act = (a: "record" | "stop" | "dismiss" | "open" | "hide") => desktop?.pill.action(a);
+  const hide = <button className="close" onClick={() => act("hide")} aria-label="Hide" title="Hide (shows again next recording; or tray → Show recording pill)"><EyeOff size={15} /></button>;
   const started = st.recorder.startedAt ?? null;
 
   return (
@@ -56,6 +58,7 @@ export function Pill() {
                 <Square size={12} fill="currentColor" /> Stop
               </button>
               <button className="close" onClick={() => act("open")} aria-label="Open Sutra" title="Open Sutra">↗</button>
+              {hide}
             </>
           )}
           {st.mode === "processing" && (
@@ -66,7 +69,7 @@ export function Pill() {
               <button className="pill-btn" onClick={() => act("record")} title="Record a new call">
                 <span className="rec-ring" /> Record
               </button>
-              <span style={{ width: 2 }} />
+              {hide}
             </>
           )}
           {st.mode === "done" && (

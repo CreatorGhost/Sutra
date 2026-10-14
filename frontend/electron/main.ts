@@ -14,6 +14,7 @@
 // preload bridge (electron/preload.ts).
 import { app, BrowserWindow, Menu, Tray, desktopCapturer, dialog, ipcMain, nativeImage, screen, session, shell, systemPreferences } from "electron";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { initDesktopStorage } from "./storage";
 import { userPath } from "./proc";
@@ -85,6 +86,8 @@ let detection: { active: (Detection & { icon?: string }) | null; visible: boolea
 let recordingCallKey: string | null = null;
 /** "Notes ready" flash after a recording finishes. */
 let doneFlash: { conversationId: number | null; until: number } | null = null;
+/** The user hid the pill during a recording / note-writing (e.g. while sharing their screen). */
+let pillHidden = false;
 let doneTimer: NodeJS.Timeout | null = null;
 
 const iconCache = new Map<string, string>();
@@ -92,7 +95,12 @@ async function appIcon(path?: string): Promise<string | undefined> {
   if (!path) return undefined;
   if (iconCache.has(path)) return iconCache.get(path);
   try {
-    const img = await app.getFileIcon(path, { size: "normal" });
+    // macOS 26 apps (Chrome, Zoom…) ship icons getFileIcon can't read — it returns a blank placeholder.
+    // Quick Look renders the real icon, as Finder shows it.
+    // Follow links first (/Applications/Safari.app points into the system Cryptex), or Quick Look shows a file icon.
+    const real = await realpath(path).catch(() => path);
+    let img = isMac ? await nativeImage.createThumbnailFromPath(real, { width: 64, height: 64 }).catch(() => null) : null;
+    if (!img || img.isEmpty()) img = await app.getFileIcon(real, { size: "normal" });
     const url = img.isEmpty() ? "" : img.toDataURL();
     iconCache.set(path, url);
     return url || undefined;
@@ -222,6 +230,8 @@ function createPillWindow(): void {
   pillWin = win;
   harden(win);
   win.setAlwaysOnTop(true, "screen-saver");
+  // Keep the pill out of screen shares and recordings, so a call never sees "Recording".
+  win.setContentProtection(true);
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.on("closed", () => { pillWin = null; });
   win.webContents.on("did-finish-load", () => pushPill());
@@ -239,6 +249,7 @@ function placePill(): void {
 type PillMode = "hidden" | "detected" | "recording" | "processing" | "done";
 function pillState(): { mode: PillMode; app?: string | null; service?: string; icon?: string; recorder: RecorderSnapshot; conversationId?: number | null } {
   const base = { recorder, app: detection.active?.app ?? recorder.app, service: detection.active?.service, icon: detection.active?.icon };
+  if (pillHidden && recorder.status !== "idle") return { ...base, mode: "hidden" };
   if (recorder.status === "recording" || recorder.status === "starting") return { ...base, mode: "recording", app: recorder.app ?? base.app };
   if (recorder.status === "processing") return { ...base, mode: "processing", app: recorder.app ?? base.app };
   if (doneFlash && doneFlash.until > Date.now()) return { ...base, mode: "done", conversationId: doneFlash.conversationId };
@@ -282,6 +293,8 @@ function stopRecording(): void {
 function onRecorderState(snap: RecorderSnapshot): void {
   const prev = recorder.status;
   recorder = snap;
+  // Hidden only for what was on screen then: a new recording or the end of note-writing shows it again.
+  if (snap.status === "idle" || (snap.status === "starting" && prev !== "starting")) pillHidden = false;
   if (prev === "processing" && snap.status === "idle" && !snap.error) {
     doneFlash = { conversationId: snap.conversationId ?? null, until: Date.now() + 9000 };
     if (doneTimer) clearTimeout(doneTimer);
@@ -325,6 +338,7 @@ function refreshTray(): void {
     rec
       ? { label: "Stop recording", click: () => stopRecording() }
       : { label: detection.active ? `Record ${detection.active.app} call` : "Start recording", click: () => startRecording() },
+    ...(pillHidden && recorder.status !== "idle" ? [{ label: "Show recording pill", click: () => { pillHidden = false; pushPill(); } }] : []),
     { type: "separator" },
     { label: "Detect meetings automatically", type: "checkbox", checked: prefs.detectMeetings, click: (i) => setPrefs({ detectMeetings: i.checked }) },
     { label: "Stop when the call ends", type: "checkbox", checked: prefs.autoStop, click: (i) => setPrefs({ autoStop: i.checked }) },
@@ -368,6 +382,7 @@ function registerIpc(): void {
       case "record": startRecording(); break;
       case "stop": stopRecording(); break;
       case "dismiss": detector.dismiss(); break;
+      case "hide": pillHidden = true; pushPill(); break;
       case "open": {
         const cid = doneFlash?.conversationId ?? recorder.conversationId;
         doneFlash = null;

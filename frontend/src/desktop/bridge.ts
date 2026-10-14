@@ -49,7 +49,7 @@ export interface DesktopBridge {
   platform: string;
   detection: { get(): Promise<DetectionState>; onChange(cb: (s: DetectionState) => void): Unsub };
   recorder: { publish(s: RecorderSnapshot): void };
-  pill: { onState(cb: (s: PillState) => void): Unsub; action(type: "record" | "stop" | "dismiss" | "open"): void; resize(width: number): void };
+  pill: { onState(cb: (s: PillState) => void): Unsub; action(type: "record" | "stop" | "dismiss" | "open" | "hide"): void; resize(width: number): void };
   prefs: { get(): Promise<DesktopPrefs>; set(patch: Partial<DesktopPrefs>): Promise<DesktopPrefs> };
   permissions: { get(): Promise<{ microphone: string; screen: string }>; request(kind: "microphone" | "screen"): Promise<boolean> };
   onNavigate(cb: (path: string) => void): Unsub;
