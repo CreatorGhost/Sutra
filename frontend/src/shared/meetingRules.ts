@@ -277,6 +277,43 @@ export class DetectionTracker {
   }
 }
 
+/**
+ * "Stop when the call ends", forgiving. A call can vanish for a moment — a Meet seen only through its
+ * window title disappears while you look at another Chrome tab — so the recording stops only after the
+ * call it was started for has stayed gone for `graceMs`, and never if it comes back first.
+ */
+export class AutoStop {
+  private call: Detection | null = null;
+  private timer: unknown = null;
+
+  constructor(
+    private readonly stop: () => void,
+    private readonly graceMs = 45_000,
+    private readonly timers: { set: (fn: () => void, ms: number) => unknown; clear: (t: unknown) => void } =
+      { set: (fn, ms) => setTimeout(fn, ms), clear: (t) => clearTimeout(t as ReturnType<typeof setTimeout>) },
+  ) {}
+
+  /** A recording started for this call (null: not tied to a detected call — never auto-stopped). */
+  recording(call: Detection | null): void { this.cancel(); this.call = call; }
+  /** The recording ended for any reason. */
+  idle(): void { this.cancel(); this.call = null; }
+
+  /** Each detector change while recording. */
+  update(up: Pick<TrackerUpdate, "active" | "ended">, enabled: boolean): void {
+    const call = this.call;
+    if (!call) return;
+    if (up.active && sameCall(up.active, call)) { this.cancel(); return; } // it's back (or never left)
+    if (enabled && up.ended && sameCall(up.ended, call) && !this.timer) {
+      this.timer = this.timers.set(() => { this.timer = null; if (this.call === call) this.stop(); }, this.graceMs);
+    }
+  }
+
+  private cancel(): void {
+    if (this.timer) this.timers.clear(this.timer);
+    this.timer = null;
+  }
+}
+
 // ---- platform output parsers (pure; the detector feeds them raw command output) -------------------
 
 /**

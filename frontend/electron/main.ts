@@ -25,7 +25,7 @@ import { mcpInstall, mcpRemove, mcpSnippet, mcpStatus, type McpClientId } from "
 import { cancelSpeechDownload, deleteSpeechModel, downloadSpeechModel, speechStatus, transcribeSpeech } from "./speech/service";
 import { initPairing, stopPairing } from "./pairing";
 import { grantedWorkspace, registerProjectFolderIpc } from "./projectFolders";
-import { macAppCandidates, type Detection, type TrackerUpdate } from "../src/shared/meetingRules";
+import { AutoStop, macAppCandidates, type Detection, type TrackerUpdate } from "../src/shared/meetingRules";
 import { isAgentId, type AgentId, type AgentRequest } from "../src/shared/agentProtocol";
 
 const isMac = process.platform === "darwin";
@@ -85,7 +85,8 @@ let quitAfterStop = false;
 let recorder: RecorderSnapshot = { status: "idle" };
 let detection: { active: (Detection & { icon?: string }) | null; visible: boolean } = { active: null, visible: false };
 /** The call that was live when the current recording started — auto-stop fires when THAT call ends. */
-let recordingCallKey: string | null = null;
+// "Stop when the call ends", with a grace period (src/shared/meetingRules.ts AutoStop).
+const autoStop = new AutoStop(() => { if (recorder.status === "recording") stopRecording(); });
 /** "Notes ready" flash after a recording finishes. */
 let doneFlash: { conversationId: number | null; until: number } | null = null;
 /** The user hid the pill during a recording / note-writing (e.g. while sharing their screen). */
@@ -341,7 +342,7 @@ function recorderCall(method: "start" | "stop", arg?: unknown): void {
 }
 
 function startRecording(): void {
-  recordingCallKey = detection.active?.key ?? null;
+  autoStop.recording(detection.active ?? null);
   recorderCall("start", { app: detection.active?.app ?? null });
 }
 function stopRecording(): void {
@@ -358,7 +359,7 @@ function onRecorderState(snap: RecorderSnapshot): void {
     if (doneTimer) clearTimeout(doneTimer);
     doneTimer = setTimeout(() => { doneFlash = null; pushPill(); }, 9100);
   }
-  if (snap.status === "idle") recordingCallKey = null;
+  if (snap.status !== "recording" && snap.status !== "starting") autoStop.idle();
   pushPill();
   if (quitAfterStop && snap.status === "idle") { quitting = true; app.quit(); }
 }
@@ -366,10 +367,8 @@ function onRecorderState(snap: RecorderSnapshot): void {
 async function onDetection(up: TrackerUpdate): Promise<void> {
   const active = up.active ? { ...up.active, icon: await appIcon(up.active.appPath) } : null;
   detection = { active, visible: up.visible };
-  // The call we were recording has ended → stop and write the notes.
-  if (up.ended && prefs.autoStop && recorder.status === "recording" && recordingCallKey && up.ended.key === recordingCallKey) {
-    stopRecording();
-  }
+  // The call we were recording has ended (and stays gone) → stop and write the notes.
+  if (recorder.status === "recording") autoStop.update(up, prefs.autoStop);
   pushPill();
 }
 

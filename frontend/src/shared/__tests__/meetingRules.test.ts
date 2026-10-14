@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
-  DetectionTracker,
+  AutoStop, DetectionTracker,
   appFromBundleId,
   appName,
   bundlePath,
@@ -147,6 +147,52 @@ describe("DetectionTracker", () => {
     expect(t.update(meet).visible).toBe(false);
     t.update(null); // call ended
     expect(t.update(meet).visible).toBe(true);
+  });
+});
+
+describe("AutoStop (stop when the call ends, with a grace period)", () => {
+  const meet = { app: "Google Chrome", service: "Google Meet", source: "tab" as const, key: "Google Chrome|Google Meet" };
+  const viaTitle = { app: "Browser", service: "Google Meet", source: "window" as const, key: "Browser|Google Meet" };
+  function harness() {
+    let pending: (() => void) | null = null;
+    const stop = vi.fn();
+    const a = new AutoStop(stop, 45_000, { set: (fn) => { pending = fn; return 1; }, clear: () => { pending = null; } });
+    return { a, stop, fire: () => { const f = pending; pending = null; f?.(); }, get pending() { return pending; } };
+  }
+
+  it("a call that vanishes and comes back (switching Chrome tabs) never stops the recording", () => {
+    const h = harness();
+    h.a.recording(meet);
+    h.a.update({ active: null, ended: meet }, true); // gone: grace period starts
+    expect(h.pending).not.toBeNull();
+    h.a.update({ active: viaTitle }, true);           // back, under another name
+    expect(h.pending).toBeNull();
+    h.fire();
+    expect(h.stop).not.toHaveBeenCalled();
+  });
+
+  it("stops once the call stays gone, and only when the setting is on", () => {
+    const h = harness();
+    h.a.recording(meet);
+    h.a.update({ active: null, ended: viaTitle }, true);
+    h.fire();
+    expect(h.stop).toHaveBeenCalledTimes(1);
+    const off = harness();
+    off.a.recording(meet);
+    off.a.update({ active: null, ended: meet }, false);
+    expect(off.pending).toBeNull();
+  });
+
+  it("a recording not started for a detected call, or already stopped, is left alone", () => {
+    const h = harness();
+    h.a.recording(null);
+    h.a.update({ active: null, ended: meet }, true);
+    expect(h.pending).toBeNull();
+    h.a.recording(meet);
+    h.a.update({ active: null, ended: meet }, true);
+    h.a.idle();
+    h.fire();
+    expect(h.stop).not.toHaveBeenCalled();
   });
 });
 
