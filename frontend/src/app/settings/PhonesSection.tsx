@@ -1,15 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { Check, Cloud, ExternalLink, Loader2, QrCode, RefreshCw, Smartphone } from "lucide-react";
-import { desktop, isMacDesktop, type PairingStatus } from "../../desktop/bridge";
+import { desktop, type PairingStatus } from "../../desktop/bridge";
 import type { RelaySetupState, SetupStep } from "../../shared/pairing/relaySetup";
 import { friendlyError } from "../ui";
-import { Group, Row, RowMenu, Status, SwitchRow, type SectionProps } from "./kit";
+import { Group, Row, RowMenu, Status, type SectionProps } from "./kit";
 
 // Phones (desktop only): pair the Sutra phone app with this computer. A paired phone records, then this
 // computer transcribes each window with its own speech model, writes every note with its own AI engine,
-// and keeps a copy of the finished meeting. Phones reach it on the same Wi-Fi directly, or from
-// anywhere through the user's own Cloudflare relay — end-to-end encrypted either way
+// and keeps a copy of the finished meeting. Phones reach it from anywhere through the user's own
+// Cloudflare relay — end-to-end encrypted, so the relay can't read anything
 // (electron/pairing/*, src/shared/pairing/*).
 
 const RELAY_DOCS = "https://github.com/CreatorGhost/Sutra/blob/dev/docs/RELAY.md";
@@ -61,6 +61,7 @@ export function PhonesSection({ toast }: SectionProps) {
     setBusy(true);
     try { await fn(); } catch (e) { toast(friendlyError(e)); } finally { setBusy(false); }
   };
+  const relayReady = st.relay.enabled && !!st.relay.url && st.relay.hasSecret;
   const newCode = () => { setJustPaired(null); void act(async () => setSt(await pairing.newOffer())); };
   const remove = (id: string) => { setRemoving(null); void act(async () => { await pairing.removeDevice(id); setSt(await pairing.status()); }); };
 
@@ -74,8 +75,10 @@ export function PhonesSection({ toast }: SectionProps) {
             <button className="btn sm" onClick={newCode} disabled={busy}>Pair another</button>
           </Row>
         ) : (
-          <Row title="Pair a phone" desc="Record on your phone. This computer transcribes and writes the notes with its own engine, and keeps a copy of every meeting.">
-            <button className="btn sm primary" onClick={newCode} disabled={busy}><QrCode size={14} /> Pair a phone</button>
+          <Row title="Pair a phone" desc={relayReady
+            ? "Record on your phone. This computer transcribes and writes the notes with its own engine, and keeps a copy of every meeting."
+            : "Connect with Cloudflare below first — your phone reaches this computer through your relay, from any network."}>
+            <button className="btn sm primary" onClick={newCode} disabled={busy || !relayReady}><QrCode size={14} /> Pair a phone</button>
           </Row>
         )}
       </Group>
@@ -101,12 +104,7 @@ export function PhonesSection({ toast }: SectionProps) {
         </Group>
       )}
 
-      <RelayCard st={st} toast={toast} onSaved={setSt} />
-
-      <Group hint={<>{isMacDesktop ? "macOS may ask to allow incoming connections — allow it so your phone can reach Sutra." : "Your firewall may ask to allow incoming connections — allow it so your phone can reach Sutra."}{st.lan.error ? <> {st.lan.error}</> : null}</>}>
-        <SwitchRow title="Allow phones on this Wi-Fi" desc="Phones on the same network connect to this computer directly."
-          checked={st.lan.enabled} onChange={(on) => void act(async () => setSt(await pairing.setLan(on)))} />
-      </Group>
+      <RelayCard st={st} toast={toast} onSaved={setSt} onReady={() => { if (!st.offer) newCode(); }} />
     </>
   );
 }
@@ -136,7 +134,7 @@ function PairPanel({ offer, busy, onNew, onCancel }: { offer: NonNullable<Pairin
         <div className="d">On your phone, open Sutra → Settings → Your Mac, tap “Scan pairing code” and point the camera at this code.</div>
         <ul className="pair-routes">
           {offer.routes.map((r) => (
-            <li key={r.url}>{r.kind === "lan" ? <>Same Wi-Fi: <span className="set-token">{new URL(r.url).hostname}</span></> : <>Anywhere: <span className="set-token">{new URL(r.url.replace(/^ws/, "http")).hostname}</span></>}</li>
+            <li key={r.url}>{r.kind === "lan" ? <>Same Wi-Fi: <span className="set-token">{new URL(r.url).hostname}</span></> : <>From anywhere, through <span className="set-token">{new URL(r.url.replace(/^ws/, "http")).hostname}</span></>}</li>
           ))}
         </ul>
         <div className="pair-foot">
@@ -161,7 +159,7 @@ const STEPS: { step: SetupStep; label: string }[] = [
 
 /** "Reach from anywhere": one click sets up the user's own relay on their free Cloudflare account
  *  (electron/pairing/relaySetup.ts), after ViewCode's Quick connect. A relay set up by hand still works. */
-function RelayCard({ st, toast, onSaved }: { st: PairingStatus; toast: (m: string) => void; onSaved: (s: PairingStatus) => void }) {
+function RelayCard({ st, toast, onSaved, onReady }: { st: PairingStatus; toast: (m: string) => void; onSaved: (s: PairingStatus) => void; onReady: () => void }) {
   const pairing = desktop!.pairing!;
   const [setup, setSetup] = useState<RelaySetupState | null>(null);
   const [manual, setManual] = useState(false);
@@ -170,11 +168,20 @@ function RelayCard({ st, toast, onSaved }: { st: PairingStatus; toast: (m: strin
     void pairing.relay.state().then(setSetup).catch(() => {});
     return pairing.relay.onChange(setSetup);
   }, [pairing]);
+  // Set up just now: go straight to the pairing QR (it now lists the relay too), as ViewCode does.
+  const ready = useRef(onReady);
+  ready.current = onReady;
+  const prev = useRef<RelaySetupState["status"] | null>(null);
+  useEffect(() => {
+    const was = prev.current;
+    prev.current = setup?.status ?? null;
+    if (setup?.status === "done" && was === "running") ready.current();
+  }, [setup?.status]);
 
   const call = (fn: () => Promise<RelaySetupState>) => void fn().then(setSetup).catch((e) => toast(friendlyError(e)));
   const configured = !!st.relay.url && st.relay.hasSecret;
   const state = RELAY_STATE[st.relay.state];
-  const hint = <>Phones off your Wi-Fi reach this computer through a small relay on your own free Cloudflare account. It only passes along end-to-end encrypted messages — it can't read them.</>;
+  const hint = <>Your phone reaches this computer from any network through a small relay on your own free Cloudflare account. It only passes along end-to-end encrypted messages — it can't read them.</>;
   const s = setup ?? { status: "idle" as const };
 
   // Setup in progress, or waiting on the person.
@@ -239,7 +246,7 @@ function RelayCard({ st, toast, onSaved }: { st: PairingStatus; toast: (m: strin
 
       {configured ? (
         confirmRemove ? (
-          <Row title="Remove your relay?" desc="Phones off your Wi-Fi stop reaching this computer. Sutra deletes the relay from your Cloudflare account.">
+          <Row title="Remove your relay?" desc="Paired phones stop reaching this computer. Sutra deletes the relay from your Cloudflare account.">
             <div className="actions">
               <button className="btn sm" onClick={() => setConfirmRemove(false)}>Cancel</button>
               <button className="btn sm danger" onClick={() => { setConfirmRemove(false); call(() => pairing.relay.remove()); }}>Remove</button>

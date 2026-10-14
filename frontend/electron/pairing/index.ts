@@ -72,6 +72,9 @@ export function initPairing(getWin: () => BrowserWindow | null): void {
   ready = (async () => {
     const userData = app.getPath("userData");
     const store = await PairingStore.open(jsonFile(join(userData, "pairing.json")), keychain);
+    // ponytail: phones connect only through the relay ("Reach from anywhere"); the same-Wi-Fi server stays
+    // in host.ts but is switched off here. Turn it back on by deleting this line (and the Settings toggle).
+    if (store.lanEnabled) store.setLan(false);
     const host = new PairingHost({
       store, exec, hostName: hostDisplayName, appVersion: app.getVersion(), interfaces: networkInterfaces,
       notify: (u) => { if (u.relay.state === "online") setup?.relayConnected(); push(u); },

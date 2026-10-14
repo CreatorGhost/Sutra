@@ -123,7 +123,7 @@ export class PairingHost {
     if (!routes.length) {
       throw new Error(store.lanEnabled
         ? (this.lanError ?? "This Mac isn't on a network right now. Connect to Wi-Fi, or set up your relay under Reach from anywhere.")
-        : "Turn on “Allow phones on this Wi-Fi”, or set up your relay under Reach from anywhere, first.");
+        : "Connect with Cloudflare under Reach from anywhere first — phones reach this computer through your relay.");
     }
     const offer = this.offers.create({ hostId: store.hostId, hostName: this.d.hostName(), hostKey: store.identity.publicKey }, routes);
     if (this.offerTimer) clearTimeout(this.offerTimer);

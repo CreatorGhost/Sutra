@@ -10,7 +10,7 @@ export const LAN_HANDSHAKE_MS = 8_000;
 export const RELAY_OPEN_MS = 10_000;
 export const RELAY_HANDSHAKE_MS = 15_000;
 
-export const MAC_UNREACHABLE = "Couldn't reach your Mac. Check that it's on with Sutra open, and that your phone is on the same Wi-Fi (or your relay is set up).";
+export const MAC_UNREACHABLE = "Couldn't reach your Mac. Check that it's on with Sutra open and online, then try again.";
 
 /** Opens a socket and resolves once it can send. */
 export type OpenSocket = (url: string, timeoutMs: number) => Promise<LinkSocket>;
