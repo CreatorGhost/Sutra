@@ -13,7 +13,7 @@ vi.mock("../../local/repo", () => ({
 
 const { pairWithOffer, getPairing, markRevoked, forgetPairing } = await import("../state");
 const { ConnectionSupervisor, dialPairing } = await import("../connection");
-const { PAIRING_KEY, PAIRED_ENGINE_KEY, PAIRED_MODEL_KEY, readPairing } = await import("../model");
+const { PAIRING_KEY, PAIRED_ENGINE_KEY, PAIRED_MODEL_KEY, readPairing, thisDevice } = await import("../model");
 const { resolveProvider, isFullTextEngine } = await import("../../providers");
 
 const LAN = "ws://192.168.1.4:47321", LAN2 = "ws://10.0.0.9:47321", RELAY = "wss://relay.example.workers.dev/phone/host-1";
@@ -90,6 +90,11 @@ describe("pairing from a scanned code", () => {
     const err = await pairWithOffer({ ...offer, code: "ZZZZZZZZZZZZ" }, { open: network(mac.auth, [LAN]).open, device: { deviceName: "P", platform: "android" } }).catch((e) => e);
     expect(err.code).toBe("bad_code");
     expect(settings[PAIRING_KEY]).toBeUndefined();
+  });
+
+  it("introduces the phone by its model when the WebView says it", () => {
+    expect(thisDevice({ userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UQ1A.240205.004; wv)" }, "android")).toEqual({ deviceName: "Pixel 8", platform: "android" });
+    expect(thisDevice({ userAgent: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit" }, "android").deviceName).toBe("Android phone");
   });
 });
 

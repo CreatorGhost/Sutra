@@ -114,7 +114,8 @@ export function MacSection({ settings, put, toast }: SectionProps) {
 
   return (
     <>
-      <Group label="Your Mac" hint={justPaired ? `Paired with ${justPaired}. Recordings from this phone are now transcribed on your Mac.` : undefined}>
+      <Group label="Your Mac" hint={justPaired ? `Paired with ${justPaired}. Recordings from this phone are now transcribed on your Mac.`
+        : mac.status.state === "offline" ? mac.status.error ?? undefined : undefined}>
         <Row title={p.hostName} desc={<Status kind={line.kind}>{line.text}</Status>} />
         {mac.status.state === "revoked" ? (
           <>
