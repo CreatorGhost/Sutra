@@ -77,3 +77,4 @@ frontend/electron/native/micwatch
 # Local CA certificates for Docker builds behind TLS inspection — never commit them (certs/README.md).
 certs/*
 !certs/README.md
+frontend/release/
