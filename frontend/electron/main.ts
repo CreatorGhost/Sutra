@@ -76,6 +76,7 @@ interface RecorderSnapshot {
   level?: number;
   conversationId?: number | null;
   error?: string | null;
+  askProject?: boolean;
 }
 
 let mainWin: BrowserWindow | null = null;
@@ -371,6 +372,7 @@ function stopRecording(): void {
 
 function onRecorderState(snap: RecorderSnapshot): void {
   const prev = recorder.status;
+  if (snap.askProject && !recorder.askProject) showMain();
   recorder = snap;
   // Hidden only for what was on screen then: a new recording or the end of note-writing shows it again.
   if (snap.status === "idle" || (snap.status === "starting" && prev !== "starting")) pillHidden = false;

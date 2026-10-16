@@ -30,7 +30,7 @@ export interface MeetingApi {
     channelOpts?: boolean | IngestChannelOpts,
   ): Promise<{ turns?: any[] } | undefined>;
   closeSession(sid: number): Promise<unknown>;
-  processSession(sid: number): Promise<any>;
+  processSession(sid: number, projectId?: number | null): Promise<any>;
 }
 
 /** Reactive surface the controller reports through. */
@@ -48,6 +48,9 @@ export interface MeetingCallbacks {
   onLevel?: (me: number, them: number) => void;
   /** The session finished processing (result of api.processSession, plus the session id). */
   onProcessed?: (result: any, sessionId: number) => void | Promise<void>;
+  /** Asked once capture has stopped, before the notes are written: the project this meeting is for
+   *  (null = none, undefined = let Sutra decide). */
+  chooseProject?: () => Promise<number | null | undefined>;
 }
 
 export type MeetingPhase = "idle" | "capturing" | "processing" | "ended";
@@ -224,7 +227,8 @@ export class MeetingController {
     try {
       await Promise.allSettled(this.uploads);
       await this.api.closeSession(sid);
-      const r: any = await this.api.processSession(sid);
+      const projectId = await this.cb.chooseProject?.().catch(() => undefined);
+      const r: any = await (projectId === undefined ? this.api.processSession(sid) : this.api.processSession(sid, projectId));
       if (r?.failed > 0) {
         this.cb.onError?.(`Processed with issues — ${r.failed} part(s) failed${r.lastError ? ": " + r.lastError : ""}.`);
       }

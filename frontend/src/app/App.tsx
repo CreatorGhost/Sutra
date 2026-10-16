@@ -16,6 +16,7 @@ import { MeetingView } from "./MeetingView";
 import { ProjectPage } from "./projects/ProjectPage";
 import { ProjectsPage } from "./projects/ProjectsPage";
 import { RecorderProvider, useRecorder } from "./recorder";
+import { ProjectAsk } from "./meeting/ProjectAsk";
 import { SettingsSheet, type SectionId } from "./SettingsSheet";
 import { Sidebar } from "./Sidebar";
 import { useToast } from "./ui";
@@ -119,6 +120,7 @@ function Shell() {
         </Routes>
       </main>
       {settingsOpen && <SettingsSheet initialSection={settingsSection} onClose={() => setSettingsOpen(false)} />}
+      <ProjectAsk />
       <DownloadChip onDone={showToast} />
       {toast}
     </div>

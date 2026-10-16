@@ -171,7 +171,9 @@ export async function autoMapConversation(convId: number): Promise<void> {
   } catch (e) { console.warn("auto-map skipped", convId, e); }
 }
 
-export async function processSession(sessionId: number, provider: Provider) {
+/** `projectId`: what the user said the meeting was for when they stopped (null = no project); left
+ *  undefined, Sutra maps it itself after the notes. */
+export async function processSession(sessionId: number, provider: Provider, projectId?: number | null) {
   // Speaker-ID first (hybrid only; no-ops on-device): cluster turns by voiceprint into stable per-session
   // speakers and auto-tag enrolled people, so segmentation/extraction/display see corrected speakers.
   const speakers = await clusterAndIdentify(sessionId);
@@ -181,6 +183,8 @@ export async function processSession(sessionId: number, provider: Provider) {
   const newConvIds = await segmentSession(sessionId);
   const memoryless = await repo.sessionConversationsWithoutMemory(sessionId);
   const toExtract = Array.from(new Set<number>([...newConvIds, ...memoryless]));
+  // Before the notes, so the project's brief, people and code folders shape them.
+  if (projectId !== undefined) for (const cid of newConvIds) await repo.setConversationProject(cid, projectId, false);
   const extracted: any[] = [];
   let lastError: string | null = null;
   for (const cid of toExtract) {
@@ -198,7 +202,7 @@ export async function processSession(sessionId: number, provider: Provider) {
   // SILENTLY map a lone clear winner (HIGH), suggest a MEDIUM, leave the rest unmapped. Runs BEFORE
   // auto-minutes so a high-confidence map grounds the minutes (right glossary + roster). Best-effort.
   for (const r of extracted) {
-    if (r?.conversation_id == null) continue;
+    if (r?.conversation_id == null || projectId !== undefined) continue;
     await autoMapConversation(r.conversation_id);
   }
   // Auto Minutes-of-Meeting: for conversations the extractor flagged as meetings, generate minutes

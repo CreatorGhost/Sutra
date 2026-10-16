@@ -180,6 +180,15 @@ describe("MeetingController — stop mirrors Capture.tsx", () => {
     expect(close).toBeLessThan(proc);
   });
 
+  it("asks which project before writing the notes, and passes the answer on", async () => {
+    const p = makeProvider();
+    const api = makeApi();
+    const ctrl = new MeetingController({ provider: p.provider, api, chooseProject: async () => 7 });
+    await ctrl.start();
+    await ctrl.stop();
+    expect(api.processSession).toHaveBeenCalledWith(42, 7);
+  });
+
   it("teardown() on unmount tears down a live capture without processing", async () => {
     const p = makeProvider();
     const api = makeApi();

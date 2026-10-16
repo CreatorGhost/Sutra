@@ -42,6 +42,8 @@ export interface RecorderState {
   sessionId: number | null;
   /** The conversation the most recent recording produced. */
   lastConversationId: number | null;
+  /** A stopped meeting is waiting to be told which project it was for before its notes are written. */
+  askProject: boolean;
 }
 
 interface Recorder {
@@ -49,13 +51,15 @@ interface Recorder {
   start(opts?: { app?: string | null }): Promise<void>;
   stop(): Promise<void>;
   clearError(): void;
+  /** Answer askProject: a project id, null for none, undefined to let Sutra decide. */
+  answerProject(projectId: number | null | undefined): void;
 }
 
 interface ActiveSession { stop(): Promise<void>; teardown(): void }
 
 const INITIAL: RecorderState = {
   status: "idle", capture: "idle", saving: 0, startedAt: null, app: null, mode: null, level: 0, turns: [], inflight: 0,
-  error: null, notice: null, sessionId: null, lastConversationId: null,
+  error: null, notice: null, sessionId: null, lastConversationId: null, askProject: false,
 };
 
 export const SAVED_FOR_MAC = "Saved on your phone — it'll be transcribed when your Mac is reachable.";
@@ -80,6 +84,23 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     setState((s) => withStatus({ ...s, ...(typeof p === "function" ? p(s) : p) }));
   }, []);
   const session = useRef<ActiveSession | null>(null);
+  const projectAnswer = useRef<((v: number | null | undefined) => void) | null>(null);
+  // Asked only when there are projects; unanswered (e.g. stopped from the island while away) → Sutra decides.
+  const chooseProject = useCallback(async (): Promise<number | null | undefined> => {
+    if (!(await api.listProjects().catch(() => [])).length) return undefined;
+    projectAnswer.current?.(undefined);
+    return new Promise((resolve) => {
+      const done = (v: number | null | undefined) => {
+        clearTimeout(timer);
+        if (projectAnswer.current === done) { projectAnswer.current = null; patch({ askProject: false }); }
+        resolve(v);
+      };
+      const timer = setTimeout(() => done(undefined), 90_000);
+      projectAnswer.current = done;
+      patch({ askProject: true });
+    });
+  }, [patch]);
+  const answerProject = useCallback((v: number | null | undefined) => projectAnswer.current?.(v), []);
   const level = useRef(0);
 
   // Keep the screen (and, on Android, the mic service) alive while recording.
@@ -124,10 +145,11 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
         patch((s) => ({ capture: "idle", sessionId: null, inflight: 0, saving: s.saving + (phase === "processing" ? 1 : 0) }));
       },
       onProcessed: (_r, sid) => finished(sid),
+      chooseProject,
     });
     session.current = mine;
     await ctrl.start();
-  }, [patch, finished]);
+  }, [patch, finished, chooseProject]);
 
   const startMic = useCallback(async () => {
     const s = await api.createSession("mic", "ambient", null);
@@ -253,16 +275,16 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   }, [start, stop]);
 
   // Desktop: publish the snapshot the pill + tray render (levels are rounded so small jitter is cheap).
-  const publishKey = `${state.status}|${state.startedAt}|${state.app}|${state.lastConversationId}|${state.error}|${Math.round(state.level * 200)}`;
+  const publishKey = `${state.askProject}|${state.status}|${state.startedAt}|${state.app}|${state.lastConversationId}|${state.error}|${Math.round(state.level * 200)}`;
   useEffect(() => {
     desktop?.recorder.publish({
       status: state.status, startedAt: state.startedAt, app: state.app, level: state.level,
-      conversationId: state.lastConversationId, error: state.error,
+      conversationId: state.lastConversationId, error: state.error, askProject: state.askProject,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publishKey]);
 
-  const value = useMemo(() => ({ state, start, stop, clearError }), [state, start, stop, clearError]);
+  const value = useMemo(() => ({ state, start, stop, clearError, answerProject }), [state, start, stop, clearError, answerProject]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

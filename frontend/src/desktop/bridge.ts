@@ -28,6 +28,8 @@ export interface RecorderSnapshot {
   level?: number;
   conversationId?: number | null;
   error?: string | null;
+  /** Waiting for "which project was this meeting for?" — the app window comes forward to ask. */
+  askProject?: boolean;
 }
 export interface PillState {
   mode: PillMode;

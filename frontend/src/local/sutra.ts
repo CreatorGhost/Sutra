@@ -42,7 +42,7 @@ export const api = {
   createSession: (device?: string, kind?: repo.SessionKind, sourceApp?: string | null) => repo.createSession(device, kind, sourceApp),
   listSessions: () => repo.listSessions(),
   closeSession: async (sid: number) => { await repo.closeSession(sid); return { session_id: sid, status: "closed" }; },
-  processSession: async (sid: number) => extractSvc.processSession(sid, await provider()),
+  processSession: async (sid: number, projectId?: number | null) => extractSvc.processSession(sid, await provider(), projectId),
   /** Recover any recording that was transcribed but never fully processed (app killed / proxy down /
    *  prior crash). Safe to call on launch. Hybrid only — no-ops cleanly on-device. */
   reprocessIncomplete: async () => extractSvc.reprocessIncomplete(await provider()),
