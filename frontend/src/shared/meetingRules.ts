@@ -37,7 +37,7 @@ export interface Detection {
 
 // ---- app naming -----------------------------------------------------------------------------------
 
-const BROWSERS = new Set(["Google Chrome", "Microsoft Edge", "Firefox", "Safari", "Arc", "Brave Browser", "Chromium", "Opera", "Vivaldi"]);
+const BROWSERS = new Set(["Google Chrome", "Microsoft Edge", "Firefox", "Safari", "Arc", "Brave Browser", "Chromium", "Opera", "Vivaldi", "Comet", "Helium", "Dia", "Zen", "Orion", "ego lite"]);
 
 /** Executable / bundle / package ids → the product name people recognise. Keys are lowercase. */
 const KNOWN_APPS: Record<string, string> = {
@@ -46,6 +46,7 @@ const KNOWN_APPS: Record<string, string> = {
   "firefox": "Firefox", "firefox.exe": "Firefox", "safari": "Safari", "arc": "Arc", "arc.exe": "Arc",
   "brave": "Brave Browser", "brave.exe": "Brave Browser", "brave browser": "Brave Browser",
   "chromium": "Chromium", "chromium-browser": "Chromium", "opera": "Opera", "opera.exe": "Opera", "vivaldi": "Vivaldi", "vivaldi.exe": "Vivaldi",
+  "comet": "Comet", "comet.exe": "Comet", "helium": "Helium", "helium.exe": "Helium", "dia": "Dia", "zen": "Zen", "zen.exe": "Zen", "orion": "Orion", "ego lite": "ego lite",
   "zoom": "Zoom", "zoom.us": "Zoom", "zoom.exe": "Zoom", "cpthost": "Zoom", "cpthost.exe": "Zoom",
   "teams": "Microsoft Teams", "teams.exe": "Microsoft Teams", "ms-teams": "Microsoft Teams", "ms-teams.exe": "Microsoft Teams",
   "microsoft teams": "Microsoft Teams", "microsoft teams (work or school)": "Microsoft Teams", "msteams": "Microsoft Teams",
@@ -62,6 +63,8 @@ const BUNDLE_IDS: [string, string][] = [
   ["com.google.Chrome", "Google Chrome"], ["com.microsoft.edgemac", "Microsoft Edge"], ["org.mozilla.firefox", "Firefox"],
   ["com.apple.Safari", "Safari"], ["com.apple.WebKit", "Safari"], ["company.thebrowser.Browser", "Arc"], ["com.brave.Browser", "Brave Browser"],
   ["org.chromium.Chromium", "Chromium"], ["com.vivaldi.Vivaldi", "Vivaldi"], ["com.operasoftware.Opera", "Opera"],
+  ["ai.perplexity.comet", "Comet"], ["net.imput.helium", "Helium"], ["company.thebrowser.dia", "Dia"], ["app.zen-browser.zen", "Zen"],
+  ["com.kagi.kagimacOS", "Orion"], ["com.citrolabs.ego.lite", "ego lite"],
   ["us.zoom.xos", "Zoom"], ["com.microsoft.teams", "Microsoft Teams"], ["com.tinyspeck.slackmacgap", "Slack"], ["com.hnc.Discord", "Discord"],
   ["net.whatsapp.WhatsApp", "WhatsApp"], ["desktop.WhatsApp", "WhatsApp"], ["com.apple.FaceTime", "FaceTime"], ["com.apple.avconferenced", "FaceTime"],
   ["com.cisco.webexmeetingsapp", "Webex"], ["Cisco-Systems.Spark", "Webex"], ["com.skype.skype", "Skype"],
