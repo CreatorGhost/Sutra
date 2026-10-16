@@ -9,8 +9,9 @@
 export const FRAME_EVERY_MS = 4000;
 /** Mean per-pixel change (0..1) on the thumbnail that counts as "the screen changed". */
 export const CHANGE_THRESHOLD = 0.035;
-/** Even a still screen is re-shot this often, so a long slide still shows up near what was said. */
-export const STILL_RESHOT_MS = 5 * 60_000;
+/** A nearly still screen is re-shot this often, so a long slide shows up near what was said and a call's
+ *  grid shows who was talking (the speaker highlight is a small change). */
+export const STILL_RESHOT_MS = 60_000;
 export const MAX_FRAMES = 400;
 const THUMB_W = 64, THUMB_H = 36;
 const MAX_W = 1600, MAX_H = 1000;

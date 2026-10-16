@@ -59,6 +59,21 @@ describe("choosing and labelling screenshots", () => {
     expect(r.facts).toHaveLength(visual.MAX_FACTS);
     expect(r.keep.map((k) => [k.frame.name, k.caption])).toEqual([["shot-1.jpg", "Q3 plan"]]);
   });
+
+  it("names speakers only from shots it was shown, and drops conflicting names", () => {
+    const shots = visual.labelShots([{ name: "shot-1.jpg", at: 1, score: 0 }, { name: "shot-2.jpg", at: 2, score: 0 }], 0);
+    const r = visual.parseVisual({ screen_facts: [], moments: [], speakers: [
+      { speaker: "Speaker 1", name: "Venkata Pappula", shot: "S01" },
+      { speaker: "Speaker 1", name: "Venkata Pappula", shot: "S02" },
+      { speaker: "Speaker 2", name: "Tanay Mehta", shot: "S09" },     // shot it never saw
+      { speaker: "Speaker 3", name: "Owais Bhat", shot: "S01" },
+      { speaker: "Speaker 3", name: "Ajith Kumar", shot: "S02" },     // two names for one voice
+      { speaker: "Speaker 4", name: "Harsh Kumar", shot: "S01" },
+      { speaker: "Speaker 5", name: "Harsh Kumar", shot: "S02" },     // one name for two voices
+      { speaker: "Me", name: "Aditya Singh", shot: "S01" },
+    ] }, shots);
+    expect([...r.speakers]).toEqual([["Speaker 1", "Venkata Pappula"]]);
+  });
 });
 
 describe("the pass after a recording", () => {
@@ -95,5 +110,23 @@ describe("the pass after a recording", () => {
     const extract = vi.fn(async () => ({ title: "Plan", summary: "s", facts: [], entities: [], relations: [] }));
     await extractConversation(cid, { extract, canEmbed: false, id: "agent:claude" } as any).catch(() => {});
     expect((extract.mock.calls[0] as any[])[2]).toContain("# On screen during the meeting (from screenshots; use it where it makes the notes more precise)\n- [S01] Q3 target $1.2M ARR");
+  });
+});
+
+describe("naming speakers from the call's screen", () => {
+  it("names an unnamed remote speaker the call app showed talking, before the notes", async () => {
+    const s = await repo.createSession("electron", "meeting", "Google Meet");
+    await repo.insertTurn({ session_id: s.id, session_speaker_label: "me", text: "Over to you.", start_ts: 0, end_ts: 1, abs_start: new Date(T0 + 5_000).toISOString() });
+    await repo.insertTurn({ session_id: s.id, session_speaker_label: "c1", text: "Thanks, the rollout is on track.", start_ts: 1, end_ts: 4, abs_start: new Date(T0 + 62_000).toISOString() });
+    const { segmentSession } = await import("../segmentation");
+    const [cid] = await segmentSession(s.id);
+    const extract = vi.fn(async (_s: any, _sys: string, user: string) => {
+      const label = user.match(/\] (Speaker \d+): Thanks/)![1];
+      return { screen_facts: [], moments: [], speakers: [{ speaker: label, name: "Venkata Pappula", shot: "S02" }] };
+    });
+    await visual.visualPass(cid, s.id, { extract, engineId: async () => "claude" } as any);
+    const detail: any = await repo.conversationDetailSafe(cid);
+    expect(detail.turns.find((t: any) => t.text.startsWith("Thanks"))?.person_name).toBe("Venkata Pappula");
+    expect(detail.turns.find((t: any) => t.text.startsWith("Over"))?.person_name ?? null).not.toBe("Venkata Pappula");
   });
 });
