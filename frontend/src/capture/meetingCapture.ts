@@ -211,6 +211,8 @@ export class MeetingController {
     if (this.stopping) return;
     this.stopping = true;
     this.capturing = false;
+    // Ask right away, while the last audio is still being transcribed (that can take a minute).
+    const project = this.sid != null ? this.cb.chooseProject?.().catch(() => undefined) : undefined;
     try {
       await this.provider.stop(); // flushes the tail window through handleWindow
       await this.media?.stop();   // every screenshot + audio chunk saved before the notes pass reads them
@@ -227,7 +229,7 @@ export class MeetingController {
     try {
       await Promise.allSettled(this.uploads);
       await this.api.closeSession(sid);
-      const projectId = await this.cb.chooseProject?.().catch(() => undefined);
+      const projectId = await project;
       const r: any = await (projectId === undefined ? this.api.processSession(sid) : this.api.processSession(sid, projectId));
       if (r?.failed > 0) {
         this.cb.onError?.(`Processed with issues — ${r.failed} part(s) failed${r.lastError ? ": " + r.lastError : ""}.`);
