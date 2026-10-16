@@ -186,6 +186,9 @@ function createMainWindow(): void {
         Promise.all([desktopCapturer.getSources({ types: ["screen"] }), callScreenId()])
           .then(([sources, id]) => {
             const src = sources.find((s) => id != null && s.display_id === String(id)) ?? sources[0];
+            const shown = screen.getAllDisplays();
+            const d = shown.find((x) => String(x.id) === src?.display_id);
+            capturedScreen = shown.length > 1 && d ? (d.label || src!.name) : null;
             callback(src ? { video: src, audio: "loopback" } : {});
           })
           .catch(() => callback({}));
@@ -287,6 +290,8 @@ function callScreenId(): Promise<number | null> {
     } catch { resolve(null); }
   }));
 }
+/** Label of the screen the latest recording captures (only set with more than one screen). */
+let capturedScreen: string | null = null;
 const pillDisplay = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
 const notchOf = (d: Electron.Display) => notches.find((n) => Math.round(n.x) === d.bounds.x && Math.round(n.w) === d.bounds.width) ?? null;
 /** On a notched screen: the notch size the island grows out of. */
@@ -451,6 +456,7 @@ function setPrefs(patch: Partial<Prefs>): Prefs {
 
 function registerIpc(): void {
   ipcMain.handle("sutra:prefs:get", () => prefs);
+  ipcMain.handle("sutra:capture:screen", () => capturedScreen);
   ipcMain.handle("sutra:prefs:set", (_e, patch: Partial<Prefs>) => setPrefs(patch ?? {}));
   ipcMain.handle("sutra:detection:get", () => ({ active: detection.active, visible: detection.visible && prefs.detectMeetings }));
   ipcMain.on("sutra:recorder:state", (_e, snap: RecorderSnapshot) => onRecorderState(snap ?? { status: "idle" }));

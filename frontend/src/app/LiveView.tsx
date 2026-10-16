@@ -1,11 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2, Mic, ShieldCheck, Square } from "lucide-react";
+import { ArrowLeft, Camera, Loader2, Mic, ShieldCheck, Square } from "lucide-react";
 import { speakerName } from "../local/speakers";
 import { clock } from "./format";
 import { useNow, useRecorder } from "./recorder";
 import { LevelBars } from "./ui";
 import { useMac } from "../pairing/runtime";
+import { desktop } from "../desktop/bridge";
 
 /** The recording screen: big clock, live level, and the transcript as each ~90 s window lands. */
 export function LiveView() {
@@ -15,6 +16,15 @@ export function LiveView() {
   const mac = useMac();
   const viaMac = !!mac.pairing && mac.status.state !== "revoked";
   const endRef = useRef<HTMLDivElement | null>(null);
+  // With screenshots on and two screens: say which one is captured (the one the call's window is on).
+  const [shotScreen, setShotScreen] = useState<string | null>(null);
+  useEffect(() => {
+    if (rec.capture !== "recording" || !desktop) { setShotScreen(null); return; }
+    void (async () => {
+      const on = (await desktop.prefs.get().catch(() => null))?.captureScreen;
+      setShotScreen(on ? await desktop.capturedScreen().catch(() => null) : null);
+    })();
+  }, [rec.capture]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" }); }, [rec.turns.length]);
 
   // When the notes are ready, open them.
@@ -43,7 +53,8 @@ export function LiveView() {
               <span className="live-dot" />{rec.status === "starting" ? "Starting…" : `Recording${rec.app ? ` · ${rec.app}` : ""}`}
             </div>
             <div className="live-clock">{rec.startedAt ? clock(now - rec.startedAt) : "0:00"}</div>
-            <div style={{ color: "var(--rec)", marginBottom: 20 }}><LevelBars level={rec.level} count={7} /></div>
+            <div style={{ color: "var(--rec)", marginBottom: shotScreen ? 8 : 20 }}><LevelBars level={rec.level} count={7} /></div>
+            {shotScreen && <p className="faint" style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center", fontSize: 13, margin: "0 0 18px" }}><Camera size={14} /> Screenshots from {shotScreen}</p>}
             <button className="btn primary" onClick={() => void stop()} disabled={!recording}><Square size={13} fill="currentColor" /> Stop & write notes</button>
           </>
         ) : (

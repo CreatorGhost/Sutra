@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld(
       request: (kind: "microphone" | "screen") => ipcRenderer.invoke("sutra:permissions:request", kind),
     }),
     icon: (appName: string) => ipcRenderer.invoke("sutra:icon", appName),
+    capturedScreen: () => ipcRenderer.invoke("sutra:capture:screen"),
     ai: Object.freeze({
       detect: (refresh?: boolean) => ipcRenderer.invoke("sutra:ai:detect", refresh === true),
       run: (id: string, req: unknown) => ipcRenderer.invoke("sutra:ai:run", id, req),
