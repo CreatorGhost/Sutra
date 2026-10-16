@@ -172,7 +172,8 @@ export async function visualPass(cid: number, sessionId: number, provider: Provi
 }
 
 /** Name diarized speakers the call app showed talking — only labels nobody named yet ("Speaker 2"), before
- *  the notes are written so they use the names. */
+ *  the notes are written so they use the names. A display name is whatever the participant typed, so it
+ *  labels this meeting only: no voiceprint is learned from it and it can never become the owner. */
 async function nameFromScreen(sessionId: number, turns: any[], speakers: Map<string, string>): Promise<void> {
   if (!speakers.size) return;
   const display = buildSpeakerDisplay(turns);
@@ -180,7 +181,7 @@ async function nameFromScreen(sessionId: number, turns: any[], speakers: Map<str
   for (const [speaker, name] of speakers) {
     const raw = rawByDisplay.get(speaker.toLowerCase());
     if (!raw || raw === "me" || turns.some((t) => t.session_speaker_label === raw && t.person_name)) continue;
-    try { await relabelSpeaker(sessionId, raw, { name }); } catch (e) { console.warn("screen speaker-name skipped", raw, e); }
+    try { await relabelSpeaker(sessionId, raw, { name, untrusted: true }); } catch (e) { console.warn("screen speaker-name skipped", raw, e); }
   }
 }
 

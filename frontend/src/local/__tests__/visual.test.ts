@@ -130,3 +130,25 @@ describe("naming speakers from the call's screen", () => {
     expect(detail.turns.find((t: any) => t.text.startsWith("Over"))?.person_name ?? null).not.toBe("Venkata Pappula");
   });
 });
+
+describe("a display name is the participant's own claim", () => {
+  it("never touches a known person's voiceprint and never becomes the owner", async () => {
+    const riya = await repo.insertPerson("Riya", false, [1, 0, 0]);
+    await repo.insertPerson("Aditya Singh", true);
+    const before = (await repo.listPeople()).find((p: any) => p.id === riya) as any;
+    const s = await repo.createSession("electron", "meeting", "Google Meet");
+    await repo.insertTurn({ session_id: s.id, session_speaker_label: "c1", text: "I am totally Riya.", start_ts: 0, end_ts: 3, abs_start: new Date(T0 + 5_000).toISOString(), voiceprint: [0, 1, 0] });
+    await repo.insertTurn({ session_id: s.id, session_speaker_label: "c2", text: "And I am the owner.", start_ts: 3, end_ts: 6, abs_start: new Date(T0 + 65_000).toISOString(), voiceprint: [0, 0, 1] });
+    const { segmentSession } = await import("../segmentation");
+    const [cid] = await segmentSession(s.id);
+    const extract = vi.fn(async (_s: any, _sys: string, user: string) => ({ screen_facts: [], moments: [], speakers: [
+      { speaker: user.match(/\] (Speaker \d+): I am totally/)![1], name: "Riya", shot: "S01" },
+      { speaker: user.match(/\] (Speaker \d+): And I am/)![1], name: "Aditya Singh", shot: "S02" },
+    ] }));
+    await visual.visualPass(cid, s.id, { extract, engineId: async () => "claude" } as any);
+    const after = (await repo.listPeople()).find((p: any) => p.id === riya) as any;
+    expect(after.enroll_count).toBe(before.enroll_count);
+    const detail: any = await repo.conversationDetailSafe(cid);
+    expect(detail.turns.find((t: any) => t.text.startsWith("And"))?.person_name ?? null).not.toBe("Aditya Singh");
+  });
+});
