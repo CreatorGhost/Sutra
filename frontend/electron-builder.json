@@ -19,10 +19,11 @@
   "win": {
     "target": "nsis"
   },
+  "afterPack": "scripts/adhoc-sign.cjs",
   "mac": {
     "target": "dmg",
     "category": "public.app-category.productivity",
-    "identity": "-",
+    "identity": null,
     "hardenedRuntime": true,
     "entitlements": "build/entitlements.adhoc.plist",
     "entitlementsInherit": "build/entitlements.adhoc.plist",
