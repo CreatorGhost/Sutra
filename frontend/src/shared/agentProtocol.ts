@@ -287,11 +287,30 @@ export function acpInvocation(id: AgentId, model: string | null | undefined, env
 
 /** Pull the first JSON object/array out of free text (tolerates ```json fences and chatter). Ported
  *  in spirit from ViewCode's extractJsonObject, extended to arrays and fenced blocks. */
+/** Models sometimes put raw newlines/tabs inside JSON strings; escape control chars that sit inside strings. */
+function escapeControlsInStrings(s: string): string {
+  let out = "", inStr = false, esc = false;
+  for (const c of s) {
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      else if (c < " ") { out += c === "\n" ? "\\n" : c === "\r" ? "\\r" : c === "\t" ? "\\t" : `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`; continue; }
+    } else if (c === '"') inStr = true;
+    out += c;
+  }
+  return out;
+}
+
+const parseLenient = (s: string): unknown => {
+  try { return JSON.parse(s); } catch (e) { const fixed = escapeControlsInStrings(s); if (fixed === s) throw e; return JSON.parse(fixed); }
+};
+
 export function extractJson(text: string): unknown {
   const s = String(text ?? "").trim();
-  try { return JSON.parse(s); } catch { /* fall through */ }
+  try { return parseLenient(s); } catch { /* fall through */ }
   const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced) { try { return JSON.parse(fenced[1]); } catch { /* fall through */ } }
+  if (fenced) { try { return parseLenient(fenced[1]); } catch { /* fall through */ } }
   const start = s.search(/[{[]/);
   if (start < 0) throw new Error("The AI engine didn't return JSON.");
   const open = s[start], close = open === "{" ? "}" : "]";
@@ -301,7 +320,7 @@ export function extractJson(text: string): unknown {
     if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; continue; }
     if (c === '"') inStr = true;
     else if (c === open) depth++;
-    else if (c === close && --depth === 0) return JSON.parse(s.slice(start, i + 1));
+    else if (c === close && --depth === 0) return parseLenient(s.slice(start, i + 1));
   }
   throw new Error("The AI engine returned incomplete JSON.");
 }

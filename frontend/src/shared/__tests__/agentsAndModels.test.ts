@@ -106,6 +106,8 @@ describe("agent output parsing", () => {
   it("extracts balanced JSON with braces inside strings, and fenced JSON", () => {
     expect(extractJson('ok: {"a":"}{","b":[1,{"c":2}]} trailing')).toEqual({ a: "}{", b: [1, { c: 2 }] });
     expect(extractJson('Sure!\n```json\n{"answer":"yes"}\n```')).toEqual({ answer: "yes" });
+    expect(extractJson("{\"text\":\"line one\nline\ttwo\"}")).toEqual({ text: "line one\nline\ttwo" });
+    expect(extractJson("Here:\n{\"a\":\"x\ny\"}\n")).toEqual({ a: "x\ny" });
     expect(() => extractJson("no json here")).toThrow();
   });
   it("recognises sign-in errors", () => {
