@@ -201,6 +201,12 @@ export class MeetingController {
     }
   }
 
+  /** Screenshots from another screen (a fresh screen track); ignored when screenshots are off. */
+  async useScreen(track: MediaStreamTrack): Promise<void> {
+    if (this.media) await this.media.useScreen(track);
+    else track.stop();
+  }
+
   /** User stop: stop the provider, drain all in-flight uploads, close + process, return to idle. */
   async stop(): Promise<void> {
     await this.finishSession("idle");

@@ -181,15 +181,14 @@ function createMainWindow(): void {
   const ses = win.webContents.session;
   if (typeof ses.setDisplayMediaRequestHandler === "function") {
     ses.setDisplayMediaRequestHandler(
-      (_request, callback) => {
+      (request, callback) => {
         // Screenshots come from this video, so use the screen the call is on (not always the main one).
-        Promise.all([desktopCapturer.getSources({ types: ["screen"] }), callScreenId()])
+        // The screen the user picked for this recording wins; otherwise the one the call is on.
+        Promise.all([desktopCapturer.getSources({ types: ["screen"] }), chosenScreen ?? callScreenId()])
           .then(([sources, id]) => {
             const src = sources.find((s) => id != null && s.display_id === String(id)) ?? sources[0];
-            const shown = screen.getAllDisplays();
-            const d = shown.find((x) => String(x.id) === src?.display_id);
-            capturedScreen = shown.length > 1 && d ? (d.label || src!.name) : null;
-            callback(src ? { video: src, audio: "loopback" } : {});
+            capturedScreen = src ? Number(src.display_id) || null : null;
+            callback(src ? { video: src, ...(request.audioRequested ? { audio: "loopback" as const } : {}) } : {});
           })
           .catch(() => callback({}));
       },
@@ -290,8 +289,14 @@ function callScreenId(): Promise<number | null> {
     } catch { resolve(null); }
   }));
 }
-/** Label of the screen the latest recording captures (only set with more than one screen). */
-let capturedScreen: string | null = null;
+/** The display the current recording's screenshots come from, and the one the user picked (this recording only). */
+let capturedScreen: number | null = null;
+let chosenScreen: number | null = null;
+/** Screen 1 is the main display, then left to right. */
+const screensInOrder = () => {
+  const main = screen.getPrimaryDisplay().id;
+  return screen.getAllDisplays().sort((a, b) => (a.id === main ? -1 : b.id === main ? 1 : a.bounds.x - b.bounds.x));
+};
 const pillDisplay = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
 const notchOf = (d: Electron.Display) => notches.find((n) => Math.round(n.x) === d.bounds.x && Math.round(n.w) === d.bounds.width) ?? null;
 /** On a notched screen: the notch size the island grows out of. */
@@ -378,6 +383,7 @@ function stopRecording(): void {
 function onRecorderState(snap: RecorderSnapshot): void {
   const prev = recorder.status;
   if (snap.askProject && !recorder.askProject) showMain();
+  if (snap.status !== "recording" && snap.status !== "starting" && recorder.status === "recording") chosenScreen = null;
   recorder = snap;
   // Hidden only for what was on screen then: a new recording or the end of note-writing shows it again.
   if (snap.status === "idle" || (snap.status === "starting" && prev !== "starting")) pillHidden = false;
@@ -456,7 +462,13 @@ function setPrefs(patch: Partial<Prefs>): Prefs {
 
 function registerIpc(): void {
   ipcMain.handle("sutra:prefs:get", () => prefs);
-  ipcMain.handle("sutra:capture:screen", () => capturedScreen);
+  ipcMain.handle("sutra:capture:screens", () => ({
+    screens: screensInOrder().map((d) => ({ id: d.id, label: d.label || `${d.size.width}×${d.size.height}` })),
+    current: capturedScreen,
+  }));
+  ipcMain.handle("sutra:capture:use", (_e, id: unknown) => {
+    if (typeof id === "number" && screen.getAllDisplays().some((d) => d.id === id)) chosenScreen = id;
+  });
   ipcMain.handle("sutra:prefs:set", (_e, patch: Partial<Prefs>) => setPrefs(patch ?? {}));
   ipcMain.handle("sutra:detection:get", () => ({ active: detection.active, visible: detection.visible && prefs.detectMeetings }));
   ipcMain.on("sutra:recorder:state", (_e, snap: RecorderSnapshot) => onRecorderState(snap ?? { status: "idle" }));

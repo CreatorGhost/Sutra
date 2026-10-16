@@ -11,20 +11,29 @@ import { desktop } from "../desktop/bridge";
 /** The recording screen: big clock, live level, and the transcript as each ~90 s window lands. */
 export function LiveView() {
   const nav = useNavigate();
-  const { state: rec, start, stop, clearError } = useRecorder();
+  const { state: rec, start, stop, clearError, switchScreen } = useRecorder();
   const now = useNow(rec.status === "recording");
   const mac = useMac();
   const viaMac = !!mac.pairing && mac.status.state !== "revoked";
   const endRef = useRef<HTMLDivElement | null>(null);
-  // With screenshots on and two screens: say which one is captured (the one the call's window is on).
-  const [shotScreen, setShotScreen] = useState<string | null>(null);
+  // Screenshots on and more than one screen: show which is captured (starts on the call's screen) and let
+  // the user switch.
+  type Screens = Awaited<ReturnType<NonNullable<typeof desktop>["capture"]["screens"]>>;
+  const [screens, setScreens] = useState<Screens | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const loadScreens = async () => {
+    const on = (await desktop?.prefs.get().catch(() => null))?.captureScreen;
+    const s = on ? await desktop!.capture.screens().catch(() => null) : null;
+    setScreens(s && s.screens.length > 1 ? s : null);
+  };
   useEffect(() => {
-    if (rec.capture !== "recording" || !desktop) { setShotScreen(null); return; }
-    void (async () => {
-      const on = (await desktop.prefs.get().catch(() => null))?.captureScreen;
-      setShotScreen(on ? await desktop.capturedScreen().catch(() => null) : null);
-    })();
+    if (rec.capture !== "recording" || !desktop) { setScreens(null); return; }
+    void loadScreens();
   }, [rec.capture]);
+  const pick = async (id: number) => {
+    setSwitching(true);
+    try { await switchScreen(id); await loadScreens(); } catch { /* keep the current screen */ } finally { setSwitching(false); }
+  };
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" }); }, [rec.turns.length]);
 
   // When the notes are ready, open them.
@@ -53,8 +62,18 @@ export function LiveView() {
               <span className="live-dot" />{rec.status === "starting" ? "Starting…" : `Recording${rec.app ? ` · ${rec.app}` : ""}`}
             </div>
             <div className="live-clock">{rec.startedAt ? clock(now - rec.startedAt) : "0:00"}</div>
-            <div style={{ color: "var(--rec)", marginBottom: shotScreen ? 8 : 20 }}><LevelBars level={rec.level} count={7} /></div>
-            {shotScreen && <p className="faint" style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center", fontSize: 13, margin: "0 0 18px" }}><Camera size={14} /> Screenshots from {shotScreen}</p>}
+            <div style={{ color: "var(--rec)", marginBottom: screens ? 8 : 20 }}><LevelBars level={rec.level} count={7} /></div>
+            {screens && (
+              <div className="shot-screens" role="radiogroup" aria-label="Screenshots from">
+                <span className="faint"><Camera size={14} /> Screenshots from</span>
+                {screens.screens.map((d, i) => (
+                  <button key={d.id} role="radio" aria-checked={d.id === screens.current} disabled={switching}
+                    className={`btn sm${d.id === screens.current ? " on" : ""}`} onClick={() => d.id !== screens.current && void pick(d.id)} title={d.label}>
+                    Screen {i + 1}<span className="faint"> · {d.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <button className="btn primary" onClick={() => void stop()} disabled={!recording}><Square size={13} fill="currentColor" /> Stop & write notes</button>
           </>
         ) : (

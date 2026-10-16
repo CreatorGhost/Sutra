@@ -53,9 +53,11 @@ interface Recorder {
   clearError(): void;
   /** Answer askProject: a project id, null for none, undefined to let Sutra decide. */
   answerProject(projectId: number | null | undefined): void;
+  /** Desktop, screenshots on: take them from this display from now on. */
+  switchScreen(displayId: number): Promise<void>;
 }
 
-interface ActiveSession { stop(): Promise<void>; teardown(): void }
+interface ActiveSession { stop(): Promise<void>; teardown(): void; useScreen?(track: MediaStreamTrack): Promise<void> }
 
 const INITIAL: RecorderState = {
   status: "idle", capture: "idle", saving: 0, startedAt: null, app: null, mode: null, level: 0, turns: [], inflight: 0,
@@ -101,6 +103,14 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     });
   }, [patch]);
   const answerProject = useCallback((v: number | null | undefined) => projectAnswer.current?.(v), []);
+  const switchScreen = useCallback(async (displayId: number) => {
+    const s = session.current;
+    if (!s?.useScreen || !desktop) return;
+    await desktop.capture.use(displayId);
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    const track = stream.getVideoTracks()[0];
+    if (track) await s.useScreen(track);
+  }, []);
   const level = useRef(0);
 
   // Keep the screen (and, on Android, the mic service) alive while recording.
@@ -124,7 +134,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     const cap = detectCaptureCapability();
     // Once stopped, this recording saves in the background and must not touch the next one's live state.
     let live = true;
-    const mine: ActiveSession = { stop: () => ctrl.stop(), teardown: () => ctrl.teardown() };
+    const mine: ActiveSession = { stop: () => ctrl.stop(), teardown: () => ctrl.teardown(), useScreen: (t) => ctrl.useScreen(t) };
     const ctrl: MeetingController = new MeetingController({
       provider: createCaptureProvider(cap),
       api,
@@ -284,7 +294,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publishKey]);
 
-  const value = useMemo(() => ({ state, start, stop, clearError, answerProject }), [state, start, stop, clearError, answerProject]);
+  const value = useMemo(() => ({ state, start, stop, clearError, answerProject, switchScreen }), [state, start, stop, clearError, answerProject, switchScreen]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

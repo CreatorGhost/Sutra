@@ -113,7 +113,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
             Recording{rec.app ? <span className="muted"> · {rec.app}</span> : null}
           </span>
           <span className="faint" style={{ fontFamily: "var(--mono)", fontSize: 12.5 }}>{rec.startedAt ? clock(now - rec.startedAt) : ""}</span>
-          <button className="link" onClick={() => nav("/live")}>Open</button>
+          {pathname !== "/live" && <button className="link" onClick={() => nav("/live")}>Open</button>}
         </div>
       ) : rec.status === "processing" ? (
         <div className="banner"><Loader2 size={15} className="spin" /><span className="grow">Writing your notes…</span></div>

@@ -62,6 +62,18 @@ export class MeetingMedia {
 
   get frames(): number { return this.kept; }
 
+  /** Take screenshots from another screen from now on; that track is ours to stop.
+   *  ponytail: the first screen's track stays open (the capture provider owns it) until the recording ends. */
+  private ownTrack: MediaStreamTrack | null = null;
+  async useScreen(track: MediaStreamTrack): Promise<void> {
+    if (!this.video) { track.stop(); return; }
+    this.ownTrack?.stop();
+    this.ownTrack = track;
+    this.video.srcObject = new MediaStream([track]);
+    await this.video.play().catch(() => {});
+    setTimeout(() => void this.tick(), 1200);
+  }
+
   /** Start sampling `video` (a screen track) and recording the mixed audio of `audio` streams. */
   async start(video: MediaStreamTrack | null, audio: MediaStream[]): Promise<void> {
     if (video) {
@@ -128,6 +140,8 @@ export class MeetingMedia {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     if (this.video) { this.video.srcObject = null; this.video = null; }
+    this.ownTrack?.stop();
+    this.ownTrack = null;
     const rec = this.recorder;
     this.recorder = null;
     if (rec && rec.state !== "inactive") {

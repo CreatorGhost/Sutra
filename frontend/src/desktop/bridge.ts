@@ -69,8 +69,11 @@ export interface DesktopBridge {
   permissions: { get(): Promise<{ microphone: string; screen: string }>; request(kind: "microphone" | "screen"): Promise<boolean> };
   onNavigate(cb: (path: string) => void): Unsub;
   icon(appName: string): Promise<string | null>;
-  /** The screen the current recording's video comes from (screenshots), e.g. "Built-in Retina Display". */
-  capturedScreen(): Promise<string | null>;
+  /** Screens for meeting screenshots, and the one the current recording captures. */
+  capture: {
+    screens(): Promise<{ screens: { id: number; label: string }[]; current: number | null }>;
+    use(displayId: number): Promise<void>;
+  };
   ai: { detect(refresh?: boolean): Promise<AgentStatus[]>; run(id: AgentId, req: AgentRequest): Promise<{ text: string; json?: unknown }> };
   stt: {
     status(): Promise<SttStatus>;
