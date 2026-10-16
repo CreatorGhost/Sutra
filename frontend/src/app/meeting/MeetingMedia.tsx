@@ -4,7 +4,7 @@
 //     deletes the recording (kept screenshots stay);
 //   • OnScreen — the screenshots the AI kept for the notes, each captioned and timed, opened full size.
 import { useCallback, useEffect, useState } from "react";
-import { Camera, Check, Eye, Loader2, Play, RotateCw, X } from "lucide-react";
+import { Camera, Check, Eye, EyeOff, Loader2, Play, RotateCw, X } from "lucide-react";
 import { api } from "../../local/sutra";
 import type { MeetingImage } from "../../local/repo";
 import { desktop } from "../../desktop/bridge";
@@ -28,7 +28,7 @@ const audioMinutes = (bytes: number) => Math.max(1, Math.round((bytes * 8) / 32_
 export function RecordingBanner({ cid, v, startedAt, onChanged, toast }: {
   cid: number; v: Visual | null; startedAt: string | null; onChanged: () => void; toast: (m: string) => void;
 }) {
-  const [busy, setBusy] = useState<null | "confirm" | "relook">(null);
+  const [busy, setBusy] = useState<null | "confirm" | "relook" | "drop">(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
   const rec = v?.recording;
@@ -47,6 +47,12 @@ export function RecordingBanner({ cid, v, startedAt, onChanged, toast }: {
   const relook = async () => {
     setBusy("relook");
     try { await api.relookAtScreen(cid); toast("Notes rewritten with what was on screen"); onChanged(); }
+    catch (e: any) { toast(String(e?.message ?? e)); }
+    finally { setBusy(null); }
+  };
+  const drop = async () => {
+    setBusy("drop");
+    try { await api.notesWithoutScreen(cid); toast("Notes rewritten from the transcript only"); onChanged(); }
     catch (e: any) { toast(String(e?.message ?? e)); }
     finally { setBusy(null); }
   };
@@ -78,6 +84,11 @@ export function RecordingBanner({ cid, v, startedAt, onChanged, toast }: {
         {rec.frames > 0 && (
           <button className="btn sm" disabled={busy !== null} onClick={() => void relook()} title="Have your AI engine look at the screenshots again and rewrite the notes">
             {busy === "relook" ? <Loader2 size={14} className="spin" /> : visual?.error ? <Eye size={14} /> : <RotateCw size={14} />} {visual?.error ? "Look at the screenshots" : "Look again"}
+          </button>
+        )}
+        {visual && !visual.error && (
+          <button className="btn sm" disabled={busy !== null} onClick={() => void drop()} title="Wrong screen, or nothing useful on it? Rewrite the notes from the transcript alone">
+            {busy === "drop" ? <Loader2 size={14} className="spin" /> : <EyeOff size={14} />} Notes without screenshots
           </button>
         )}
         <button className="btn sm primary" disabled={busy !== null} onClick={() => void confirm()}>

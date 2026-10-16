@@ -90,6 +90,16 @@ export const api = {
     await desktop?.media?.deleteKept(cid, img.name).catch(() => {});
   },
   confirmRecording: (cid: number) => visualSvc.confirmRecording(cid),
+  /** The screenshots were of the wrong screen (or just noise): drop what the AI took from them and
+   *  rewrite the notes from the transcript alone. The recording stays until it's confirmed. */
+  notesWithoutScreen: async (cid: number) => {
+    const sid = await repo.sessionForConversation(cid);
+    if (sid == null) throw new Error("This meeting has no recording.");
+    await repo.setMeetingVisual(cid, { session_id: sid, error: "Screenshots left out." });
+    await repo.clearMeetingImages(cid);
+    await desktop?.media?.deleteKept(cid).catch(() => {});
+    await extractSvc.extractConversation(cid, await provider(), []);
+  },
   /** Look at the recording's screenshots again (e.g. after switching to an engine that can see), then
    *  rewrite the notes with what was on screen. */
   relookAtScreen: async (cid: number) => {

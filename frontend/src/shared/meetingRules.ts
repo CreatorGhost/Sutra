@@ -193,6 +193,21 @@ export function detectMeeting(obs: Observation): Detection | null {
   return null;
 }
 
+// ---- which window is the call ---------------------------------------------------------------------
+
+export interface ScreenWindow { app: string; title: string; x: number; y: number; width: number; height: number }
+
+/** The window showing the call, front-most first: a meeting title, else the detected app's window (a
+ *  browser's audible tab 🔊 first), else any audible window. Null → caller keeps its default screen. PURE. */
+export function meetingWindow(windows: ScreenWindow[], d: Pick<Detection, "app"> | null): ScreenWindow | null {
+  const ws = windows.filter((w) => w.width >= 200 && w.height >= 150 && !IGNORED.test(w.app));
+  const audible = (w: ScreenWindow) => w.title.includes("🔊");
+  const titled = ws.find((w) => TITLE_RULES.some(([re]) => re.test(w.title)));
+  if (titled) return titled;
+  const mine = d ? ws.filter((w) => appName(w.app) === d.app) : [];
+  return mine.find(audible) ?? mine.find((w) => w.title) ?? mine[0] ?? ws.find(audible) ?? null;
+}
+
 // ---- debounce / dismissal state machine -----------------------------------------------------------
 
 /** One call seen through different signals on different ticks: the mic/tab say "Google Chrome|Google Meet",

@@ -26,7 +26,7 @@ import { cancelSpeechDownload, deleteSpeechModel, downloadSpeechModel, speechSta
 import { initPairing, stopPairing } from "./pairing";
 import { grantedWorkspace, registerProjectFolderIpc } from "./projectFolders";
 import { registerRecordingIpc } from "./recordings";
-import { AutoStop, macAppCandidates, type Detection, type TrackerUpdate } from "../src/shared/meetingRules";
+import { AutoStop, macAppCandidates, meetingWindow, type Detection, type ScreenWindow, type TrackerUpdate } from "../src/shared/meetingRules";
 import { isAgentId, type AgentId, type AgentRequest } from "../src/shared/agentProtocol";
 
 const isMac = process.platform === "darwin";
@@ -181,9 +181,12 @@ function createMainWindow(): void {
   if (typeof ses.setDisplayMediaRequestHandler === "function") {
     ses.setDisplayMediaRequestHandler(
       (_request, callback) => {
-        desktopCapturer
-          .getSources({ types: ["screen"] })
-          .then((sources) => callback(sources[0] ? { video: sources[0], audio: "loopback" } : {}))
+        // Screenshots come from this video, so use the screen the call is on (not always the main one).
+        Promise.all([desktopCapturer.getSources({ types: ["screen"] }), callScreenId()])
+          .then(([sources, id]) => {
+            const src = sources.find((s) => id != null && s.display_id === String(id)) ?? sources[0];
+            callback(src ? { video: src, audio: "loopback" } : {});
+          })
           .catch(() => callback({}));
       },
       { useSystemPicker: false },
@@ -267,6 +270,21 @@ function readNotches(): void {
     if (pillWin?.isVisible()) placePill();
     pushPill();
   });
+}
+// Every on-screen app window with its bounds (titles need Screen Recording, which capture already has).
+const WINDOWS_JXA = `ObjC.import("CoreGraphics");
+const l = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, 0))) || [];
+JSON.stringify(l.filter((w) => w.kCGWindowLayer === 0 && w.kCGWindowBounds).map((w) => ({ app: w.kCGWindowOwnerName || "", title: w.kCGWindowName || "",
+  x: w.kCGWindowBounds.X, y: w.kCGWindowBounds.Y, width: w.kCGWindowBounds.Width, height: w.kCGWindowBounds.Height })))`;
+/** The display showing the call's window, or null (→ the main screen). */
+function callScreenId(): Promise<number | null> {
+  if (!isMac) return Promise.resolve(null);
+  return new Promise((resolve) => execFile("osascript", ["-l", "JavaScript", "-e", WINDOWS_JXA], { timeout: 3000 }, (err, out) => {
+    try {
+      const w = err ? null : meetingWindow(JSON.parse(out) as ScreenWindow[], detection.active);
+      resolve(w ? screen.getDisplayMatching({ x: Math.round(w.x), y: Math.round(w.y), width: Math.round(w.width), height: Math.round(w.height) }).id : null);
+    } catch { resolve(null); }
+  }));
 }
 const pillDisplay = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
 const notchOf = (d: Electron.Display) => notches.find((n) => Math.round(n.x) === d.bounds.x && Math.round(n.w) === d.bounds.width) ?? null;
