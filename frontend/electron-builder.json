@@ -23,9 +23,9 @@
     "target": "dmg",
     "category": "public.app-category.productivity",
     "identity": "-",
-    "hardenedRuntime": false,
-    "entitlements": "build/entitlements.mac.plist",
-    "entitlementsInherit": "build/entitlements.mac.plist",
+    "hardenedRuntime": true,
+    "entitlements": "build/entitlements.adhoc.plist",
+    "entitlementsInherit": "build/entitlements.adhoc.plist",
     "extendInfo": {
       "NSMicrophoneUsageDescription": "Sutra records your side of the meeting so it can write your notes. Audio is never stored.",
       "NSAudioCaptureUsageDescription": "Sutra captures the meeting's audio so it can transcribe the other participants. Audio is never stored.",
