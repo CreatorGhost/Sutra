@@ -472,7 +472,9 @@ function Transcript({ turns, startedAt, cid, images, focus, onShot }: {
   }
   useEffect(() => {
     if (!focus) return;
-    const el = ref.current?.querySelector<HTMLElement>(`[data-turn="${Math.max(0, turnAt(focus.sec * 1000))}"]`);
+    // A cited time is whole seconds (the transcript the AI read is): the first turn in that second, else the one running then.
+    const inSecond = offsets.findIndex((o) => o != null && Math.floor(o / 1000) === focus.sec);
+    const el = ref.current?.querySelector<HTMLElement>(`[data-turn="${inSecond >= 0 ? inSecond : Math.max(0, turnAt(focus.sec * 1000))}"]`);
     if (!el) return;
     el.scrollIntoView({ block: "center", behavior: "smooth" });
     el.classList.remove("turn-hit"); void el.offsetWidth; el.classList.add("turn-hit");

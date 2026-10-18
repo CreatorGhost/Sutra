@@ -71,7 +71,9 @@ export async function expand(entityIds: number[], hops = 2, limit = 120, exclude
   const ph = ids.map(() => "?").join(",");
   const edges = (await q(
     `SELECT id,src_entity src,dst_entity dst,relation,weight,evidence FROM edges
-     WHERE src_entity IN (${ph}) AND dst_entity IN (${ph}) ORDER BY weight DESC, last_seen DESC LIMIT ?`, [...ids, ...ids, limit])) as any[];
+     WHERE src_entity IN (${ph}) AND dst_entity IN (${ph})
+     ORDER BY weight * (CASE WHEN EXISTS(SELECT 1 FROM json_each(?) WHERE value IN (src_entity,dst_entity)) THEN 2 ELSE 1 END) DESC, last_seen DESC
+     LIMIT ?`, [...ids, ...ids, seed, limit])) as any[]; // seed edges count double, as in relatedConversations
   let nodeIds = [...new Set<number>(ids)];
   edges.forEach((e) => { nodeIds.push(e.src); nodeIds.push(e.dst); });
   nodeIds = [...new Set<number>(nodeIds)];

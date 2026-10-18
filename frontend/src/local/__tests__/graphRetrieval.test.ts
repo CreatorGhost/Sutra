@@ -57,6 +57,17 @@ describe("graph page data", () => {
 });
 
 describe("Ask finds related work through the graph", () => {
+  it("a seed's edge counts double before the edge limit cuts", async () => {
+    const cid = await meeting("Limit", "x");
+    const s = await graph.upsertEntity("project", "Seedy", null, null);
+    const n = await graph.upsertEntity("topic", "Near", null, null);
+    const x = await graph.upsertEntity("topic", "Far", null, null);
+    for (let i = 0; i < 2; i++) await graph.upsertEdge(s, n, "uses", cid, []);  // weight 2, touches the seed → 4
+    for (let i = 0; i < 3; i++) await graph.upsertEdge(n, x, "has", cid, []);   // weight 3
+    const sub = await graph.expand([s], 2, 1);
+    expect(sub.edges.map((e: any) => [e.src, e.dst])).toEqual([[s, n]]);
+  });
+
   it("ranks meetings by the edges that link them, skipping ones search already found", () => {
     const edges = [
       { src: 1, dst: 2, weight: 1, evidence: [{ conversation_id: 10 }, { conversation_id: 11 }] },
