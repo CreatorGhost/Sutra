@@ -69,7 +69,7 @@ export async function expand(entityIds: number[], hops = 2, limit = 120) {
   const ph = ids.map(() => "?").join(",");
   const edges = (await q(
     `SELECT id,src_entity src,dst_entity dst,relation,weight,evidence FROM edges
-     WHERE src_entity IN (${ph}) AND dst_entity IN (${ph}) LIMIT ?`, [...ids, ...ids, limit])) as any[];
+     WHERE src_entity IN (${ph}) AND dst_entity IN (${ph}) ORDER BY weight DESC, last_seen DESC LIMIT ?`, [...ids, ...ids, limit])) as any[];
   let nodeIds = [...new Set<number>(ids)];
   edges.forEach((e) => { nodeIds.push(e.src); nodeIds.push(e.dst); });
   nodeIds = [...new Set<number>(nodeIds)];
@@ -79,13 +79,38 @@ export async function expand(entityIds: number[], hops = 2, limit = 120) {
   return { nodes, edges: edges.map((e) => { let ev = []; try { ev = JSON.parse(e.evidence || "[]"); } catch {} return { ...e, evidence: ev }; }) };
 }
 
+/** The graph page's first view: the most-mentioned entities and their strongest links. Entities left
+ *  without a drawn link are dropped (they only float loose and shrink everything else on "fit"), and so
+ *  is the owner ("Me"), who is linked to everything and pulls the graph into a star. */
 export async function graphOverview() {
-  const top = (await q("SELECT id FROM entities ORDER BY mention_count DESC, importance DESC LIMIT 80")) as any[];
-  return top.length ? expand(top.map((t) => t.id), 1, 240) : { nodes: [], edges: [] };
+  const top = (await q("SELECT id FROM entities WHERE norm_name NOT IN ('me','i','myself') ORDER BY mention_count DESC, importance DESC LIMIT 80")) as any[];
+  if (!top.length) return { nodes: [], edges: [] };
+  const g = await expand(top.map((t) => t.id), 1, 300);
+  const owner = new Set((g.nodes as any[]).filter((n) => /^(me|i|myself)$/i.test(String(n.canonical_name).trim())).map((n) => n.id));
+  const edges = g.edges.filter((e: any) => !owner.has(e.src) && !owner.has(e.dst));
+  const linked = new Set(edges.flatMap((e: any) => [e.src, e.dst]));
+  return { nodes: (g.nodes as any[]).filter((n) => linked.has(n.id)), edges };
 }
 
-export async function nearestEntities(qvec: number[], k = 5): Promise<number[]> {
+/** The k entities closest to a query; below `minSim` nothing is close enough to count as a match. */
+export async function nearestEntities(qvec: number[], k = 5, minSim = 0): Promise<number[]> {
   const cands = (await q("SELECT id,embedding FROM entities WHERE embedding IS NOT NULL")) as any[];
-  return cands.map((c) => ({ id: c.id, sim: cosine(qvec, blobToVec(c.embedding)) }))
+  return cands.map((c) => ({ id: c.id, sim: c.embedding ? cosine(qvec, blobToVec(c.embedding)) : -1 }))
+    .filter((x) => x.sim >= minSim)
     .sort((a, b) => b.sim - a.sim).slice(0, k).map((x) => x.id);
+}
+
+/** Meetings the graph connects to the question (GraphRAG-style "source units"): every edge in the
+ *  expanded neighbourhood votes for the conversations in its evidence, by its weight — double when it
+ *  touches a seed entity. `exclude`: meetings already found by search. Best first. */
+export function relatedConversations(edges: { src: number; dst: number; weight?: number; evidence?: { conversation_id?: number }[] }[],
+  seeds: number[], exclude: Set<number>, limit = 4): number[] {
+  const seed = new Set(seeds), score = new Map<number, number>();
+  for (const e of edges) {
+    const w = (e.weight ?? 1) * (seed.has(e.src) || seed.has(e.dst) ? 2 : 1);
+    for (const cid of new Set((e.evidence ?? []).map((x) => Number(x?.conversation_id)).filter(Number.isFinite))) {
+      if (!exclude.has(cid)) score.set(cid, (score.get(cid) ?? 0) + w);
+    }
+  }
+  return [...score].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([cid]) => cid);
 }

@@ -33,7 +33,7 @@ export async function extractConversation(convId: number, provider: Provider, sc
   const convDate = String((detail as any)?.conversation?.started_at ?? "").slice(0, 10);
   // What the screenshots showed that the transcript doesn't say (visual.ts) — saved, so a re-run reuses it.
   const facts = screenFacts ?? (await repo.getMeetingVisual(convId).catch(() => null))?.facts ?? [];
-  const onScreen = facts.length ? `\n\n# On screen during the meeting (from screenshots; use it where it makes the notes more precise)\n${facts.map((f) => `- ${f}`).join("\n")}` : "";
+  const onScreen = facts.length ? `\n\n# On screen during the meeting (from screenshots; use it where it makes the notes more precise)\n${facts.map((f) => `- ${f.replace(/^\[(?:img:\d+|S\d+)\]\s*/i, "")}`).join("\n")}` : "";
   const userContent = (convDate ? `Today's date: ${convDate}.\n\n` : "") + transcript + onScreen;
   const data = await provider.extract(EXTRACTION_JSON_SCHEMA, EXTRACT_SYSTEM, userContent);
   const entities = (data.entities ?? []) as any[];

@@ -362,6 +362,11 @@ export async function upsertMemory(m: any, embedding?: number[]) {
 export const memoriesForSearch = async () =>
   (await q("SELECT id,conversation_id,embedding,created_at FROM memories WHERE embedding IS NOT NULL"))
     .map((r: any) => ({ id: r.id, conversation_id: r.conversation_id, created_at: r.created_at, vec: blobToVec(r.embedding) }));
+/** Memory cards for whole conversations, with the project each belongs to (for graph-found meetings). */
+export const memoryCardsForConversations = (cids: number[]) =>
+  cids.length ? q(`SELECT m.id,m.conversation_id,m.title,m.summary,m.facts,m.importance,m.created_at,c.started_at,c.project_id,p.name project_name
+                   FROM memories m JOIN conversations c ON c.id=m.conversation_id LEFT JOIN projects p ON p.id=c.project_id
+                   WHERE m.conversation_id IN (${cids.map(() => "?").join(",")})`, cids) : Promise.resolve([]);
 export const memoryCards = (ids: number[]) =>
   ids.length ? q(`SELECT m.id,m.conversation_id,m.title,m.summary,m.facts,m.importance,m.created_at,c.started_at
                   FROM memories m JOIN conversations c ON c.id=m.conversation_id WHERE m.id IN (${ids.map(() => "?").join(",")})`, ids) : Promise.resolve([]);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Markdown, parseBlocks } from "../Markdown";
+import { CiteContext, Markdown, clockSeconds, parseBlocks } from "../Markdown";
 
 const html = (md: string, onPath?: (p: string) => void) => renderToStaticMarkup(<Markdown text={md} onPath={onPath} />);
 
@@ -38,5 +38,17 @@ describe("Markdown for AI answers", () => {
     expect(parseBlocks("## Title\n---\n- a\n  continued\n- b").map((b) => b.t)).toEqual(["h", "hr", "list"]);
     const list: any = parseBlocks("- a\n  continued\n- b")[0];
     expect(list.items.map((i: any) => i.text)).toEqual(["a\ncontinued", "b"]);
+  });
+
+  it("turns [12:34] and [img:N] into citation chips, only for screenshots the meeting has", () => {
+    const cites = { image: (id: number) => (id === 7 ? { time: "12:34", caption: "Pricing slide" } : null), openImage: () => {}, openTime: () => {} };
+    const out = renderToStaticMarkup(<CiteContext.Provider value={cites}><Markdown text={"Price is $1 [img:7, 12:30]. Made up [img:99]. Link [12:34](https://x.io) and [note]."} /></CiteContext.Provider>);
+    expect(out).toContain('title="Screenshot at 12:34: Pricing slide"');
+    expect(out).toContain('title="Show 12:30 in the transcript">12:30</button>');
+    expect(out).toContain("Made up [img:99].");
+    expect(out).toContain('<a href="https://x.io"');
+    expect(out).toContain("[note]");
+    expect(html("Said at [1:02:03].")).toContain("Said at [1:02:03].");   // no page to jump in: plain text
+    expect(clockSeconds("1:02:03")).toBe(3723);
   });
 });

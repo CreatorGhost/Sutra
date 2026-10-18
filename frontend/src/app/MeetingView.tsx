@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Check, ChevronDown, Copy, Loader2, RotateCcw, Share, Sparkles, Tag as TagIcon, Trash2, Users, Wand2, X } from "lucide-react";
+import { ArrowLeft, Camera, Check, ChevronDown, Copy, Loader2, RotateCcw, Share, Sparkles, Tag as TagIcon, Trash2, Users, Wand2, X } from "lucide-react";
 import { api } from "../local/sutra";
 import { minutesToMarkdown } from "../local/minutes";
 import { NOTE_STYLES, type DetailedNotes, type NoteStyle } from "../local/notes";
 import { isMe, speakerName } from "../local/speakers";
 import { notifyDataChanged, useDataVersion } from "./events";
-import { duration, longDate, offsetLabel } from "./format";
+import { duration, longDate, offsetLabel, parseTs } from "./format";
 import { AppIcon, Popover, friendlyError, useAppIcon, useToast } from "./ui";
 import { MinutesNotes } from "./meeting/Minutes";
 import { ProjectChip, useProjects } from "./meeting/ProjectChip";
 import { projectName } from "./projects/model";
 import { EnginePicker } from "./EnginePicker";
 import { Additions, ChatThread, pathOpener, useMeetingChat } from "./meeting/MeetingChat";
-import { OnScreen, RecordingBanner, useMeetingVisual } from "./meeting/MeetingMedia";
+import { OnScreen, RecordingBanner, ShotViewer, shotOffset, shotTime, useMeetingVisual } from "./meeting/MeetingMedia";
+import { CiteContext, type Cites } from "./Markdown";
+import type { MeetingImage } from "../local/repo";
 import "./features.css";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof api.conversation>>>;
@@ -47,6 +49,9 @@ export function MeetingView() {
   const [tab, setTab] = useState<"notes" | "transcript" | "chat">("notes");
   const [style, setStyle] = useState<ViewStyle>(readStyle);
   const [toast, showToast] = useToast();
+  // Citations: the screenshot open full size, and the transcript moment to scroll to ({ n } re-fires the same time).
+  const [shot, setShot] = useState<MeetingImage | null>(null);
+  const [focus, setFocus] = useState<{ sec: number; n: number } | null>(null);
   const projects = useProjects(version);
   const chat = useMeetingChat(cid);
   const visual = useMeetingVisual(cid, version);
@@ -62,7 +67,7 @@ export function MeetingView() {
     catch (e) { setError(friendlyError(e)); setDetail(null); }
   }, [cid]);
 
-  useEffect(() => { setDetail(undefined); setTab("notes"); }, [cid]);
+  useEffect(() => { setDetail(undefined); setTab("notes"); setShot(null); setFocus(null); }, [cid]);
   useEffect(() => { void load(); }, [load, version]);
 
   // While notes are still being written, poll quietly until they land.
@@ -108,6 +113,14 @@ export function MeetingView() {
     const safe = String(title).replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "meeting";
     await api.exportText(`${safe}.md`, md);
   };
+  const images = visual.v?.images ?? [];
+  const startedAt: string | null = c.started_at ?? null;
+  const openTime = (sec: number) => { setShot(null); setTab("transcript"); setFocus((f) => ({ sec, n: (f?.n ?? 0) + 1 })); };
+  const cites: Cites = {
+    image: (id) => { const img = images.find((i) => i.id === id); return img ? { time: shotTime(img, startedAt), caption: img.caption } : null; },
+    openImage: (id) => setShot(images.find((i) => i.id === id) ?? null),
+    openTime,
+  };
   const remove = async () => {
     if (!window.confirm(`Delete “${title}”? This removes its notes and transcript.`)) return;
     await api.deleteConversation(cid);
@@ -147,6 +160,7 @@ export function MeetingView() {
             </button>
           </div>
 
+          <CiteContext.Provider value={cites}>
           {tab === "chat" ? (
             <ChatThread chat={chat} onPath={openPath} toast={showToast} />
           ) : tab === "notes" ? (
@@ -156,18 +170,20 @@ export function MeetingView() {
                 : style === "minutes" ? <MinutesNotes cid={cid} minutes={detail.minutes as any} meetingTitle={title} isMeeting={!!c.is_meeting} toast={showToast} />
                 : style === "detailed" ? <DetailedNotesView cid={cid} actions={detail.actions as any[]} />
                 : <BriefNotes memory={m} actions={detail.actions as any[]} />}
-              {!pending && <OnScreen cid={cid} images={visual.v?.images ?? []} startedAt={c.started_at ?? null} onChanged={() => void visual.reload()} />}
+              {!pending && <OnScreen cid={cid} images={images} startedAt={startedAt} onChanged={() => void visual.reload()} onOpen={setShot} />}
               {!pending && <Additions chat={chat} onPath={openPath} onOpenChat={() => setTab("chat")} />}
             </>
           ) : (
             <>
               <TranscriptTools cid={cid} conversation={c} glossaryFrom={projects.find((p) => p.id === c.project_id && p.context_enabled !== false && p.terms?.length)} toast={showToast} />
-              <Transcript turns={detail.turns as any[]} startedAt={c.started_at} cid={cid} />
+              <Transcript turns={detail.turns as any[]} startedAt={c.started_at} cid={cid} images={images} focus={focus} onShot={setShot} />
             </>
           )}
+          </CiteContext.Provider>
         </article>
       </div>
       <AskBar cid={cid} busy={!!chat.pending} onAsk={(question) => { setTab("chat"); void chat.ask(question); }} onCopy={copy} onExport={exportMd} onDelete={remove} />
+      {shot && <ShotViewer cid={cid} img={shot} startedAt={startedAt} onClose={() => setShot(null)} onTranscript={openTime} />}
       {toast}
     </>
   );
@@ -434,8 +450,28 @@ function TranscriptTools({ cid, conversation: c, glossaryFrom, toast }: { cid: n
   );
 }
 
-function Transcript({ turns, startedAt, cid }: { turns: any[]; startedAt?: string | null; cid: number }) {
+function Transcript({ turns, startedAt, cid, images, focus, onShot }: {
+  turns: any[]; startedAt?: string | null; cid: number; images: MeetingImage[]; focus: { sec: number; n: number } | null; onShot: (img: MeetingImage) => void;
+}) {
   const [renamed, setRenamed] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const t0 = parseTs(startedAt)?.getTime() ?? NaN;
+  const offsets = turns.map((t) => { const a = parseTs(t.abs_start)?.getTime(); return a != null && Number.isFinite(t0) ? Math.max(0, a - t0) : null; });
+  // The turn a time falls in: the last one starting at or before it (one second of slack for rounding).
+  const turnAt = (ms: number) => { let hit = -1; offsets.forEach((o, i) => { if (o != null && o <= ms + 1000) hit = i; }); return hit; };
+  const shotsByTurn = new Map<number, MeetingImage[]>();
+  for (const img of images) {
+    const o = shotOffset(img, startedAt ?? null);
+    const i = o == null ? -1 : Math.max(0, turnAt(o));
+    if (o != null && turns.length) shotsByTurn.set(i, [...(shotsByTurn.get(i) ?? []), img]);
+  }
+  useEffect(() => {
+    if (!focus) return;
+    const el = ref.current?.querySelector<HTMLElement>(`[data-turn="${Math.max(0, turnAt(focus.sec * 1000))}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.classList.remove("turn-hit"); void el.offsetWidth; el.classList.add("turn-hit");
+  }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!turns.length) return <p className="muted">No transcript for this meeting.</p>;
   return (
     <>
@@ -445,12 +481,17 @@ function Transcript({ turns, startedAt, cid }: { turns: any[]; startedAt?: strin
           <RefreshNotes cid={cid} onDone={() => setRenamed(false)} />
         </div>
       )}
-      <div className="transcript">
-        {turns.map((t) => (
-          <div key={t.id}>
+      <div className="transcript" ref={ref}>
+        {turns.map((t, i) => (
+          <div key={t.id} data-turn={i}>
             <div className="turn-head">
               <SpeakerButton turn={t} onRenamed={() => setRenamed(true)} />
               <span className="turn-time">{offsetLabel(startedAt, t.abs_start)}</span>
+              {(shotsByTurn.get(i) ?? []).map((img) => (
+                <button key={img.id} type="button" className="cite" onClick={() => onShot(img)} title={`Screenshot${img.caption ? `: ${img.caption}` : ""}`}>
+                  <Camera size={11} />{shotTime(img, startedAt ?? null)}
+                </button>
+              ))}
             </div>
             <div className="turn-text">{t.text}</div>
           </div>

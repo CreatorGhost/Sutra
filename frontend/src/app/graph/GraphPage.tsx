@@ -104,6 +104,18 @@ export function GraphPage() {
   const zoomBy = (f: number) => { const z = fg.current?.zoom?.(); if (typeof z === "number") fg.current.zoom(z * f, 240); };
   const matches = useMemo(() => searchNodes(graph.nodes as GNode[], query), [graph, query]);
 
+  // Layout forces (the defaults leave a hairball): repulsion with a reach limit so far clusters don't
+  // fling apart, short links, no overlapping dots, and a weak pull to the centre for loose groups.
+  useEffect(() => {
+    const f = fg.current;
+    if (!f?.d3Force) return;
+    f.d3Force("charge")?.strength(-90).distanceMax(320);
+    f.d3Force("link")?.distance(42);
+    f.d3Force("collide", collide((n: any) => nodeRadius(n) + 3));
+    f.d3Force("gravity", gravity(0.05));
+    f.d3ReheatSimulation?.();
+  }, [graph, dims.w > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const top = (
     <div className="pane-top drag graph-top">
       <button className="icon-btn ghost sm back-btn" onClick={() => nav("/")} aria-label="Back"><ArrowLeft size={18} /></button>
@@ -165,8 +177,10 @@ export function GraphPage() {
             height={dims.h}
             graphData={graph as any}
             backgroundColor="rgba(0,0,0,0)"
-            cooldownTicks={90}
+            warmupTicks={120}
+            cooldownTicks={400}
             onEngineStop={() => { if (selId == null) fit(); }}
+            linkLabel={(l: any) => relationLabel(l.relation)}
             linkColor={(l: any) => {
               const a = l.source?.id ?? l.source, b = l.target?.id ?? l.target;
               return selId != null && (a === selId || b === selId) ? theme.text3 : theme.line;
@@ -176,7 +190,7 @@ export function GraphPage() {
             onBackgroundClick={() => setSelId(null)}
             nodePointerAreaPaint={(node: any, color, ctx) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(node.x, node.y, 10, 0, 2 * Math.PI); ctx.fill(); }}
             nodeCanvasObject={(node: any, ctx, scale) => {
-              const r = 3 + Math.sqrt(node.val) * 1.5;
+              const r = nodeRadius(node);
               const dim = selId != null && !label(node);
               ctx.globalAlpha = dim ? 0.35 : 1;
               ctx.beginPath();
@@ -184,7 +198,7 @@ export function GraphPage() {
               ctx.fillStyle = theme.type(node.type);
               ctx.fill();
               if (node.id === selId) { ctx.lineWidth = 2 / scale; ctx.strokeStyle = theme.text; ctx.stroke(); }
-              if (scale > 1.2 || label(node) || node.val > 6) {
+              if (label(node) || node.hub || scale > 2.6) {
                 ctx.font = `${node.id === selId ? 600 : 500} ${12 / scale}px -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif`;
                 ctx.fillStyle = dim ? theme.text3 : theme.text;
                 ctx.fillText(node.name, node.x + r + 3 / scale, node.y + 4 / scale);
@@ -202,6 +216,38 @@ export function GraphPage() {
       </div>
     </>
   );
+}
+
+const nodeRadius = (n: { val: number }) => 3 + Math.sqrt(n.val) * 1.5;
+
+/** Keeps dots from overlapping (d3's forceCollide, without adding d3-force as a dependency). */
+function collide(radius: (n: any) => number) {
+  let nodes: any[] = [];
+  const force = () => {
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i], ra = radius(a);
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j], min = ra + radius(b);
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let d = Math.hypot(dx, dy);
+        if (d >= min) continue;
+        if (!d) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d = Math.hypot(dx, dy); }
+        const push = ((min - d) / d) * 0.5;
+        a.x -= dx * push; a.y -= dy * push; b.x += dx * push; b.y += dy * push;
+      }
+    }
+  };
+  // ponytail: O(n²) per tick; fine for the ≤400 nodes the overview draws, quadtree if that grows.
+  force.initialize = (ns: any[]) => { nodes = ns; };
+  return force;
+}
+
+/** A weak pull towards the centre, so separate groups and loose pairs stay on screen. */
+function gravity(strength: number) {
+  let nodes: any[] = [];
+  const force = (alpha: number) => { for (const n of nodes) { n.vx -= n.x * strength * alpha; n.vy -= n.y * strength * alpha; } };
+  force.initialize = (ns: any[]) => { nodes = ns; };
+  return force;
 }
 
 function EntityCard({ id, theme, onSelect, onClose }: { id: number; theme: Theme; onSelect: (id: number) => void; onClose: () => void }) {

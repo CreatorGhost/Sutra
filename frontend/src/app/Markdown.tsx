@@ -2,8 +2,42 @@
 // lists (nested by indent), quotes, fenced code, simple tables, rules, and inline **bold**, *italic*,
 // `code`, ~~strike~~ and links. Built as React elements — never HTML — so nothing in an answer can
 // inject markup or script. Links open only for http(s)/mailto. Inline code that looks like a file path
-// can be made clickable (`onPath`), e.g. to show it in Finder.
-import { Fragment, type ReactNode } from "react";
+// can be made clickable (`onPath`), e.g. to show it in Finder. Citations — "[12:34]" (a moment in the
+// transcript) and "[img:7]" (a kept screenshot) — become chips when a CiteContext is given.
+import { createContext, Fragment, useContext, type ReactNode } from "react";
+import { Camera } from "lucide-react";
+
+/** What a citation chip needs from the page it's on. Unknown screenshots stay plain text. */
+export interface Cites {
+  image: (id: number) => { time: string | null; caption: string | null } | null;
+  openImage: (id: number) => void;
+  openTime: (seconds: number) => void;
+}
+export const CiteContext = createContext<Cites | null>(null);
+
+/** "1:02:03" / "12:34" → seconds. */
+export const clockSeconds = (t: string) => t.split(":").reduce((a, x) => a * 60 + Number(x), 0);
+
+function Cite({ refs }: { refs: string }) {
+  const cites = useContext(CiteContext);
+  if (!cites) return <>[{refs}]</>;
+  return (
+    <>{refs.split(/\s*[,;]\s*/).map((r, i) => {
+      const img = /^img:(\d+)$/i.exec(r);
+      if (img) {
+        const id = Number(img[1]), info = cites.image(id);
+        if (!info) return <Fragment key={i}>[{r}]</Fragment>;
+        return (
+          <button key={i} type="button" className="cite" onClick={() => cites.openImage(id)}
+            title={`Screenshot${info.time ? ` at ${info.time}` : ""}${info.caption ? `: ${info.caption}` : ""}`}>
+            <Camera size={11} />{info.time ?? "Screenshot"}
+          </button>
+        );
+      }
+      return <button key={i} type="button" className="cite" onClick={() => cites.openTime(clockSeconds(r))} title={`Show ${r} in the transcript`}>{r}</button>;
+    })}</>
+  );
+}
 
 type Block =
   | { t: "h"; level: number; text: string }
@@ -106,7 +140,7 @@ export function inline(text: string, onPath?: (path: string) => void, key = "i")
   let rest = text;
   let n = 0;
   const push = (node: ReactNode) => out.push(<Fragment key={`${key}${n++}`}>{node}</Fragment>);
-  const RE = /(`+)([\s\S]+?)\1|\*\*([\s\S]+?)\*\*|__([\s\S]+?)__|~~([\s\S]+?)~~|\*(?!\s)([^*\n]+?)\*|(?<![\w])_(?!\s)([^_\n]+?)_(?![\w])|\[([^\]\n]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/;
+  const RE = /(`+)([\s\S]+?)\1|\*\*([\s\S]+?)\*\*|__([\s\S]+?)__|~~([\s\S]+?)~~|\*(?!\s)([^*\n]+?)\*|(?<![\w])_(?!\s)([^_\n]+?)_(?![\w])|\[([^\]\n]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\[((?:img:\d+|\d{1,2}:\d{2}(?::\d{2})?)(?:\s*[,;]\s*(?:img:\d+|\d{1,2}:\d{2}(?::\d{2})?))*)\](?!\()/i;
   while (rest) {
     const m = RE.exec(rest);
     if (!m) { push(rest); break; }
@@ -123,6 +157,7 @@ export function inline(text: string, onPath?: (path: string) => void, key = "i")
       const href = m[9];
       push(SAFE_URL.test(href) ? <a href={href} target="_blank" rel="noreferrer noopener">{inline(m[8], onPath, `${key}${n}a`)}</a> : m[8]);
     } else if (m[10] != null) push(<a href={m[10]} target="_blank" rel="noreferrer noopener">{m[10]}</a>);
+    else if (m[11] != null) push(<Cite refs={m[11]} />);
     rest = rest.slice(m.index + m[0].length);
   }
   return out;

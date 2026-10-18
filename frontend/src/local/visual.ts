@@ -130,6 +130,32 @@ export function parseVisual(out: any, shots: LabelledFrame[]): { facts: string[]
   return { facts, keep, speakers };
 }
 
+const FACT_LABEL = /^\[(S\d+)\]\s*/i;
+
+/** Every screen fact is backed by a screenshot the user can open: a shot a fact came from is kept too
+ *  (captioned with the fact) even when the engine didn't pick it as a moment. */
+export function withCitedShots(keep: { frame: LabelledFrame; caption: string }[], facts: string[], shots: LabelledFrame[]) {
+  const out = [...keep];
+  const have = new Set(keep.map((k) => k.frame.name));
+  for (const f of facts) {
+    const frame = shots.find((s) => s.label === FACT_LABEL.exec(f)?.[1].toUpperCase());
+    if (!frame || have.has(frame.name)) continue;
+    have.add(frame.name);
+    out.push({ frame, caption: f.replace(FACT_LABEL, "").slice(0, 240) });
+  }
+  return out;
+}
+
+/** "[S03] Q3 target…" → "[img:7] Q3 target…": the run's shot label becomes the kept screenshot's id, so
+ *  answers can cite the exact image. A fact whose screenshot couldn't be kept loses its label. */
+export function citeFacts(facts: string[], shots: LabelledFrame[], idByName: Map<string, number>): string[] {
+  return facts.map((f) => {
+    const frame = shots.find((s) => s.label === FACT_LABEL.exec(f)?.[1].toUpperCase());
+    const id = frame && idByName.get(frame.name);
+    return id != null ? f.replace(FACT_LABEL, `[img:${id}] `) : f.replace(FACT_LABEL, "");
+  });
+}
+
 /** Look at the recording's screenshots for this meeting. Returns the screen facts (also saved), or null
  *  when there's nothing to look at. Never throws: a failure is recorded and the notes go on without it. */
 export async function visualPass(cid: number, sessionId: number, provider: Provider): Promise<string[] | null> {
@@ -157,14 +183,16 @@ export async function visualPass(cid: number, sessionId: number, provider: Provi
     const { facts, keep, speakers } = parseVisual(out, shots);
     await nameFromScreen(sessionId, turns, speakers);
     await repo.clearMeetingImages(cid);
-    for (const k of keep) {
+    for (const k of withCitedShots(keep, facts, shots)) {
       try {
         await media.keep(sessionId, k.frame.name, cid);
         await repo.addMeetingImage(cid, { name: k.frame.name, at: k.frame.at, caption: k.caption });
       } catch { /* one screenshot failed to copy: keep going */ }
     }
-    await record({ facts, frames_seen: shots.length, error: null });
-    return facts;
+    const idByName = new Map((await repo.listMeetingImages(cid)).map((i) => [i.name, i.id]));
+    const cited = citeFacts(facts, shots, idByName);
+    await record({ facts: cited, frames_seen: shots.length, error: null });
+    return cited;
   } catch (e: any) {
     await record({ error: `Couldn't look at the screenshots: ${String(e?.message ?? e).slice(0, 300)}` });
     return null;

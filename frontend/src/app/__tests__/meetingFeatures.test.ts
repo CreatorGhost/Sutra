@@ -94,8 +94,9 @@ describe("graph model", () => {
   it("hides types and their links", () => {
     const g = buildGraph(raw, new Set(["org"]));
     expect(g.nodes.map((n) => n.id)).toEqual([1, 3, 4]);
-    expect(g.links).toEqual([{ source: 1, target: 3, relation: "owns" }]);
-    expect(g.nodes[0].val).toBe(5);
+    expect(g.links).toEqual([{ source: 1, target: 3, relation: "owns", relations: ["owns"] }]);
+    expect(g.nodes[0].degree).toBe(1);   // sized by links once hidden types are gone, not by raw mentions
+    expect(g.nodes[0].val).toBeCloseTo(1 + 1 + Math.log2(1 + (raw.nodes[0].mention_count ?? 1)));
     expect(buildGraph(null, new Set())).toEqual({ nodes: [], links: [] });
   });
   it("counts types in legend order", () => {
