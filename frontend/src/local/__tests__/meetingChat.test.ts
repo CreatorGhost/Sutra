@@ -65,6 +65,20 @@ describe("meeting chat", () => {
     expect((chat.mock.calls[0] as any[])[2]).toContain("# Added to this meeting by the user\n- (Cost?) Under **$1** per million tokens.\n- Checked: $0.60 / M input.");
   });
 
+  it("gives the AI times and screenshot tags to cite", async () => {
+    const cid = await meeting();
+    const sid = (await repo.sessionForConversation(cid))!;
+    await repo.addMeetingImage(cid, { name: "s.jpg", at: Date.parse("2026-10-01T10:12:34Z"), caption: "Pricing slide" });
+    const [img] = await repo.listMeetingImages(cid);
+    await repo.setMeetingVisual(cid, { session_id: sid, facts: [`[img:${img.id}] $0.60 / M input`, "[S03] an old-style fact"] });
+    const chat = vi.fn(async () => ({ answer: "ok" }));
+    await notes.askMeeting(cid, "Price?", { chat } as any);
+    const [, system, user] = chat.mock.calls[0] as any[];
+    expect(system).toContain("[img:7]");
+    expect(user).toContain(`- [img:${img.id}] (12:34) screenshot: Pricing slide\n- [img:${img.id}] $0.60 / M input\n- an old-style fact`);
+    expect(user).toContain("[0:00] Me: GLM 5.3 via OpenRouter.");
+  });
+
   it("goes when the meeting is deleted", async () => {
     const cid = await meeting();
     await repo.addMeetingChat(cid, { role: "note", content: "x", pinned: true });

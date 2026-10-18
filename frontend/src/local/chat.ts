@@ -1,8 +1,8 @@
 import type { Provider } from "../providers/provider";
 import { isFullTextEngine } from "../providers";
 import { ANSWER_SCHEMA, CHAT_SYSTEM } from "./aiPrompts";
-import { expand, nearestEntities } from "./graph";
-import { askScopeForProject, getProject, getSettings, projectConversationIds, topPriors } from "./repo";
+import { expand, nearestEntities, relatedConversations } from "./graph";
+import { askScopeForProject, getProject, getSettings, memoryCardsForConversations, projectConversationIds, topPriors } from "./repo";
 import { searchMemories } from "./search";
 
 /** `projectId`: Ask about one project — only its meetings, its brief, and (desktop, code access on) its
@@ -18,9 +18,14 @@ export async function chat(message: string, provider: Provider, history: { role:
   }
   let seeds: number[] = [];
   if (provider.canEmbed !== false) {
-    try { const [qvec] = await provider.embed([message]); seeds = await nearestEntities(qvec, 5); } catch { /* keyword-only */ }
+    try { const [qvec] = await provider.embed([message]); seeds = await nearestEntities(qvec, 5, 0.25); } catch { /* keyword-only */ }
   }
   const sub = await expand(seeds, 2, 40);
+  // Meetings the graph links to the question that search didn't surface — including other projects'
+  // ("you worked on something like this in X"). They're context and citable, like the search hits.
+  const relatedIds = relatedConversations(sub.edges as any[], seeds, new Set(memories.map((m) => m.conversation_id)), project ? 3 : 4);
+  const related = (await memoryCardsForConversations(relatedIds).catch(() => []) as any[])
+    .sort((a, b) => relatedIds.indexOf(a.conversation_id) - relatedIds.indexOf(b.conversation_id));
 
   // "Your Context": the user's standing priors (people/projects/role) — beliefs, NON-CITABLE, may be
   // stale. Gated on the context_enabled master toggle; in cloud mode only share_cloud=1 priors ride
@@ -50,13 +55,21 @@ export async function chat(message: string, provider: Provider, history: { role:
     const facts = Array.isArray(m.facts) ? m.facts.join("; ") : "";
     ctx.push(`[C${m.conversation_id}] (${date}) ${m.title}: ${m.summary} Facts: ${facts}`);
   }
+  if (related.length) {
+    ctx.push("\n# Related meetings (linked through the knowledge graph; may be from other projects)");
+    for (const m of related) {
+      const date = m.started_at ? String(m.started_at).slice(0, 10) : "?";
+      const where = m.project_id == null ? "" : project && m.project_id === project.id ? " [this project]" : ` [project: ${m.project_name || "Untitled project"}]`;
+      ctx.push(`[C${m.conversation_id}] (${date})${where} ${m.title}: ${m.summary}`);
+    }
+  }
   if (sub.nodes.length) {
     const name: Record<number, string> = {};
     sub.nodes.forEach((n: any) => (name[n.id] = n.canonical_name));
     ctx.push("\n# Knowledge graph");
     for (const e of sub.edges as any[]) ctx.push(`${name[e.src] ?? "?"} --${e.relation}--> ${name[e.dst] ?? "?"}`);
   }
-  const body = memories.length || sub.nodes.length ? ctx.join("\n") : "(no memories found)";
+  const body = memories.length || related.length || sub.nodes.length ? ctx.join("\n") : "(no memories found)";
   const projectBlock = project
     ? `# Project: ${project.name || "Untitled project"}\n${project.context_enabled !== false && project.brief ? `<project_brief>\n${project.brief}\n</project_brief>\n` : ""}The user is asking about this project.\n`
     : "";
@@ -70,7 +83,7 @@ export async function chat(message: string, provider: Provider, history: { role:
   const cite = (m: any) => ({ conversation_id: m.conversation_id, title: m.title, date: m.started_at ? String(m.started_at).slice(0, 10) : null });
   let citations: any[] = [];
   if (data.supported) {
-    const matched = memories.filter((m) => cited.has(m.conversation_id));
+    const matched = [...memories, ...related].filter((m) => cited.has(m.conversation_id));
     const src = matched;
     const seen = new Set<number>();
     citations = src.filter((m) => (seen.has(m.conversation_id) ? false : (seen.add(m.conversation_id), true))).map(cite);

@@ -16,19 +16,34 @@ export function typeKey(t: string | null | undefined): EntityType {
 }
 
 export interface RawGraph { nodes: { id: number; type: string; canonical_name: string; mention_count?: number }[]; edges: { id?: number; src: number; dst: number; relation: string }[] }
-export interface GNode { id: number; name: string; type: EntityType; val: number }
-export interface GLink { source: number; target: number; relation: string }
+export interface GNode { id: number; name: string; type: EntityType; val: number; degree: number; hub: boolean }
+export interface GLink { source: number; target: number; relation: string; relations: string[] }
 
-/** Graph data for the canvas with hidden types removed (and any link touching them). */
+/** Graph data for the canvas with hidden types removed (and any link touching them). Several relations
+ *  between the same two entities become one link (listing them all), so lines don't stack. A node's size
+ *  follows how connected it is (plus a little for mentions); the best-connected ~15% are "hubs", the
+ *  only names drawn before zooming in. */
 export function buildGraph(data: RawGraph | null, hidden: ReadonlySet<EntityType>): { nodes: GNode[]; links: GLink[] } {
   if (!data) return { nodes: [], links: [] };
-  const nodes = data.nodes
-    .map((n) => ({ id: n.id, name: n.canonical_name, type: typeKey(n.type), val: 1 + (n.mention_count || 1) }))
-    .filter((n) => !hidden.has(n.type));
-  const keep = new Set(nodes.map((n) => n.id));
-  const links = data.edges
-    .filter((e) => keep.has(e.src) && keep.has(e.dst))
-    .map((e) => ({ source: e.src, target: e.dst, relation: e.relation }));
+  const base = data.nodes.map((n) => ({ ...n, t: typeKey(n.type) })).filter((n) => !hidden.has(n.t));
+  const keep = new Set(base.map((n) => n.id));
+  const pairs = new Map<string, GLink>();
+  for (const e of data.edges) {
+    if (!keep.has(e.src) || !keep.has(e.dst) || e.src === e.dst) continue;
+    const k = e.src < e.dst ? `${e.src}:${e.dst}` : `${e.dst}:${e.src}`;
+    const l = pairs.get(k);
+    if (!l) pairs.set(k, { source: e.src, target: e.dst, relation: e.relation, relations: [e.relation] });
+    else if (!l.relations.includes(e.relation)) { l.relations.push(e.relation); l.relation = l.relations.join(", "); }
+  }
+  const links = [...pairs.values()];
+  const degree = new Map<number, number>();
+  for (const l of links) for (const id of [l.source, l.target]) degree.set(id, (degree.get(id) ?? 0) + 1);
+  const nodes = base.map((n) => {
+    const d = degree.get(n.id) ?? 0;
+    return { id: n.id, name: n.canonical_name, type: n.t, degree: d, val: 1 + d + Math.log2(1 + (n.mention_count || 1)), hub: false };
+  });
+  const ranked = [...nodes].sort((a, b) => b.val - a.val);
+  ranked.slice(0, Math.max(5, Math.ceil(nodes.length * 0.15))).forEach((n) => (n.hub = true));
   return { nodes, links };
 }
 

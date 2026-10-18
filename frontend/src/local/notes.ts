@@ -22,9 +22,19 @@ export interface DetailedNotes {
 
 type Detail = NonNullable<Awaited<ReturnType<typeof repo.conversationDetail>>>;
 
-/** Transcript as "Name: text" lines, capped so a very long meeting still fits one request. */
-export function transcriptText(turns: any[], maxChars = 90000): string {
-  const lines = turns.map((t) => `${speakerName(t)}: ${String(t.text ?? "").trim()}`);
+/** "12:34" (or "1:02:03") from the meeting's start — the same clock the transcript shows. */
+export function offsetClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+export const tsMs = (ts: unknown) => { const s = String(ts ?? ""); return s ? Date.parse(s.includes("T") ? s : s.replace(" ", "T") + "Z") : NaN; };
+
+/** Transcript as "Name: text" lines ("[12:34] Name: text" given the meeting's start), capped so a very
+ *  long meeting still fits one request. */
+export function transcriptText(turns: any[], maxChars = 90000, startMs = NaN): string {
+  const at = (t: any) => { const a = tsMs(t.abs_start); return Number.isFinite(startMs) && Number.isFinite(a) ? `[${offsetClock(a - startMs)}] ` : ""; };
+  const lines = turns.map((t) => `${at(t)}${speakerName(t)}: ${String(t.text ?? "").trim()}`);
   let text = lines.join("\n");
   if (text.length > maxChars) {
     // Keep the start and the end — decisions and next steps cluster at the end of meetings.
@@ -75,11 +85,16 @@ export async function askMeeting(cid: number, question: string, provider: Provid
   // What the user added to this meeting (answers they kept, notes they wrote) is part of its record.
   const visual = await repo.getMeetingVisual(cid).catch(() => null);
   const images = await repo.listMeetingImages(cid).catch(() => []);
-  const seen = [...(visual?.facts ?? []), ...images.filter((i) => i.caption).map((i) => `Screenshot kept: ${i.caption}`)];
+  const startMs = tsMs(d.conversation.started_at);
+  const when = (at: number | null) => (at && Number.isFinite(startMs) ? ` (${offsetClock(at - startMs)})` : "");
+  const seen = [...images.map((i) => `[img:${i.id}]${when(i.at)} screenshot: ${i.caption ?? ""}`),
+    // A screenshot the user removed can't be opened, so its tag goes.
+    ...(visual?.facts ?? []).map((f) => f.replace(/^\[S\d+\]\s*/i, "")
+      .replace(/\[img:(\d+)\]\s*/gi, (t, id) => (images.some((i) => i.id === Number(id)) ? t : "")))];
   const added = (await repo.meetingAdditions(cid).catch(() => []))
     .map((a) => (a.question ? `- (${a.question}) ${a.content}` : `- ${a.content}`)).join("\n").slice(0, 12000);
   const user = `# Notes\n${notes}\n\n` + (added ? `# Added to this meeting by the user\n${added}\n\n` : "") +
-    (seen.length ? `# On screen during the meeting (from screenshots)\n${seen.map((s) => `- ${s}`).join("\n")}\n\n` : "") + `# Transcript\n${transcriptText(d.turns, 60000)}\n\n` +
+    (seen.length ? `# On screen during the meeting (from screenshots)\n${seen.map((s) => `- ${s}`).join("\n")}\n\n` : "") + `# Transcript\n${transcriptText(d.turns, 60000, startMs)}\n\n` +
     (prior ? `# Earlier questions\n${prior}\n\n` : "") + `# Question\n${question}`;
   // A meeting in a project with linked code folders: the agent may read them too (read-only).
   const scope = await repo.askScopeForConversation(cid).catch(() => null);

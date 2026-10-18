@@ -85,3 +85,27 @@ export function peopleLine(names: string[], count: number): string {
 }
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+export interface Folder<M> { project: ProjectLike | null; meetings: M[]; total: number }
+
+/** The sidebar's Projects view: one folder per project (most recently active first), then "Not in a
+ *  project". With a query, a folder keeps only its matching meetings — all of them when the project's
+ *  own name matches — and folders with nothing to show are dropped. `matches` is the meeting search. */
+export function projectFolders<M extends { project_id?: number | null; started_at?: string | null; created_at?: string | null }>(
+  rows: M[], projects: ProjectLike[], query: string, matches: (m: M, q: string) => boolean,
+): Folder<M>[] {
+  const q = query.trim().toLowerCase();
+  const when = (m: M) => String(m.started_at ?? m.created_at ?? "");
+  const sorted = [...rows].sort((a, b) => when(b).localeCompare(when(a)));
+  const ids = new Set(projects.map((p) => p.id));
+  const folders: (Folder<M> & { last: string })[] = [...projects, null].map((p) => {
+    const all = sorted.filter((m) => (p ? m.project_id === p.id : m.project_id == null || !ids.has(m.project_id)));
+    const nameHit = !!p && !!q && projectName(p).toLowerCase().includes(q);
+    const meetings = !q || nameHit ? all : all.filter((m) => matches(m, q));
+    return { project: p, meetings, total: all.length, last: all[0] ? when(all[0]) : "" };
+  });
+  return folders
+    .filter((f) => (q ? f.meetings.length > 0 || (!!f.project && projectName(f.project).toLowerCase().includes(q)) : f.project || f.total))
+    .sort((a, b) => (!a.project ? 1 : !b.project ? -1 : b.last.localeCompare(a.last)))
+    .map(({ last: _last, ...f }) => f);
+}

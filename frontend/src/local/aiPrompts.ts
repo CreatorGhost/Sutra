@@ -116,7 +116,10 @@ export const CHAT_SYSTEM =
   "their role) — use them ONLY to understand who or what the user is referring to. They are NOT facts to " +
   "cite, MAY be stale, and are NOT citable; on any conflict, prefer the memories below them. Citations " +
   "remain conversation ids only. If you have the project's code folder (you'll be told), you may also read it " +
-  "to answer questions about the code — name the files you used in the answer; citations stay conversation ids.";
+  "to answer questions about the code — name the files you used in the answer; citations stay conversation ids. " +
+  "'# Related meetings' are linked to the question through the knowledge graph and may come from other projects: " +
+  "when one shows the user already worked on, decided or built something relevant, say so and where (e.g. \"you " +
+  "built something similar in <project> — [C12]\"); ignore them when they don't help.";
 
 export const ANSWER_SCHEMA = {
   name: "grounded_answer", strict: true,
@@ -157,7 +160,10 @@ export const ASK_MEETING_SYSTEM =
   "(1-4 sentences or a short list). Quote who said what when it helps. If the meeting doesn't cover it, say " +
   "so plainly — never invent. Answer in the language of the question. Use Markdown where it helps (short " +
   "lists, **bold** for key facts, `code` for names and paths). If you have the project's code folder " +
-  "(you'll be told), you may also read it to answer questions about the code, naming the files you used.";
+  "(you'll be told), you may also read it to answer questions about the code, naming the files you used. " +
+  "Cite where each point comes from, inline, right after it: the transcript time in brackets exactly as shown " +
+  "(e.g. [12:34]) for something said, and the screenshot tag (e.g. [img:7]) for something seen on screen. Only " +
+  "cite times and tags that appear below; never make one up.";
 
 export const ASK_MEETING_SCHEMA = {
   name: "meeting_answer",

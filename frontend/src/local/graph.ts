@@ -51,7 +51,8 @@ export async function upsertEdge(src: number, dst: number, relation: string, con
   await persist();
 }
 
-export async function expand(entityIds: number[], hops = 2, limit = 120) {
+/** `exclude`: entities kept out of the result (and so out of the edge limit). */
+export async function expand(entityIds: number[], hops = 2, limit = 120, exclude: number[] = []) {
   if (!entityIds.length) return { nodes: [], edges: [] };
   hops = Math.max(0, Math.min(hops, 3));
   const seed = JSON.stringify(entityIds);
@@ -63,13 +64,16 @@ export async function expand(entityIds: number[], hops = 2, limit = 120) {
        FROM edges e JOIN reach r ON (e.src_entity=r.id OR e.dst_entity=r.id)
        WHERE r.depth < ?)
      SELECT DISTINCT id FROM reach`, [seed, hops])) as any[];
-  let ids = reach.map((r) => r.id);
+  const skip = new Set(exclude);
+  let ids = reach.map((r) => r.id).filter((id) => !skip.has(id));
   if (!ids.length) return { nodes: [], edges: [] };
   if (ids.length > 400) ids = ids.slice(0, 400); // cap so doubled IN(...) binding stays under SQLite's 999-var limit
   const ph = ids.map(() => "?").join(",");
   const edges = (await q(
     `SELECT id,src_entity src,dst_entity dst,relation,weight,evidence FROM edges
-     WHERE src_entity IN (${ph}) AND dst_entity IN (${ph}) LIMIT ?`, [...ids, ...ids, limit])) as any[];
+     WHERE src_entity IN (${ph}) AND dst_entity IN (${ph})
+     ORDER BY weight * (CASE WHEN EXISTS(SELECT 1 FROM json_each(?) WHERE value IN (src_entity,dst_entity)) THEN 2 ELSE 1 END) DESC, last_seen DESC
+     LIMIT ?`, [...ids, ...ids, seed, limit])) as any[]; // seed edges count double, as in relatedConversations
   let nodeIds = [...new Set<number>(ids)];
   edges.forEach((e) => { nodeIds.push(e.src); nodeIds.push(e.dst); });
   nodeIds = [...new Set<number>(nodeIds)];
@@ -79,13 +83,39 @@ export async function expand(entityIds: number[], hops = 2, limit = 120) {
   return { nodes, edges: edges.map((e) => { let ev = []; try { ev = JSON.parse(e.evidence || "[]"); } catch {} return { ...e, evidence: ev }; }) };
 }
 
+/** The graph page's first view: the most-mentioned entities and their strongest links. Entities left
+ *  without a drawn link are dropped (they only float loose and shrink everything else on "fit"), and so
+ *  is the owner ("Me"), who is linked to everything and pulls the graph into a star. */
 export async function graphOverview() {
-  const top = (await q("SELECT id FROM entities ORDER BY mention_count DESC, importance DESC LIMIT 80")) as any[];
-  return top.length ? expand(top.map((t) => t.id), 1, 240) : { nodes: [], edges: [] };
+  const top = (await q("SELECT id FROM entities WHERE norm_name NOT IN ('me','i','myself') ORDER BY mention_count DESC, importance DESC LIMIT 80")) as any[];
+  if (!top.length) return { nodes: [], edges: [] };
+  // The owner is excluded in the query, so its many edges don't use up the 300.
+  const owner = ((await q("SELECT id FROM entities WHERE norm_name IN ('me','i','myself')")) as any[]).map((o) => o.id);
+  const g = await expand(top.map((t) => t.id), 1, 300, owner);
+  const edges = g.edges;
+  const linked = new Set(edges.flatMap((e: any) => [e.src, e.dst]));
+  return { nodes: (g.nodes as any[]).filter((n) => linked.has(n.id)), edges };
 }
 
-export async function nearestEntities(qvec: number[], k = 5): Promise<number[]> {
+/** The k entities closest to a query; below `minSim` nothing is close enough to count as a match. */
+export async function nearestEntities(qvec: number[], k = 5, minSim = 0): Promise<number[]> {
   const cands = (await q("SELECT id,embedding FROM entities WHERE embedding IS NOT NULL")) as any[];
-  return cands.map((c) => ({ id: c.id, sim: cosine(qvec, blobToVec(c.embedding)) }))
+  return cands.map((c) => ({ id: c.id, sim: c.embedding ? cosine(qvec, blobToVec(c.embedding)) : -1 }))
+    .filter((x) => x.sim >= minSim)
     .sort((a, b) => b.sim - a.sim).slice(0, k).map((x) => x.id);
+}
+
+/** Meetings the graph connects to the question (GraphRAG-style "source units"): every edge in the
+ *  expanded neighbourhood votes for the conversations in its evidence, by its weight — double when it
+ *  touches a seed entity. `exclude`: meetings already found by search. Best first. */
+export function relatedConversations(edges: { src: number; dst: number; weight?: number; evidence?: { conversation_id?: number }[] }[],
+  seeds: number[], exclude: Set<number>, limit = 4): number[] {
+  const seed = new Set(seeds), score = new Map<number, number>();
+  for (const e of edges) {
+    const w = (e.weight ?? 1) * (seed.has(e.src) || seed.has(e.dst) ? 2 : 1);
+    for (const cid of new Set((e.evidence ?? []).map((x) => Number(x?.conversation_id)).filter(Number.isFinite))) {
+      if (!exclude.has(cid)) score.set(cid, (score.get(cid) ?? 0) + w);
+    }
+  }
+  return [...score].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([cid]) => cid);
 }

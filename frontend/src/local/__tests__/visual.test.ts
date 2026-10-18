@@ -58,6 +58,8 @@ describe("choosing and labelling screenshots", () => {
     expect(r.facts[0]).toBe("[S01] Q3 target $1.2M");
     expect(r.facts).toHaveLength(visual.MAX_FACTS);
     expect(r.keep.map((k) => [k.frame.name, k.caption])).toEqual([["shot-1.jpg", "Q3 plan"]]);
+    // A fact citing a shot the AI said not to keep doesn't bring it back; an unmentioned one is kept.
+    expect(visual.withCitedShots([], ["[S02] Desktop", "[S01] Plan"], shots, r.rejected).map((k) => k.frame.name)).toEqual(["shot-1.jpg"]);
   });
 
   it("names speakers only from shots it was shown, and drops conflicting names", () => {
@@ -79,16 +81,18 @@ describe("choosing and labelling screenshots", () => {
 describe("the pass after a recording", () => {
   it("sends the screenshots with the timed transcript, keeps the picks, saves the facts", async () => {
     const { cid, sid } = await meeting();
-    const extract = vi.fn(async () => ({ screen_facts: ["[S02] $1.2M ARR"], moments: [{ shot: "S02", caption: "Q3 slide", keep: true }] }));
+    const extract = vi.fn(async () => ({ screen_facts: ["[S02] $1.2M ARR", "[S04] Launch Nov 3", "[S09] made up"], moments: [{ shot: "S02", caption: "Q3 slide", keep: true }] }));
     const facts = await visual.visualPass(cid, sid, { extract, engineId: async () => "claude" } as any);
-    expect(facts).toEqual(["[S02] $1.2M ARR"]);
+    const imgs = await repo.listMeetingImages(cid);
+    // Every fact cites the screenshot it came from — S04 is kept for it even though it wasn't a "moment".
+    expect(imgs.map((i) => [i.name, i.caption])).toEqual([[`shot-${T0 + 60_000}.jpg`, "Q3 slide"], [`shot-${T0 + 180_000}.jpg`, "Launch Nov 3"]]);
+    expect(facts).toEqual([`[img:${imgs[0].id}] $1.2M ARR`, `[img:${imgs[1].id}] Launch Nov 3`, "made up"]);
     const [, , user, opts] = extract.mock.calls[0] as any[];
     expect(user).toContain("S01 00:00, S02 01:00, S03 02:00, S04 03:00");
     expect(user).toContain("[00:10] Me: The plan is on the slide.");
     expect(opts.images).toEqual({ session: sid, frames: [0, 1, 2, 3].map((i) => ({ name: `shot-${T0 + i * 60_000}.jpg`, label: `S0${i + 1}` })) });
     expect(media.keep).toHaveBeenCalledWith(sid, `shot-${T0 + 60_000}.jpg`, cid);
-    expect(await repo.listMeetingImages(cid)).toMatchObject([{ name: `shot-${T0 + 60_000}.jpg`, caption: "Q3 slide" }]);
-    expect(await repo.getMeetingVisual(cid)).toMatchObject({ facts: ["[S02] $1.2M ARR"], frames_seen: 4, frames_total: 4, engine: "claude", error: null, confirmed: false });
+    expect(await repo.getMeetingVisual(cid)).toMatchObject({ facts, frames_seen: 4, frames_total: 4, engine: "claude", error: null, confirmed: false });
     expect(await repo.sessionForConversation(cid)).toBe(sid);
   });
 
@@ -109,7 +113,7 @@ describe("the pass after a recording", () => {
     const { extractConversation } = await import("../extraction");
     const extract = vi.fn(async () => ({ title: "Plan", summary: "s", facts: [], entities: [], relations: [] }));
     await extractConversation(cid, { extract, canEmbed: false, id: "agent:claude" } as any).catch(() => {});
-    expect((extract.mock.calls[0] as any[])[2]).toContain("# On screen during the meeting (from screenshots; use it where it makes the notes more precise)\n- [S01] Q3 target $1.2M ARR");
+    expect((extract.mock.calls[0] as any[])[2]).toContain("# On screen during the meeting (from screenshots; use it where it makes the notes more precise)\n- Q3 target $1.2M ARR");
   });
 });
 

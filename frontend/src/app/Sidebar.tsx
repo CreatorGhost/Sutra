@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AudioLines, FolderClosed, Laptop, Loader2, Search, Settings as Gear, Sparkles, Square, Waypoints, X } from "lucide-react";
+import { AudioLines, ChevronRight, FolderClosed, FolderOpen, Laptop, Loader2, Search, Settings as Gear, Sparkles, Square, Waypoints, X } from "lucide-react";
 import { api } from "../local/sutra";
 import { setMeetingFilter, useMeetingFilter } from "./projects/filter";
-import { projectColor, projectName, type ProjectLike } from "./projects/model";
+import { projectColor, projectFolders, projectName, type ProjectLike } from "./projects/model";
 import "./features.css";
 import { desktop, type DetectionState } from "../desktop/bridge";
 import { useDataVersion } from "./events";
@@ -25,10 +25,11 @@ interface MeetingRow {
   project_id: number | null;
 }
 
-const NAV = [
-  { to: "/", label: "Meetings", icon: AudioLines, match: (p: string) => p === "/" || p.startsWith("/m/") || p === "/live" || p === "/ask" },
-  { to: "/projects", label: "Projects", icon: FolderClosed, match: (p: string) => p.startsWith("/projects") },
-  { to: "/graph", label: "Graph", icon: Waypoints, match: (p: string) => p.startsWith("/graph") },
+type Mode = "meetings" | "projects" | "graph";
+const NAV: { to: string; mode: Mode; label: string; icon: typeof AudioLines }[] = [
+  { to: "/", mode: "meetings", label: "Meetings", icon: AudioLines },
+  { to: "/projects", mode: "projects", label: "Projects", icon: FolderClosed },
+  { to: "/graph", mode: "graph", label: "Graph", icon: Waypoints },
 ];
 
 function matches(m: MeetingRow, q: string): boolean {
@@ -47,6 +48,21 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [detection, setDetection] = useState<DetectionState>({ active: null, visible: false });
   const [projects, setProjects] = useState<Map<number, ProjectLike>>(new Map());
   const filter = useMeetingFilter();
+  // Which list the sidebar shows. Opening a meeting from a project folder keeps the folders in view;
+  // only the Meetings tab (or Home) switches back to the plain list.
+  const [list, setList] = useState<"meetings" | "projects">(pathname.startsWith("/projects") ? "projects" : "meetings");
+  useEffect(() => {
+    if (pathname.startsWith("/projects")) setList("projects");
+    else if (pathname === "/" || pathname === "/live") setList("meetings");
+  }, [pathname]);
+  const mode: Mode = pathname.startsWith("/graph") ? "graph" : list;
+  // The project in view: the open project page, or the open meeting's project.
+  const openProjectId = (() => {
+    const p = Number(pathname.match(/^\/projects\/(\d+)/)?.[1] ?? NaN);
+    if (Number.isFinite(p)) return p;
+    const mid = Number(pathname.match(/^\/m\/(\d+)/)?.[1] ?? NaN);
+    return (rows ?? []).find((r) => r.id === mid)?.project_id ?? null;
+  })();
 
   useEffect(() => {
     let alive = true;
@@ -75,8 +91,11 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const activeId = Number(pathname.match(/^\/m\/(\d+)/)?.[1] ?? NaN);
   const recording = rec.status === "recording" || rec.status === "starting";
 
+  // In the Projects view, Enter asks within the project in view (if any); elsewhere across everything.
+  const askScope = list === "projects" && openProjectId != null && projects.has(openProjectId) ? openProjectId : null;
+  const askUrl = (projectId: number | null) => `/ask?q=${encodeURIComponent(query.trim())}${projectId != null ? `&project=${projectId}` : ""}`;
   const onSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && query.trim()) nav(`/ask?q=${encodeURIComponent(query.trim())}`);
+    if (e.key === "Enter" && query.trim()) nav(askUrl(askScope));
     if (e.key === "Escape") setQuery("");
   };
 
@@ -85,18 +104,18 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
       <div className="side-top drag">
         <label className="search">
           <Search size={15} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onSearchKey} placeholder="Search…" aria-label="Search meetings" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onSearchKey} placeholder={list === "projects" ? "Search projects and meetings…" : "Search…"} aria-label={list === "projects" ? "Search projects and meetings" : "Search meetings"} />
           {query && <button className="icon-btn ghost sm" onClick={() => setQuery("")} aria-label="Clear search"><X size={14} /></button>}
         </label>
       </div>
       <nav className="side-nav" aria-label="Sections">
-        {NAV.map(({ to, label, icon: Icon, match }) => (
-          <button key={to} aria-current={match(pathname) ? "page" : undefined} onClick={() => nav(to)}>
+        {NAV.map(({ to, mode: m, label, icon: Icon }) => (
+          <button key={to} aria-current={mode === m ? "page" : undefined} onClick={() => { if (m !== "graph") setList(m); nav(to); }}>
             <Icon size={14} /> {label}
           </button>
         ))}
       </nav>
-      {filter != null && (
+      {filter != null && list === "meetings" && (
         <div className="side-filter">
           Showing
           <span className="tag" style={{ ["--pc" as any]: projectColor(filterProject) }}>
@@ -126,6 +145,10 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
         </div>
       ) : !desktop ? <MacChip /> : null}
 
+      {list === "projects" ? (
+        <ProjectTree rows={rows} projects={[...projects.values()]} query={query} activeId={activeId} openProjectId={openProjectId}
+          askScope={askScope != null ? projects.get(askScope) ?? null : null} onAsk={(pid) => nav(askUrl(pid))} />
+      ) : (
       <nav className="list" aria-label="Meetings">
         {query.trim() && (
           <button className="item" onClick={() => nav(`/ask?q=${encodeURIComponent(query.trim())}`)}>
@@ -162,6 +185,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
           ))
         )}
       </nav>
+      )}
 
       <div className="side-bottom">
         <button className="icon-btn" onClick={onOpenSettings} aria-label="Settings"><Gear size={18} /></button>
@@ -177,6 +201,84 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
         )}
       </div>
     </aside>
+  );
+}
+
+const TOP = 5;
+
+/** Projects view: a folder per project with its latest meetings (all of them on "Show all"), and search
+ *  that narrows every folder at once — plus Ask, inside the project in view or across all meetings. */
+function ProjectTree({ rows, projects, query, activeId, openProjectId, askScope, onAsk }: {
+  rows: MeetingRow[] | null; projects: ProjectLike[]; query: string; activeId: number; openProjectId: number | null;
+  askScope: ProjectLike | null; onAsk: (projectId: number | null) => void;
+}) {
+  const nav = useNavigate();
+  // Folders the user opened or closed by hand; that wins over the automatic opening below.
+  const [open, setOpen] = useState<Map<string, boolean>>(new Map());
+  const [full, setFull] = useState<Set<string>>(new Set());
+  const q = query.trim();
+  const folders = useMemo(() => projectFolders(rows ?? [], projects, q, matches), [rows, projects, q]);
+  const keyOf = (p: ProjectLike | null) => (p ? String(p.id) : "none");
+  // The project in view is open; while searching, every folder with a hit is.
+  const isOpen = (p: ProjectLike | null) => open.get(keyOf(p)) ?? (!!q || (p != null && p.id === openProjectId));
+  const flip = (p: ProjectLike | null) => setOpen((m) => new Map(m).set(keyOf(p), !isOpen(p)));
+  const toggle = (set: Set<string>, k: string) => { const n = new Set(set); if (n.has(k)) n.delete(k); else n.add(k); return n; };
+
+  if (rows === null) return <div className="list" style={{ padding: 8 }}>{[0, 1, 2].map((i) => <div key={i} className="skel" style={{ height: 40, margin: "8px 0" }} />)}</div>;
+  return (
+    <nav className="list ptree" aria-label="Projects">
+      {q && (
+        <>
+          {askScope && (
+            <button className="item" onClick={() => onAsk(askScope.id)}>
+              <div className="item-head"><span className="item-title" style={{ display: "flex", gap: 8, alignItems: "center" }}><Sparkles size={14} /> Ask in {projectName(askScope)}</span></div>
+              <div className="item-sub">“{q}” in this project’s meetings</div>
+            </button>
+          )}
+          <button className="item" onClick={() => onAsk(null)}>
+            <div className="item-head"><span className="item-title" style={{ display: "flex", gap: 8, alignItems: "center" }}><Sparkles size={14} /> Ask Sutra</span></div>
+            <div className="item-sub">“{q}” across all your meetings</div>
+          </button>
+        </>
+      )}
+      {!folders.length && <div className="list-empty">{q ? "No projects or meetings match." : "No projects yet."}</div>}
+      {folders.map(({ project: p, meetings, total }) => {
+        const k = keyOf(p), expanded = isOpen(p);
+        const shown = full.has(k) || q ? meetings : meetings.slice(0, TOP);
+        const Icon = expanded ? FolderOpen : FolderClosed;
+        return (
+          <section key={k} className="pfolder" style={{ ["--pc" as any]: projectColor(p) }}>
+            <div className={`pfolder-head${p && p.id === openProjectId ? " active" : ""}`}>
+              <button className="pfolder-toggle" aria-expanded={expanded} aria-label={expanded ? "Collapse" : "Expand"}
+                onClick={() => flip(p)}><ChevronRight size={14} /></button>
+              <button className="pfolder-name" onClick={() => (p ? nav(`/projects/${p.id}`) : flip(p))}>
+                <Icon size={15} className="pfolder-icon" />
+                <span className="grow">{p ? projectName(p) : "Not in a project"}</span>
+                <span className="pfolder-count">{q && meetings.length !== total ? `${meetings.length}/${total}` : total}</span>
+              </button>
+            </div>
+            {expanded && (
+              <div className="pfolder-body">
+                {!meetings.length && <div className="pfolder-empty">No meetings yet</div>}
+                {shown.map((m) => (
+                  <button key={m.id} className={`item${m.id === activeId ? " active" : ""}`} onClick={() => nav(`/m/${m.id}`)}>
+                    <div className="item-head">
+                      <span className="item-title">{m.title || (m.status === "failed" ? "Couldn't write notes" : "Writing notes…")}</span>
+                      <span className="item-date">{shortDate(m.started_at ?? m.created_at)}</span>
+                    </div>
+                  </button>
+                ))}
+                {!q && meetings.length > TOP && (
+                  <button className="pfolder-more" onClick={() => setFull((s) => toggle(s, k))}>
+                    {full.has(k) ? "Show fewer" : `Show all ${meetings.length}`}
+                  </button>
+                )}
+              </div>
+            )}
+          </section>
+        );
+      })}
+    </nav>
   );
 }
 

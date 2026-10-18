@@ -2,9 +2,11 @@
 //   • RecordingBanner — the recording still on this Mac (screenshots + audio): play the audio, look at the
 //     screenshots again (e.g. after switching to an engine that can see), or confirm the notes, which
 //     deletes the recording (kept screenshots stay);
-//   • OnScreen — the screenshots the AI kept for the notes, each captioned and timed, opened full size.
+//   • OnScreen — the screenshots the AI kept for the notes, each captioned and timed;
+//   • ShotViewer — one screenshot full size (from On screen, a citation, or the transcript), with a jump to
+//     that moment in the transcript.
 import { useCallback, useEffect, useState } from "react";
-import { Camera, Check, Eye, EyeOff, Loader2, Play, RotateCw, X } from "lucide-react";
+import { Camera, Check, Eye, EyeOff, Loader2, Play, RotateCw, ScrollText, X } from "lucide-react";
 import { api } from "../../local/sutra";
 import type { MeetingImage } from "../../local/repo";
 import { desktop } from "../../desktop/bridge";
@@ -99,9 +101,17 @@ export function RecordingBanner({ cid, v, startedAt, onChanged, toast }: {
   );
 }
 
-export function OnScreen({ cid, images, startedAt, onChanged }: { cid: number; images: MeetingImage[]; startedAt: string | null; onChanged: () => void }) {
+/** Offset of a screenshot from the meeting's start (ms), or null. */
+export function shotOffset(img: MeetingImage, startedAt: string | null): number | null {
+  const t0 = startedAt ? Date.parse(String(startedAt).includes("T") ? startedAt : String(startedAt).replace(" ", "T") + "Z") : NaN;
+  return img.at && Number.isFinite(t0) ? Math.max(0, img.at - t0) : null;
+}
+export const shotTime = (img: MeetingImage, startedAt: string | null) => { const o = shotOffset(img, startedAt); return o == null ? null : mmss(o); };
+
+export function OnScreen({ cid, images, startedAt, onChanged, onOpen }: {
+  cid: number; images: MeetingImage[]; startedAt: string | null; onChanged: () => void; onOpen: (img: MeetingImage) => void;
+}) {
   const [urls, setUrls] = useState<Record<string, string>>({});
-  const [open, setOpen] = useState<MeetingImage | null>(null);
   const key = images.map((i) => i.name).join(",");
   useEffect(() => {
     let alive = true;
@@ -116,27 +126,19 @@ export function OnScreen({ cid, images, startedAt, onChanged }: { cid: number; i
     })();
     return () => { alive = false; made.forEach((u) => URL.revokeObjectURL(u)); };
   }, [cid, key]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(null); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
   if (!images.length) return null;
-  const t0 = startedAt ? Date.parse(String(startedAt).includes("T") ? startedAt : String(startedAt).replace(" ", "T") + "Z") : NaN;
-  const when = (img: MeetingImage) => (img.at && Number.isFinite(t0) ? mmss(img.at - t0) : null);
 
   return (
     <section className="sec on-screen">
       <div className="sec-head"><h2>On screen</h2><span className="faint">{images.length} kept from the recording</span></div>
       <div className="shots">
         {images.map((img) => (
-          <figure key={img.id} className="shot">
-            <button className="shot-img" onClick={() => setOpen(img)} aria-label={`Open screenshot${img.caption ? `: ${img.caption}` : ""}`}>
+          <figure key={img.id} id={`shot-${img.id}`} className="shot">
+            <button className="shot-img" onClick={() => onOpen(img)} aria-label={`Open screenshot${img.caption ? `: ${img.caption}` : ""}`}>
               {urls[img.name] ? <img src={urls[img.name]} alt={img.caption ?? "Screenshot"} /> : <span className="shot-ph"><Loader2 size={16} className="spin" /></span>}
             </button>
             <figcaption>
-              {when(img) && <span className="shot-time">{when(img)}</span>}
+              {shotTime(img, startedAt) && <span className="shot-time">{shotTime(img, startedAt)}</span>}
               <span className="shot-cap">{img.caption}</span>
               <button className="icon-btn ghost sm" aria-label="Remove from the notes" title="Remove from the notes"
                 onClick={() => void api.removeMeetingImage(cid, img).then(onChanged)}><X size={13} /></button>
@@ -144,12 +146,37 @@ export function OnScreen({ cid, images, startedAt, onChanged }: { cid: number; i
           </figure>
         ))}
       </div>
-      {open && (
-        <div className="lightbox" role="dialog" aria-label="Screenshot" onClick={() => setOpen(null)}>
-          {urls[open.name] && <img src={urls[open.name]} alt={open.caption ?? "Screenshot"} />}
-          <div className="lightbox-cap">{when(open) && <b>{when(open)} · </b>}{open.caption}</div>
-        </div>
-      )}
     </section>
+  );
+}
+
+/** One screenshot full size: when it was taken, what it shows, and a jump to that moment in the transcript. */
+export function ShotViewer({ cid, img, startedAt, onClose, onTranscript }: {
+  cid: number; img: MeetingImage; startedAt: string | null; onClose: () => void; onTranscript: (seconds: number) => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let made: string | null = null, alive = true;
+    void api.keptImage(cid, img.name).then((u) => { made = u; if (alive) setUrl(u); else URL.revokeObjectURL(u); }).catch(() => {});
+    return () => { alive = false; if (made) URL.revokeObjectURL(made); };
+  }, [cid, img.name]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const off = shotOffset(img, startedAt);
+  return (
+    <div className="lightbox" role="dialog" aria-label="Screenshot" onClick={onClose}>
+      {url ? <img src={url} alt={img.caption ?? "Screenshot"} /> : <Loader2 size={20} className="spin" />}
+      <div className="lightbox-cap">
+        {off != null && <b>{mmss(off)} · </b>}{img.caption}
+        {off != null && (
+          <button className="btn sm lightbox-jump" onClick={(e) => { e.stopPropagation(); onTranscript(Math.floor(off / 1000)); }}>
+            <ScrollText size={14} /> Show in transcript
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
