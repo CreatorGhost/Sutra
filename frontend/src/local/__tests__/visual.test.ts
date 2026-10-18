@@ -58,6 +58,8 @@ describe("choosing and labelling screenshots", () => {
     expect(r.facts[0]).toBe("[S01] Q3 target $1.2M");
     expect(r.facts).toHaveLength(visual.MAX_FACTS);
     expect(r.keep.map((k) => [k.frame.name, k.caption])).toEqual([["shot-1.jpg", "Q3 plan"]]);
+    // A fact citing a shot the AI said not to keep doesn't bring it back; an unmentioned one is kept.
+    expect(visual.withCitedShots([], ["[S02] Desktop", "[S01] Plan"], shots, r.rejected).map((k) => k.frame.name)).toEqual(["shot-1.jpg"]);
   });
 
   it("names speakers only from shots it was shown, and drops conflicting names", () => {

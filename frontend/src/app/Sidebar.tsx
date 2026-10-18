@@ -92,7 +92,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const recording = rec.status === "recording" || rec.status === "starting";
 
   // In the Projects view, Enter asks within the project in view (if any); elsewhere across everything.
-  const askScope = list === "projects" && openProjectId != null ? openProjectId : null;
+  const askScope = list === "projects" && openProjectId != null && projects.has(openProjectId) ? openProjectId : null;
   const askUrl = (projectId: number | null) => `/ask?q=${encodeURIComponent(query.trim())}${projectId != null ? `&project=${projectId}` : ""}`;
   const onSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && query.trim()) nav(askUrl(askScope));
@@ -213,13 +213,15 @@ function ProjectTree({ rows, projects, query, activeId, openProjectId, askScope,
   askScope: ProjectLike | null; onAsk: (projectId: number | null) => void;
 }) {
   const nav = useNavigate();
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  // Folders the user opened or closed by hand; that wins over the automatic opening below.
+  const [open, setOpen] = useState<Map<string, boolean>>(new Map());
   const [full, setFull] = useState<Set<string>>(new Set());
   const q = query.trim();
   const folders = useMemo(() => projectFolders(rows ?? [], projects, q, matches), [rows, projects, q]);
   const keyOf = (p: ProjectLike | null) => (p ? String(p.id) : "none");
   // The project in view is open; while searching, every folder with a hit is.
-  const isOpen = (p: ProjectLike | null) => !!q || open.has(keyOf(p)) || (p != null && p.id === openProjectId);
+  const isOpen = (p: ProjectLike | null) => open.get(keyOf(p)) ?? (!!q || (p != null && p.id === openProjectId));
+  const flip = (p: ProjectLike | null) => setOpen((m) => new Map(m).set(keyOf(p), !isOpen(p)));
   const toggle = (set: Set<string>, k: string) => { const n = new Set(set); if (n.has(k)) n.delete(k); else n.add(k); return n; };
 
   if (rows === null) return <div className="list" style={{ padding: 8 }}>{[0, 1, 2].map((i) => <div key={i} className="skel" style={{ height: 40, margin: "8px 0" }} />)}</div>;
@@ -248,8 +250,8 @@ function ProjectTree({ rows, projects, query, activeId, openProjectId, askScope,
           <section key={k} className="pfolder" style={{ ["--pc" as any]: projectColor(p) }}>
             <div className={`pfolder-head${p && p.id === openProjectId ? " active" : ""}`}>
               <button className="pfolder-toggle" aria-expanded={expanded} aria-label={expanded ? "Collapse" : "Expand"}
-                onClick={() => setOpen((s) => toggle(s, k))}><ChevronRight size={14} /></button>
-              <button className="pfolder-name" onClick={() => (p ? nav(`/projects/${p.id}`) : setOpen((s) => toggle(s, k)))}>
+                onClick={() => flip(p)}><ChevronRight size={14} /></button>
+              <button className="pfolder-name" onClick={() => (p ? nav(`/projects/${p.id}`) : flip(p))}>
                 <Icon size={15} className="pfolder-icon" />
                 <span className="grow">{p ? projectName(p) : "Not in a project"}</span>
                 <span className="pfolder-count">{q && meetings.length !== total ? `${meetings.length}/${total}` : total}</span>

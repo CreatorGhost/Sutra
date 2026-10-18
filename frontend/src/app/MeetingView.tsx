@@ -457,8 +457,13 @@ function Transcript({ turns, startedAt, cid, images, focus, onShot }: {
   const ref = useRef<HTMLDivElement | null>(null);
   const t0 = parseTs(startedAt)?.getTime() ?? NaN;
   const offsets = turns.map((t) => { const a = parseTs(t.abs_start)?.getTime(); return a != null && Number.isFinite(t0) ? Math.max(0, a - t0) : null; });
-  // The turn a time falls in: the last one starting at or before it (one second of slack for rounding).
-  const turnAt = (ms: number) => { let hit = -1; offsets.forEach((o, i) => { if (o != null && o <= ms + 1000) hit = i; }); return hit; };
+  // The turn a time falls in: the last one starting at or before it; one second of slack for rounding
+  // only when none does (a time just before the first turn).
+  const turnAt = (ms: number) => {
+    let hit = -1, near = -1;
+    offsets.forEach((o, i) => { if (o != null && o <= ms) hit = i; else if (o != null && near < 0 && o <= ms + 1000) near = i; });
+    return hit >= 0 ? hit : near;
+  };
   const shotsByTurn = new Map<number, MeetingImage[]>();
   for (const img of images) {
     const o = shotOffset(img, startedAt ?? null);

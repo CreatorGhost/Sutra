@@ -51,7 +51,8 @@ export async function upsertEdge(src: number, dst: number, relation: string, con
   await persist();
 }
 
-export async function expand(entityIds: number[], hops = 2, limit = 120) {
+/** `exclude`: entities kept out of the result (and so out of the edge limit). */
+export async function expand(entityIds: number[], hops = 2, limit = 120, exclude: number[] = []) {
   if (!entityIds.length) return { nodes: [], edges: [] };
   hops = Math.max(0, Math.min(hops, 3));
   const seed = JSON.stringify(entityIds);
@@ -63,7 +64,8 @@ export async function expand(entityIds: number[], hops = 2, limit = 120) {
        FROM edges e JOIN reach r ON (e.src_entity=r.id OR e.dst_entity=r.id)
        WHERE r.depth < ?)
      SELECT DISTINCT id FROM reach`, [seed, hops])) as any[];
-  let ids = reach.map((r) => r.id);
+  const skip = new Set(exclude);
+  let ids = reach.map((r) => r.id).filter((id) => !skip.has(id));
   if (!ids.length) return { nodes: [], edges: [] };
   if (ids.length > 400) ids = ids.slice(0, 400); // cap so doubled IN(...) binding stays under SQLite's 999-var limit
   const ph = ids.map(() => "?").join(",");
@@ -85,9 +87,10 @@ export async function expand(entityIds: number[], hops = 2, limit = 120) {
 export async function graphOverview() {
   const top = (await q("SELECT id FROM entities WHERE norm_name NOT IN ('me','i','myself') ORDER BY mention_count DESC, importance DESC LIMIT 80")) as any[];
   if (!top.length) return { nodes: [], edges: [] };
-  const g = await expand(top.map((t) => t.id), 1, 300);
-  const owner = new Set((g.nodes as any[]).filter((n) => /^(me|i|myself)$/i.test(String(n.canonical_name).trim())).map((n) => n.id));
-  const edges = g.edges.filter((e: any) => !owner.has(e.src) && !owner.has(e.dst));
+  // The owner is excluded in the query, so its many edges don't use up the 300.
+  const owner = ((await q("SELECT id FROM entities WHERE norm_name IN ('me','i','myself')")) as any[]).map((o) => o.id);
+  const g = await expand(top.map((t) => t.id), 1, 300, owner);
+  const edges = g.edges;
   const linked = new Set(edges.flatMap((e: any) => [e.src, e.dst]));
   return { nodes: (g.nodes as any[]).filter((n) => linked.has(n.id)), edges };
 }

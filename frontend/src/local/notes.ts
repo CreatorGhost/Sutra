@@ -88,7 +88,9 @@ export async function askMeeting(cid: number, question: string, provider: Provid
   const startMs = tsMs(d.conversation.started_at);
   const when = (at: number | null) => (at && Number.isFinite(startMs) ? ` (${offsetClock(at - startMs)})` : "");
   const seen = [...images.map((i) => `[img:${i.id}]${when(i.at)} screenshot: ${i.caption ?? ""}`),
-    ...(visual?.facts ?? []).map((f) => f.replace(/^\[S\d+\]\s*/i, ""))];
+    // A screenshot the user removed can't be opened, so its tag goes.
+    ...(visual?.facts ?? []).map((f) => f.replace(/^\[S\d+\]\s*/i, "")
+      .replace(/\[img:(\d+)\]\s*/gi, (t, id) => (images.some((i) => i.id === Number(id)) ? t : "")))];
   const added = (await repo.meetingAdditions(cid).catch(() => []))
     .map((a) => (a.question ? `- (${a.question}) ${a.content}` : `- ${a.content}`)).join("\n").slice(0, 12000);
   const user = `# Notes\n${notes}\n\n` + (added ? `# Added to this meeting by the user\n${added}\n\n` : "") +

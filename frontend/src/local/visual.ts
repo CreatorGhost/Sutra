@@ -100,15 +100,16 @@ export function timedTranscript(turns: any[], startMs: number, cap = 60_000): st
 }
 
 /** The engine's reply, checked against the screenshots it was shown. */
-export function parseVisual(out: any, shots: LabelledFrame[]): { facts: string[]; keep: { frame: LabelledFrame; caption: string }[]; speakers: Map<string, string> } {
+export function parseVisual(out: any, shots: LabelledFrame[]): { facts: string[]; keep: { frame: LabelledFrame; caption: string }[]; rejected: Set<string>; speakers: Map<string, string> } {
   const byLabel = new Map(shots.map((s) => [s.label.toUpperCase(), s]));
   const facts = (Array.isArray(out?.screen_facts) ? out.screen_facts : [])
     .map((f: unknown) => String(f ?? "").replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, MAX_FACTS).map((f: string) => f.slice(0, 300));
   const keep: { frame: LabelledFrame; caption: string }[] = [];
-  const seen = new Set<string>();
+  const seen = new Set<string>(), rejected = new Set<string>();
   for (const m of Array.isArray(out?.moments) ? out.moments : []) {
     const label = String(m?.shot ?? "").trim().toUpperCase().replace(/^\[|\]$/g, "");
     const frame = byLabel.get(label);
+    if (frame && m?.keep === false) rejected.add(label);
     if (!m?.keep || !frame || seen.has(label)) continue;
     seen.add(label);
     keep.push({ frame, caption: String(m?.caption ?? "").replace(/\s+/g, " ").trim().slice(0, 240) });
@@ -127,19 +128,19 @@ export function parseVisual(out: any, shots: LabelledFrame[]): { facts: string[]
   const speakers = new Map<string, string>();
   const names = [...named.values()].filter(Boolean) as string[];
   for (const [speaker, name] of named) if (name && names.filter((n) => n === name).length === 1) speakers.set(speaker, name);
-  return { facts, keep, speakers };
+  return { facts, keep, rejected, speakers };
 }
 
 const FACT_LABEL = /^\[(S\d+)\]\s*/i;
 
 /** Every screen fact is backed by a screenshot the user can open: a shot a fact came from is kept too
  *  (captioned with the fact) even when the engine didn't pick it as a moment. */
-export function withCitedShots(keep: { frame: LabelledFrame; caption: string }[], facts: string[], shots: LabelledFrame[]) {
+export function withCitedShots(keep: { frame: LabelledFrame; caption: string }[], facts: string[], shots: LabelledFrame[], rejected = new Set<string>()) {
   const out = [...keep];
   const have = new Set(keep.map((k) => k.frame.name));
   for (const f of facts) {
     const frame = shots.find((s) => s.label === FACT_LABEL.exec(f)?.[1].toUpperCase());
-    if (!frame || have.has(frame.name)) continue;
+    if (!frame || have.has(frame.name) || rejected.has(frame.label.toUpperCase())) continue; // the AI said not to keep it
     have.add(frame.name);
     out.push({ frame, caption: f.replace(FACT_LABEL, "").slice(0, 240) });
   }
@@ -180,10 +181,10 @@ export async function visualPass(cid: number, sessionId: number, provider: Provi
     const out = await provider.extract(VISUAL_SCHEMA, VISUAL_SYSTEM, user, {
       images: { session: sessionId, frames: shots.map((s) => ({ name: s.name, label: s.label })) },
     });
-    const { facts, keep, speakers } = parseVisual(out, shots);
+    const { facts, keep, rejected, speakers } = parseVisual(out, shots);
     await nameFromScreen(sessionId, turns, speakers);
     await repo.clearMeetingImages(cid);
-    for (const k of withCitedShots(keep, facts, shots)) {
+    for (const k of withCitedShots(keep, facts, shots, rejected)) {
       try {
         await media.keep(sessionId, k.frame.name, cid);
         await repo.addMeetingImage(cid, { name: k.frame.name, at: k.frame.at, caption: k.caption });
