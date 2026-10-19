@@ -33,6 +33,7 @@ export async function extractConversation(convId: number, provider: Provider, sc
   const convDate = String((detail as any)?.conversation?.started_at ?? "").slice(0, 10);
   // What the screenshots showed that the transcript doesn't say (visual.ts) — saved, so a re-run reuses it.
   const facts = screenFacts ?? (await repo.getMeetingVisual(convId).catch(() => null))?.facts ?? [];
+  const screenText = facts.join("\n").toLowerCase();
   const onScreen = facts.length ? `\n\n# On screen during the meeting (from screenshots; use it where it makes the notes more precise)\n${facts.map((f) => `- ${f.replace(/^\[(?:img:\d+|S\d+)\]\s*/i, "")}`).join("\n")}` : "";
   const userContent = (convDate ? `Today's date: ${convDate}.\n\n` : "") + transcript + onScreen;
   const data = await provider.extract(EXTRACTION_JSON_SCHEMA, EXTRACT_SYSTEM, userContent);
@@ -106,7 +107,9 @@ export async function extractConversation(convId: number, provider: Provider, sc
       const isMe = /^(me|myself)$/i.test(name) || !!hit?.isMe;
       // A roster name came from the call's display names (whatever participants typed): label this
       // meeting only — no voiceprint learned, never the owner (see relabelSpeaker's untrusted).
-      const fromScreen = sn?.basis === "screen_roster" && !hit;
+      // Trust follows where the name came from, not the model's stated basis: any name the screen
+      // showed is untrusted, and a roster match only fixes its spelling, never raises its trust.
+      const fromScreen = sn?.basis === "screen_roster" || screenText.includes(name.toLowerCase());
       if (fromScreen && isMe) continue;
       try { await people.relabelSpeaker(sessionId, label, isMe ? { name: "Me", is_me: true } : { name, ...(fromScreen ? { untrusted: true } : {}) }); }
       catch (e) { console.warn("auto speaker-name skipped", label, e); }

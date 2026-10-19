@@ -182,7 +182,7 @@ describe("naming voices from the participant list", () => {
     const extract = vi.fn(async (_s: any, _sys: string, user: string) => ({
       title: "Weekly review", subtitle: "", summary: "Greetings.", participants: [], facts: [], action_items: [], decisions: [], open_questions: [],
       entities: [], relations: [], importance_score: 0.3, type_tags: [], events: [], is_meeting: true,
-      speaker_names: [{ speaker: user.match(/(Speaker \d+): Doing well/)![1], name: "Lawrence Taylor", basis: "screen_roster", confidence: "high" }],
+      speaker_names: [{ speaker: user.match(/(Speaker \d+): Doing well/)![1], name: "Lawrence Taylor", basis: "self_introduction", confidence: "high" }], // basis lied about
     }));
     await extractConversation(cid, { id: "agent:claude", canEmbed: false, extract } as any, ["contributors: Aditya Pratap Singh, Lawrence Taylor, Vijay Gupta"]);
     expect(extract.mock.calls[0][2]).toContain("Lawrence Taylor, Vijay Gupta");
