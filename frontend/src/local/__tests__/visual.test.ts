@@ -156,3 +156,15 @@ describe("a display name is the participant's own claim", () => {
     expect(detail.turns.find((t: any) => t.text.startsWith("And"))?.person_name ?? null).not.toBe("Aditya Singh");
   });
 });
+
+describe("the owner marker can't be borrowed", () => {
+  it("strips (me) from a screen-read name and refuses a bare Me", async () => {
+    const { relabelSpeaker } = await import("../people");
+    const s = await repo.createSession("electron", "meeting", "Google Meet");
+    await repo.insertTurn({ session_id: s.id, session_speaker_label: "c1", text: "Hello there everyone.", start_ts: 0, end_ts: 3, abs_start: new Date(T0).toISOString() });
+    const r = await relabelSpeaker(s.id, "c1", { name: "Mallory (me)", untrusted: true });
+    const p = (await repo.listPeople()).find((x: any) => x.id === r.person_id) as any;
+    expect(p.canonical_name).toBe("Mallory");
+    await expect(relabelSpeaker(s.id, "c1", { name: "(ME)", untrusted: true })).rejects.toThrow();
+  });
+});

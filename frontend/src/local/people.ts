@@ -11,6 +11,11 @@ import { generateMinutes } from "./minutes";
  *  call's screen). It labels this meeting only — never the owner, never anyone's voiceprint. */
 export async function relabelSpeaker(sessionId: number, label: string, opts: { person_id?: number; name?: string; is_me?: boolean; untrusted?: boolean }) {
   let personId = opts.person_id ?? null;
+  // "(me)" / "Me" is how transcripts mark the owner for the AI; nobody else's name may carry it.
+  if (opts.name && !opts.is_me) {
+    opts = { ...opts, name: opts.name.replace(/\(\s*me\s*\)/gi, "").replace(/\s+/g, " ").trim() };
+    if (/^(me|you)?$/i.test(opts.name!)) throw new Error("not a usable name");
+  }
   if (personId == null) {
     if (!opts.name) throw new Error("person_id or name required");
     const existing = await findPersonByName(opts.name);
