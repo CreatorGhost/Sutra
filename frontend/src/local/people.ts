@@ -11,19 +11,17 @@ import { generateMinutes } from "./minutes";
  *  call's screen). It labels this meeting only — never the owner, never anyone's voiceprint. */
 /** A name someone else chose, made inert: no brackets of any kind (so no "(me)", full-width or not),
  *  no invisible characters. */
-/** Letters only, with the Cyrillic look-alikes of m/e/o/y/u folded in — "Ме" reads as "Me". */
-const skeleton = (s: string) => s.toLowerCase().replace(/м/g, "m").replace(/[её]/g, "e").replace(/о/g, "o").replace(/у/g, "y").replace(/[^\p{L}]/gu, "");
-const OWNER_WORDS = new Set(["", "me", "you", "myself", "i"]);
-const plainName = (s: string) => s.normalize("NFKC").replace(/\p{Cf}/gu, "")
-  .replace(/[\p{Ps}<]([^\p{Ps}\p{Pe}<>]*)[\p{Pe}>]/gu, (_, inner: string) => (OWNER_WORDS.has(skeleton(inner)) ? " " : ` ${inner} `))
-  .replace(/[\p{Ps}\p{Pe}<>]/gu, " ").replace(/\s+/g, " ").trim();
+/** A name someone else chose, made inert: letters, spaces, apostrophes, hyphens and dots only — so it
+ *  can never hold the "(me)" owner marker, a ":" turn delimiter, or invisible characters. */
+const plainName = (s: string) => s.normalize("NFKC").replace(/\p{Cf}/gu, "").replace(/[^\p{L}\p{M}\s'.-]/gu, " ").replace(/\s+/g, " ").trim();
+const OWNER_WORDS = /^(me|you|myself|i)?$/i;
 
 export async function relabelSpeaker(sessionId: number, label: string, opts: { person_id?: number; name?: string; is_me?: boolean; untrusted?: boolean }) {
   let personId = opts.person_id ?? null;
   // "(me)" / "Me" is how transcripts mark the owner for the AI; nobody else's name may carry it.
   if (opts.name && !opts.is_me) {
     opts = { ...opts, name: plainName(opts.name) };
-    if (OWNER_WORDS.has(skeleton(opts.name!))) throw new Error("not a usable name");
+    if (OWNER_WORDS.test(opts.name!)) throw new Error("not a usable name");
   }
   if (personId == null) {
     if (!opts.name) throw new Error("person_id or name required");

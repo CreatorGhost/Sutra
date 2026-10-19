@@ -76,7 +76,7 @@ describe("meeting chat", () => {
     const [, system, user] = chat.mock.calls[0] as any[];
     expect(system).toContain("[img:7]");
     expect(user).toContain(`- [img:${img.id}] (12:34) screenshot: Pricing slide\n- [img:${img.id}] $0.60 / M input\n- an old-style fact`);
-    expect(user).toContain("[0:00] Me: GLM 5.3 via OpenRouter.");
+    expect(user).toContain("[0:00] Me (me): GLM 5.3 via OpenRouter.");
   });
 
   it("goes when the meeting is deleted", async () => {

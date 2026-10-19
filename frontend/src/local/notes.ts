@@ -34,7 +34,7 @@ export const tsMs = (ts: unknown) => { const s = String(ts ?? ""); return s ? Da
  *  long meeting still fits one request. */
 export function transcriptText(turns: any[], maxChars = 90000, startMs = NaN): string {
   const at = (t: any) => { const a = tsMs(t.abs_start); return Number.isFinite(startMs) && Number.isFinite(a) ? `[${offsetClock(a - startMs)}] ` : ""; };
-  const lines = turns.map((t) => `${at(t)}${speakerName(t)}${t.is_me && t.person_name ? " (me)" : ""}: ${String(t.text ?? "").trim()}`);
+  const lines = turns.map((t) => `${at(t)}${speakerName(t)}${t.is_me || t.session_speaker_label === "me" ? " (me)" : ""}: ${String(t.text ?? "").trim()}`);
   let text = lines.join("\n");
   if (text.length > maxChars) {
     // Keep the start and the end — decisions and next steps cluster at the end of meetings.

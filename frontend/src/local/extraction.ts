@@ -27,7 +27,7 @@ export async function extractConversation(convId: number, provider: Provider, sc
   // enrolled person_name. We invert this map below to translate the model's returned label back to cN.
   // The meeting-capture owner channel ("me") is always "Me".
   const display = buildSpeakerDisplay(turns);
-  const transcript = turns.map((t) => `${t.person_name ? `${t.person_name}${t.is_me ? " (me)" : ""}` : (t.session_speaker_label === "me" ? "Me" : display.get(t.session_speaker_label)) || "Speaker"}: ${t.text}`).join("\n");
+  const transcript = turns.map((t) => `${t.is_me || t.session_speaker_label === "me" ? `${t.person_name || "Me"} (me)` : t.person_name || display.get(t.session_speaker_label) || "Speaker"}: ${t.text}`).join("\n");
 
   // Give the model the conversation's date so it can resolve relative times ("kal 11 baje" -> ISO datetime).
   const convDate = String((detail as any)?.conversation?.started_at ?? "").slice(0, 10);

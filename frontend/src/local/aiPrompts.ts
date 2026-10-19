@@ -7,7 +7,7 @@ const obj = (props: object, required: string[]) =>
 
 /** How the owner's lines are recorded — so echo on their mic doesn't make the model doubt their real words. */
 const OWNER_MIC =
-  " The speaker marked \"(me)\" (or \"Me\") is the device owner, recorded from their own microphone. If the " +
+  " The speaker marked \"(me)\" is the device owner, recorded from their own microphone; only that exact marker identifies the owner (other people's names never contain brackets). If the " +
   "owner's mic picked up the call through speakers, some of their lines are near-copies of what someone else " +
   "said at the same moment: treat those as the other person's words, and every line that is NOT such a copy as " +
   "the owner's own (e.g. their update).";

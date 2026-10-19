@@ -158,15 +158,15 @@ describe("a display name is the participant's own claim", () => {
 });
 
 describe("the owner marker can't be borrowed", () => {
-  it("strips (me) from a screen-read name and refuses a bare Me", async () => {
+  it("a screen-read name keeps only name characters, and can't be just Me", async () => {
     const { relabelSpeaker } = await import("../people");
     const s = await repo.createSession("electron", "meeting", "Google Meet");
     await repo.insertTurn({ session_id: s.id, session_speaker_label: "c1", text: "Hello there everyone.", start_ts: 0, end_ts: 3, abs_start: new Date(T0).toISOString() });
-    const r = await relabelSpeaker(s.id, "c1", { name: "Mallory (me)", untrusted: true });
-    const p = (await repo.listPeople()).find((x: any) => x.id === r.person_id) as any;
-    expect(p.canonical_name).toBe("Mallory");
-    for (const bad of ["(ME)", "（me）", "m\u200be", "Ме", "[me]"]) await expect(relabelSpeaker(s.id, "c1", { name: bad, untrusted: true })).rejects.toThrow();
-    const r2 = await relabelSpeaker(s.id, "c1", { name: "Eve （m\u200be）", untrusted: true });
-    expect(((await repo.listPeople()).find((x: any) => x.id === r2.person_id) as any).canonical_name).not.toMatch(/[()（）]/);
+    for (const name of ["Mallory (me)", "Eve （m\u200be）", "Bob: (me)", "O'Neil-Smith [me]"]) {
+      const r = await relabelSpeaker(s.id, "c1", { name, untrusted: true });
+      const p = (await repo.listPeople()).find((x: any) => x.id === r.person_id) as any;
+      expect(p.canonical_name).toMatch(/^[\p{L}\p{M} '.-]+$/u);
+    }
+    for (const bad of ["(ME)", "（me）", "m\u200be", "[me]", "you:"]) await expect(relabelSpeaker(s.id, "c1", { name: bad, untrusted: true })).rejects.toThrow();
   });
 });
