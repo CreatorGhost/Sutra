@@ -140,7 +140,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
         <div className="banner">
           <AppIcon src={detection.active.icon} name={detection.active.app} size={18} className="app-icon" />
           <span className="grow">{detection.active.app} <span className="muted">in call</span></span>
-          <button className="link" onClick={() => void start({ app: detection.active!.app })}>Record</button>
+          <button className="link" onClick={() => { void start({ app: detection.active!.app }); nav("/live"); }}>Record</button>
           <button className="x" aria-label="Dismiss" onClick={() => desktop?.pill.action("dismiss")}><X size={14} /></button>
         </div>
       ) : !desktop ? <MacChip /> : null}
