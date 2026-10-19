@@ -405,18 +405,34 @@ function DetailedNotesView({ cid, actions }: { cid: number; actions: any[] }) {
 
 /** Raw / Cleaned switch and "Clean up transcript". Cleaning keeps the raw text, uses the project's
  *  glossary (refinement service) and rebuilds the notes, so the whole view refreshes afterwards. */
+/** Clean-ups in flight, by meeting: they outlive the tab (switching to Notes and back still shows
+ *  "Cleaning…", and a second click joins the running one instead of starting another). */
+const cleaning = new Map<number, Promise<{ ok: boolean; reason?: string }>>();
+
 function TranscriptTools({ cid, conversation: c, glossaryFrom, toast }: { cid: number; conversation: any; glossaryFrom?: any; toast: (m: string) => void }) {
-  const [busy, setBusy] = useState<null | "clean" | "raw" | "cleaned">(null);
+  const [busy, setBusy] = useState<null | "clean" | "raw" | "cleaned">(cleaning.has(cid) ? "clean" : null);
   const [err, setErr] = useState<string | null>(null);
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    const running = cleaning.get(cid);
+    if (running) { setBusy("clean"); void running.finally(() => { if (live.current) setBusy(null); }); }
+    return () => { live.current = false; };
+  }, [cid]);
   const clean = async () => {
     setBusy("clean"); setErr(null);
+    let run = cleaning.get(cid);
+    if (!run) {
+      run = api.cleanConversation(cid).then((r) => { if (r.ok) { toast("Transcript cleaned · notes updated"); notifyDataChanged(); } return r; })
+        .finally(() => cleaning.delete(cid));
+      cleaning.set(cid, run);
+    }
     try {
-      const r = await api.cleanConversation(cid);
-      if (r.ok) { toast("Transcript cleaned · notes updated"); notifyDataChanged(); }
-      else setErr(r.reason === "cloud-only" ? "Clean-up needs an AI engine — connect one in Settings → Intelligence."
+      const r = await run;
+      if (!r.ok && live.current) setErr(r.reason === "cloud-only" ? "Clean-up needs an AI engine — connect one in Settings → Intelligence."
         : r.reason === "empty" ? "There's no transcript to clean yet." : "Couldn't clean the transcript — try again.");
-    } catch (e) { setErr(friendlyError(e)); }
-    finally { setBusy(null); }
+    } catch (e) { if (live.current) setErr(friendlyError(e)); }
+    finally { if (live.current) setBusy(null); }
   };
   // Switching re-derives the notes from the chosen text; the flag flips first, so a failed refresh
   // (offline) still shows the text the user picked.
