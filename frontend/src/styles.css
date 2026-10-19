@@ -776,6 +776,7 @@ html.pill-root, .pill-root body, .pill-root #root { background: transparent !imp
 .pa-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; max-height: 40dvh; overflow-y: auto; }
 .pa-list .btn { justify-content: flex-start; gap: 10px; }
 .project-ask .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.project-ask .pa-model { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 14px; }
 .shot-screens { display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; margin: 0 0 18px; font-size: 13px; }
 .shot-screens > .faint { display: inline-flex; gap: 6px; align-items: center; }
 .shot-screens .btn.on { border-color: var(--accent); color: var(--text); }

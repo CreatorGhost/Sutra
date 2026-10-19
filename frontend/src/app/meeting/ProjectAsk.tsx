@@ -1,9 +1,12 @@
 // Right after a meeting stops: which project was it for? The answer shapes the notes (the project's
-// brief, people and code folders), so they wait for it — or let Sutra decide after 90 s.
+// brief, people and code folders), so they wait for it — or let Sutra decide after 90 s. The model that
+// writes them can be switched here too (say your usual one is out of quota); like every model picker it
+// becomes the default for later AI work as well.
 import { Sparkles, X } from "lucide-react";
 import { useRecorder } from "../recorder";
 import { projectColor, projectName } from "../projects/model";
 import { useProjects } from "./ProjectChip";
+import { EnginePicker } from "../EnginePicker";
 
 export function ProjectAsk() {
   const { state, answerProject } = useRecorder();
@@ -21,6 +24,7 @@ export function ProjectAsk() {
             </button>
           ))}
         </div>
+        <div className="pa-model"><span className="faint">Write the notes with</span><EnginePicker /></div>
         <div className="actions">
           <button className="btn" onClick={() => answerProject(null)}><X size={14} /> No project</button>
           <button className="btn primary" onClick={() => answerProject(undefined)}><Sparkles size={14} /> Let Sutra decide</button>
