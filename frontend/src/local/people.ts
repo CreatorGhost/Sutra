@@ -15,13 +15,15 @@ import { generateMinutes } from "./minutes";
  *  can never hold the "(me)" owner marker, a ":" turn delimiter, or invisible characters. */
 const plainName = (s: string) => s.normalize("NFKC").replace(/\p{Cf}/gu, "").replace(/[^\p{L}\p{M}\s'.-]/gu, " ").replace(/\s+/g, " ").trim();
 const OWNER_WORDS = /^(me|you|myself|i)?$/i;
+/** Letters only, with the Cyrillic/Greek look-alikes of m/e/o/y/u/i folded — "M.e" and "Ме" read as "me". */
+const skeleton = (s: string) => s.toLowerCase().replace(/[мμ]/g, "m").replace(/[еёε]/g, "e").replace(/[оο]/g, "o").replace(/[уυ]/g, "y").replace(/[іι]/g, "i").replace(/[^\p{L}]/gu, "");
 
 export async function relabelSpeaker(sessionId: number, label: string, opts: { person_id?: number; name?: string; is_me?: boolean; untrusted?: boolean }) {
   let personId = opts.person_id ?? null;
   // "(me)" / "Me" is how transcripts mark the owner for the AI; nobody else's name may carry it.
   if (opts.name && !opts.is_me) {
     opts = { ...opts, name: plainName(opts.name) };
-    if (OWNER_WORDS.test(opts.name!)) throw new Error("not a usable name");
+    if (OWNER_WORDS.test(skeleton(opts.name!))) throw new Error("not a usable name");
   }
   if (personId == null) {
     if (!opts.name) throw new Error("person_id or name required");

@@ -167,6 +167,6 @@ describe("the owner marker can't be borrowed", () => {
       const p = (await repo.listPeople()).find((x: any) => x.id === r.person_id) as any;
       expect(p.canonical_name).toMatch(/^[\p{L}\p{M} '.-]+$/u);
     }
-    for (const bad of ["(ME)", "（me）", "m\u200be", "[me]", "you:"]) await expect(relabelSpeaker(s.id, "c1", { name: bad, untrusted: true })).rejects.toThrow();
+    for (const bad of ["(ME)", "（me）", "m\u200be", "[me]", "you:", "Ме", "M.e", "y-o-u"]) await expect(relabelSpeaker(s.id, "c1", { name: bad, untrusted: true })).rejects.toThrow();
   });
 });
