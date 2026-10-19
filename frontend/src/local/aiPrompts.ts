@@ -5,6 +5,13 @@ export const PROMPT_VERSION = "extract-v6"; // v6: is_meeting (drives Minutes) +
 const obj = (props: object, required: string[]) =>
   ({ type: "object", properties: props, required, additionalProperties: false });
 
+/** How the owner's lines are recorded — so echo on their mic doesn't make the model doubt their real words. */
+const OWNER_MIC =
+  " The speaker marked \"(me)\" (or \"Me\") is the device owner, recorded from their own microphone. If the " +
+  "owner's mic picked up the call through speakers, some of their lines are near-copies of what someone else " +
+  "said at the same moment: treat those as the other person's words, and every line that is NOT such a copy as " +
+  "the owner's own (e.g. their update).";
+
 export const EXTRACT_SYSTEM =
   "You extract durable memory from a conversation transcript. The transcript is often Hindi-English " +
   "code-switched (Hinglish) — read both languages fluently and DO NOT translate; write the summary in " +
@@ -34,7 +41,7 @@ export const EXTRACT_SYSTEM =
   "Also fill subtitle: ONE short sentence (max ~15 words) giving the gist, e.g. 'Team synced on monitoring " +
   "setup, findings visibility problems, and demo user access bugs.' The title is a short, specific headline " +
   "(3-7 words, no quotes, no trailing period). Also fill open_questions: questions raised but NOT resolved " +
-  "in the conversation, phrased as questions; empty list if none.";
+  "in the conversation, phrased as questions; empty list if none." + OWNER_MIC;
 
 const ENTITY_TYPES = ["person", "project", "topic", "org", "place", "event", "commitment"];
 
@@ -140,7 +147,7 @@ export const NOTES_DETAILED_SYSTEM =
   "discussion into topics in the order they came up; each topic gets a short heading and 2-6 concise bullet " +
   "points with the concrete details (numbers, names, reasons, blockers). Then list decisions, action items " +
   "(owner = the person responsible, or null), open questions and next steps. Only use what is in the " +
-  "transcript — never invent. Use empty lists when a section has nothing.";
+  "transcript — never invent. Use empty lists when a section has nothing." + OWNER_MIC;
 
 export const NOTES_DETAILED_SCHEMA = {
   name: "detailed_notes",
@@ -163,7 +170,7 @@ export const ASK_MEETING_SYSTEM =
   "(you'll be told), you may also read it to answer questions about the code, naming the files you used. " +
   "Cite where each point comes from, inline, right after it: the transcript time in brackets exactly as shown " +
   "(e.g. [12:34]) for something said, and the screenshot tag (e.g. [img:7]) for something seen on screen. Only " +
-  "cite times and tags that appear below; never make one up.";
+  "cite times and tags that appear below; never make one up." + OWNER_MIC;
 
 export const ASK_MEETING_SCHEMA = {
   name: "meeting_answer",
