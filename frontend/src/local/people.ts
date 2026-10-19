@@ -9,12 +9,21 @@ import { generateMinutes } from "./minutes";
  *  and only happens in hybrid mode, where per-turn voiceprints were captured. */
 /** `untrusted`: the name came from something a meeting participant controls (their display name on the
  *  call's screen). It labels this meeting only — never the owner, never anyone's voiceprint. */
+/** A name someone else chose, made inert: no brackets of any kind (so no "(me)", full-width or not),
+ *  no invisible characters. */
+/** Letters only, with the Cyrillic look-alikes of m/e/o/y/u folded in — "Ме" reads as "Me". */
+const skeleton = (s: string) => s.toLowerCase().replace(/м/g, "m").replace(/[её]/g, "e").replace(/о/g, "o").replace(/у/g, "y").replace(/[^\p{L}]/gu, "");
+const OWNER_WORDS = new Set(["", "me", "you", "myself", "i"]);
+const plainName = (s: string) => s.normalize("NFKC").replace(/\p{Cf}/gu, "")
+  .replace(/[\p{Ps}<]([^\p{Ps}\p{Pe}<>]*)[\p{Pe}>]/gu, (_, inner: string) => (OWNER_WORDS.has(skeleton(inner)) ? " " : ` ${inner} `))
+  .replace(/[\p{Ps}\p{Pe}<>]/gu, " ").replace(/\s+/g, " ").trim();
+
 export async function relabelSpeaker(sessionId: number, label: string, opts: { person_id?: number; name?: string; is_me?: boolean; untrusted?: boolean }) {
   let personId = opts.person_id ?? null;
   // "(me)" / "Me" is how transcripts mark the owner for the AI; nobody else's name may carry it.
   if (opts.name && !opts.is_me) {
-    opts = { ...opts, name: opts.name.replace(/\(\s*me\s*\)/gi, "").replace(/\s+/g, " ").trim() };
-    if (/^(me|you)?$/i.test(opts.name!)) throw new Error("not a usable name");
+    opts = { ...opts, name: plainName(opts.name) };
+    if (OWNER_WORDS.has(skeleton(opts.name!))) throw new Error("not a usable name");
   }
   if (personId == null) {
     if (!opts.name) throw new Error("person_id or name required");
