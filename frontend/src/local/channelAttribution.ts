@@ -63,3 +63,29 @@ export function attributeSegments<T extends ChannelSegment & { embedding?: numbe
     return { session_speaker_label: `${REMOTE_PREFIX}${s.speaker}`, person_id: null, voiceprint: s.embedding ?? null };
   });
 }
+
+/** A turn as the bleed check sees it. */
+type TimedTurn = { id: number; session_speaker_label: string; text: string; abs_start?: string | null; start_ts?: number | null; end_ts?: number | null };
+const words = (s: string) => s.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
+
+/** Owner-mic turns that are only the call's audio picked up by the mic (speakers, or loud headphones):
+ *  most of their words were said by a remote at the same moment. Both channels are transcribed apart,
+ *  so the copy's words differ a little ("Mody" / "Moe") — hence word overlap, not equality.
+ *  ponytail: word-bag overlap within ±slack; an owner reply that repeats a remote's words ("yes, the
+ *  merge conflict") under `min` stays. Audio-level echo cancellation if this drops real speech. */
+export function micBleedIds(turns: TimedTurn[], slackMs = 4000, min = 0.6): number[] {
+  const span = (t: TimedTurn) => {
+    const s = t.abs_start ? Date.parse(t.abs_start) : NaN;
+    return [s, s + Math.max(0, (t.end_ts ?? 0) - (t.start_ts ?? 0)) * 1000] as const;
+  };
+  const remotes = turns.filter((t) => t.session_speaker_label.startsWith(REMOTE_PREFIX) || /^c\d+$/.test(t.session_speaker_label)).map((t) => ({ t, at: span(t) }));
+  const out: number[] = [];
+  for (const t of turns) {
+    if (t.session_speaker_label !== OWNER_LABEL) continue;
+    const w = words(t.text), [s, e] = span(t);
+    if (!w.length || !Number.isFinite(s)) continue;
+    const bag = new Set(remotes.filter((r) => r.at[0] <= e + slackMs && r.at[1] >= s - slackMs).flatMap((r) => words(r.t.text)));
+    if (w.filter((x) => bag.has(x)).length / w.length >= min) out.push(t.id);
+  }
+  return out;
+}

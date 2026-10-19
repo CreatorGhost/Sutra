@@ -22,6 +22,9 @@ export async function cleanConversation(
     const lang = String((await repo.getSettings()).transcript_lang ?? "english");
     const mode = lang === "english" ? "english" : "other";
 
+    // Meetings recorded before the mic-bleed check: drop the copies now, before cleaning and re-writing notes.
+    const sid = await repo.conversationSession(convId).catch(() => null);
+    if (sid != null) await repo.dropMicBleed(sid).catch(() => 0);
     const rows = (await repo.rawConversationTurns(convId)) as any[];
     if (!rows.length) return { ok: false, reason: "empty" };
 

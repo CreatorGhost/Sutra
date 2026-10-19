@@ -174,6 +174,8 @@ export async function autoMapConversation(convId: number): Promise<void> {
 /** `projectId`: what the user said the meeting was for when they stopped (null = no project); left
  *  undefined, Sutra maps it itself after the notes. */
 export async function processSession(sessionId: number, provider: Provider, projectId?: number | null) {
+  // The mic hearing the call (speakers) duplicates every remote line as "Me"; drop those copies first.
+  await repo.dropMicBleed(sessionId).catch((e) => console.warn("mic bleed check skipped", e));
   // Speaker-ID first (hybrid only; no-ops on-device): cluster turns by voiceprint into stable per-session
   // speakers and auto-tag enrolled people, so segmentation/extraction/display see corrected speakers.
   const speakers = await clusterAndIdentify(sessionId);

@@ -3,6 +3,7 @@ import type { AskScope } from "../providers/provider";
 import { q, run, exec, persist } from "./db";
 import { blobToVec, cosine, normName, vecToBlob } from "./util";
 import { coalesceTurns } from "./coalesce";
+import { micBleedIds } from "./channelAttribution";
 
 const J = (v: unknown) => JSON.stringify(v ?? null);
 const P = <T>(s: any, d: T): T => { try { return s == null ? d : JSON.parse(s); } catch { return d; } };
@@ -157,6 +158,18 @@ export const turnVoiceprintsForLabel = async (sid: number, label: string): Promi
 export const sessionTurns = (sid: number) =>
   q(`SELECT t.*, p.canonical_name person_name, p.is_me FROM turns t LEFT JOIN people p ON p.id=t.person_id
      WHERE t.session_id=? ORDER BY t.window_index,t.start_ts,t.id`, [sid]);
+/** Drop the owner-mic copies of the call's audio (see micBleedIds). Returns how many went. */
+export async function dropMicBleed(sid: number): Promise<number> {
+  const ids = micBleedIds((await sessionTurns(sid)) as any[]);
+  for (let i = 0; i < ids.length; i += 800) {
+    const b = ids.slice(i, i + 800);
+    await run(`DELETE FROM turns WHERE id IN (${b.map(() => "?").join(",")})`, b);
+  }
+  if (ids.length) await persist();
+  return ids.length;
+}
+export const conversationSession = async (cid: number): Promise<number | null> =>
+  ((await q("SELECT session_id FROM conversations WHERE id=?", [cid]))[0] as any)?.session_id ?? null;
 /** Raw (NON-coalesced) turns for a conversation — the source rows the refinement pass cleans 1:1. */
 export const rawConversationTurns = (cid: number) =>
   q(`SELECT t.id,t.session_speaker_label,t.person_id,p.canonical_name person_name,p.is_me,t.text,t.lang,t.start_ts,t.end_ts,t.abs_start,t.window_index
