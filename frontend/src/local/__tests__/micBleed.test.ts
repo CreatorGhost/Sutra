@@ -12,6 +12,9 @@ describe("mic bleed", () => {
       t(3, "me", 30, "I worked on two tickets; one hit a merge conflict and the other is now with Lakshya."),
       t(4, "c1", 31, "Okay, thanks."),
       t(5, "me", 120, "Okay, thanks."),            // nobody else spoke then
+      // talking over someone: same moment, shared filler and one topic word — not a copy
+      t(6, "r0", 200, "The deployment pipeline failed again because staging credentials expired yesterday."),
+      t(7, "me", 201, "Yes the pipeline, I can rotate those credentials after this call."),
     ]);
     expect(ids).toEqual([2]);
   });
