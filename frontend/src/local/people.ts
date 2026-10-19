@@ -16,7 +16,7 @@ import { generateMinutes } from "./minutes";
 const plainName = (s: string) => s.normalize("NFKC").replace(/\p{Cf}/gu, "").replace(/[^\p{L}\p{M}\s'.-]/gu, " ").replace(/\s+/g, " ").trim();
 const OWNER_WORDS = /^(me|you|myself|i)?$/i;
 /** Letters only, with the Cyrillic/Greek look-alikes of m/e/o/y/u/i folded — "M.e" and "Ме" read as "me". */
-const skeleton = (s: string) => s.toLowerCase().replace(/[мμ]/g, "m").replace(/[еёε]/g, "e").replace(/[оο]/g, "o").replace(/[уυ]/g, "y").replace(/[іι]/g, "i").replace(/[^\p{L}]/gu, "");
+const skeleton = (s: string) => s.toLowerCase().replace(/[мμ]/g, "m").replace(/[еёε]/g, "e").replace(/[оο]/g, "o").replace(/у/g, "y").replace(/υ/g, "u").replace(/[іι]/g, "i").replace(/[^\p{L}]/gu, "");
 
 export async function relabelSpeaker(sessionId: number, label: string, opts: { person_id?: number; name?: string; is_me?: boolean; untrusted?: boolean }) {
   let personId = opts.person_id ?? null;
