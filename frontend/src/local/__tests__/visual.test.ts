@@ -170,3 +170,25 @@ describe("the owner marker can't be borrowed", () => {
     for (const bad of ["(ME)", "（me）", "m\u200be", "[me]", "you:", "Ме", "M.e", "y-o-u", "yoυ"]) await expect(relabelSpeaker(s.id, "c1", { name: bad, untrusted: true })).rejects.toThrow();
   });
 });
+
+describe("naming voices from the participant list", () => {
+  it("applies a screen_roster name to that meeting only, without learning a voiceprint", async () => {
+    const s = await repo.createSession("electron", "meeting", "Google Meet");
+    await repo.insertTurn({ session_id: s.id, session_speaker_label: "c1", text: "Hi Lawrence, good morning, how are you doing?", start_ts: 0, end_ts: 3, abs_start: new Date(T0).toISOString(), voiceprint: [1, 0, 0] });
+    await repo.insertTurn({ session_id: s.id, session_speaker_label: "c2", text: "Doing well, thanks Vijay.", start_ts: 3, end_ts: 6, abs_start: new Date(T0 + 4_000).toISOString(), voiceprint: [0, 1, 0] });
+    const { segmentSession } = await import("../segmentation");
+    const [cid] = await segmentSession(s.id);
+    const { extractConversation } = await import("../extraction");
+    const extract = vi.fn(async (_s: any, _sys: string, user: string) => ({
+      title: "Weekly review", subtitle: "", summary: "Greetings.", participants: [], facts: [], action_items: [], decisions: [], open_questions: [],
+      entities: [], relations: [], importance_score: 0.3, type_tags: [], events: [], is_meeting: true,
+      speaker_names: [{ speaker: user.match(/(Speaker \d+): Doing well/)![1], name: "Lawrence Taylor", basis: "screen_roster", confidence: "high" }],
+    }));
+    await extractConversation(cid, { id: "agent:claude", canEmbed: false, extract } as any, ["contributors: Aditya Pratap Singh, Lawrence Taylor, Vijay Gupta"]);
+    expect(extract.mock.calls[0][2]).toContain("Lawrence Taylor, Vijay Gupta");
+    const detail: any = await repo.conversationDetailSafe(cid);
+    expect(detail.turns.find((t: any) => t.text.startsWith("Doing"))?.person_name).toBe("Lawrence Taylor");
+    const lawrence = (await repo.listPeople()).find((p: any) => p.canonical_name === "Lawrence Taylor") as any;
+    expect(lawrence.enroll_count ?? 0).toBe(0);
+  });
+});

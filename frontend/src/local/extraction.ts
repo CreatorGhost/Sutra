@@ -104,7 +104,11 @@ export async function extractConversation(convId: number, provider: Provider, sc
       const label = rawByDisplay.get(returned.toLowerCase()) ?? rawByDisplay.get(stripped) ?? stripped;
       if (!label) continue;
       const isMe = /^(me|myself)$/i.test(name) || !!hit?.isMe;
-      try { await people.relabelSpeaker(sessionId, label, isMe ? { name: "Me", is_me: true } : { name }); }
+      // A roster name came from the call's display names (whatever participants typed): label this
+      // meeting only — no voiceprint learned, never the owner (see relabelSpeaker's untrusted).
+      const fromScreen = sn?.basis === "screen_roster" && !hit;
+      if (fromScreen && isMe) continue;
+      try { await people.relabelSpeaker(sessionId, label, isMe ? { name: "Me", is_me: true } : { name, ...(fromScreen ? { untrusted: true } : {}) }); }
       catch (e) { console.warn("auto speaker-name skipped", label, e); }
     }
   }

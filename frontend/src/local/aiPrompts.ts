@@ -27,8 +27,13 @@ export const EXTRACT_SYSTEM =
   "real name ONLY from in-conversation evidence — a self-introduction ('I am Farha' / 'This is Farha' -> that " +
   "speaker, confidence 'high', basis 'self_introduction'), or being addressed/named by another speaker " +
   "('Hey Mark', 'Mark, can you...' -> the speaker being addressed, usually the OTHER party, confidence 'low', " +
-  "basis 'addressed_by_other'). Use 'Me' for the device owner if identifiable. If a speaker cannot be named " +
-  "from the transcript, set name null and basis 'unknown'. Never guess a name. " +
+  "basis 'addressed_by_other'). Use 'Me' for the device owner if identifiable. " +
+  "When the on-screen notes list the call's participants, you may also name a speaker by elimination: the " +
+  "participants other than the owner are the candidates; a speaker who addresses someone by name is not that " +
+  "person; if exactly ONE candidate is left for a speaker (e.g. two other voices, two other participants, and " +
+  "one says 'Hi Lawrence'), give that name exactly as listed, confidence 'high', basis 'screen_roster'. Only " +
+  "when it is the single remaining option — otherwise name null. If a speaker cannot be named, set name null " +
+  "and basis 'unknown'. Never guess a name. " +
   "Also fill events: every scheduled or time-bound thing discussed — meetings, calls, deadlines, " +
   "appointments, or time-bound commitments (e.g. 'kal 11 baje meeting hai', 'at 5pm I'll send the files'). " +
   "For each event give title (what it is), when (the date/time EXACTLY as spoken), datetime (resolved to " +
@@ -70,7 +75,7 @@ export const EXTRACTION_JSON_SCHEMA = {
     type_tags: { type: "array", items: { type: "string", enum: ["decision", "commitment", "factual", "social", "task", "idea"] } },
     speaker_names: { type: "array", items: obj(
       { speaker: { type: "string" }, name: { type: ["string", "null"] },
-        basis: { type: "string", enum: ["self_introduction", "addressed_by_other", "named_by_other", "unknown"] },
+        basis: { type: "string", enum: ["self_introduction", "addressed_by_other", "named_by_other", "screen_roster", "unknown"] },
         confidence: { type: "string", enum: ["high", "low"] } },
       ["speaker", "name", "basis", "confidence"]) },
     events: { type: "array", items: obj(
