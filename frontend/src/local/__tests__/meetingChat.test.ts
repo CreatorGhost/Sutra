@@ -123,3 +123,34 @@ describe("placeholder owner", () => {
     expect(row.person_id).toBe(real);
   });
 });
+
+describe("ask across meetings", () => {
+  it("finds the project a question names, and the words worth searching", async () => {
+    const { mentionedProject, questionWords } = await import("../chat");
+    const ps = [{ id: 1, name: "MCS" }, { id: 2, name: "Mantis" }, { id: 3, name: "Mantis Grid" }];
+    expect(mentionedProject("on mcs what did Lav say about the 3MF files?", ps)?.id).toBe(1);
+    expect(mentionedProject("what's new in mantis grid", ps)?.id).toBe(3);
+    expect(mentionedProject("mcsx rollout", ps)).toBeNull();
+    expect(questionWords("on mcs what did Lav say about the 3MF files?", "MCS")).toEqual(["lav", "3mf", "files"]);
+  });
+
+  it("quotes what was said, from the named project's meetings only", async () => {
+    const cid = await meeting(), other = await meeting();
+    const sid = (await repo.sessionForConversation(cid))!, osid = (await repo.sessionForConversation(other))!;
+    const { run } = await import("../db");
+    const a = await repo.insertTurn({ session_id: sid, session_speaker_label: "r0", text: "3MF files should keep the colour data.", start_ts: 65, end_ts: 70, abs_start: "2026-10-01T10:01:05.000Z" });
+    const b = await repo.insertTurn({ session_id: osid, session_speaker_label: "r0", text: "3MF export is slow.", start_ts: 5, end_ts: 7, abs_start: "2026-10-01T10:00:05.000Z" });
+    await run("UPDATE turns SET conversation_id=? WHERE id=?", [cid, a]);
+    await run("UPDATE turns SET conversation_id=? WHERE id=?", [other, b]);
+    await repo.upsertMemory({ conversation_id: cid, title: "Slicer review", summary: "Export formats.", facts: [], action_items: [], decisions: [], open_questions: [], importance: 0.5, type_tags: [] });
+    const pid = await repo.createProject("MCS");
+    await repo.setConversationProject(cid, pid);
+    const chat = vi.fn(async () => ({ answer: "Keep the colour data [C" + cid + "].", supported: true, citation_conversation_ids: [cid] }));
+    const r: any = await (await import("../chat")).chat("on MCS what was said about 3MF files?", { id: "mock", chat, canEmbed: false } as any);
+    expect(r.project).toMatchObject({ id: pid, name: "MCS" });
+    const user = (chat.mock.calls[0] as any[])[2] as string;
+    expect(user).toContain(`[C${cid}] (1:05) Speaker 1: 3MF files should keep the colour data.`);
+    expect(user).not.toContain("3MF export is slow");
+    expect(r.citations.map((c: any) => c.conversation_id)).toEqual([cid]);
+  });
+});

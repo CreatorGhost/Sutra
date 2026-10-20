@@ -131,7 +131,9 @@ export const CHAT_SYSTEM =
   "to answer questions about the code — name the files you used in the answer; citations stay conversation ids. " +
   "'# Related meetings' are linked to the question through the knowledge graph and may come from other projects: " +
   "when one shows the user already worked on, decided or built something relevant, say so and where (e.g. \"you " +
-  "built something similar in <project> — [C12]\"); ignore them when they don't help.";
+  "built something similar in <project> — [C12]\"); ignore them when they don't help. " +
+  "'# What was said' holds transcript lines [C<id>] (time) Speaker: text — use them for who said what; transcripts " +
+  "are machine speech-to-text, so a name in the question may be misheard (\"law\" for \"Lav\"): match on what fits.";
 
 export const ANSWER_SCHEMA = {
   name: "grounded_answer", strict: true,

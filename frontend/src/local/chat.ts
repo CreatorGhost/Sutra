@@ -2,7 +2,8 @@ import type { Provider } from "../providers/provider";
 import { isFullTextEngine } from "../providers";
 import { ANSWER_SCHEMA, CHAT_SYSTEM } from "./aiPrompts";
 import { expand, nearestEntities, relatedConversations } from "./graph";
-import { actionsForConversations, askScopeForProject, conversationsBetween, getProject, getSettings, memoryCardsForConversations, projectConversationIds, topPriors } from "./repo";
+import { actionsForConversations, askScopeForProject, conversationsBetween, getProject, getSettings, listProjects, memoryCardsForConversations, projectConversationIds, searchTurns, topPriors } from "./repo";
+import { speakerName } from "./speakers";
 import { searchMemories } from "./search";
 
 const DAY = 86_400_000;
@@ -26,12 +27,31 @@ export function timeWindow(message: string, now = new Date()): [string, string] 
   return from ? [sqlTs(from), sqlTs(to)] : null;
 }
 
+const STOP = new Set("the and for are was were what who whom whose when where which why how did does do about with from that this these those have has had you your our they them their there then than into onto over said say says tell told any all can could would should will just also like something anything about on in of to a an is it me my i we us he she his her".split(" "));
+
+/** The words worth finding in a transcript: not filler, not the project's own name. */
+export function questionWords(message: string, projectName?: string | null): string[] {
+  const skip = new Set(String(projectName ?? "").toLowerCase().split(/\s+/));
+  const words = (message.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}.-]*[\p{L}\p{N}]|[\p{L}\p{N}]/gu) ?? [])
+    .filter((w) => w.length >= 3 && !STOP.has(w) && !skip.has(w));
+  return [...new Set(words)].slice(0, 8);
+}
+
+/** A project the question names ("on MCS, what did …") — whole word, any case; the longest name wins. */
+export function mentionedProject<T extends { name?: string | null }>(message: string, projects: T[]): T | null {
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const hits = projects.filter((p) => p.name && p.name.trim().length >= 2 && new RegExp(`(^|[^\\p{L}\\p{N}])${esc(p.name.trim())}($|[^\\p{L}\\p{N}])`, "iu").test(message));
+  return hits.sort((a, b) => b.name!.length - a.name!.length)[0] ?? null;
+}
+
 /** `projectId`: Ask about one project — only its meetings, its brief, and (desktop, code access on) its
  *  linked code folders, which the agent may read. */
 export async function chat(message: string, provider: Provider, history: { role: string; content: string }[] = [], projectId: number | null = null) {
   message = (message || "").trim();
   if (!message) return { answer: "Please ask a question.", supported: false, citations: [], retrieved: [] };
-  const project = projectId != null ? await getProject(projectId).catch(() => null) as any : null;
+  // No project picked, but the question names one ("on MCS …"): ask about that project.
+  const project = projectId != null ? await getProject(projectId).catch(() => null) as any
+    : mentionedProject(message, await listProjects().catch(() => []) as any[]);
   let memories = await searchMemories(message, provider, project ? 24 : 8) as any[];
   if (project) {
     const ids = new Set(await projectConversationIds(project.id));
@@ -58,6 +78,11 @@ export async function chat(message: string, provider: Provider, history: { role:
   const relatedIds = relatedConversations(sub.edges as any[], seeds, new Set(memories.map((m) => m.conversation_id)), project ? 3 : 4);
   const related = (await memoryCardsForConversations(relatedIds).catch(() => []) as any[])
     .sort((a, b) => relatedIds.indexOf(a.conversation_id) - relatedIds.indexOf(b.conversation_id));
+
+  // What people actually said: summaries leave out who-said-what, so quote matching transcript lines.
+  const quotes = await searchTurns(questionWords(message, project?.name), project ? await projectConversationIds(project.id) : null).catch(() => [] as any[]);
+  const known = new Set([...memories, ...related].map((m) => m.conversation_id));
+  const quoted = await memoryCardsForConversations([...new Set(quotes.map((t) => t.conversation_id as number))].filter((id) => !known.has(id))).catch(() => []) as any[];
 
   // "Your Context": the user's standing priors (people/projects/role) — beliefs, NON-CITABLE, may be
   // stale. Gated on the context_enabled master toggle; in cloud mode only share_cloud=1 priors ride
@@ -99,13 +124,22 @@ export async function chat(message: string, provider: Provider, history: { role:
       ctx.push(`[C${m.conversation_id}] (${date})${where} ${m.title}: ${m.summary}`);
     }
   }
+  if (quoted.length) {
+    ctx.push("\n# Meetings the lines below come from");
+    for (const m of quoted) ctx.push(`[C${m.conversation_id}] (${m.started_at ? String(m.started_at).slice(0, 10) : "?"}) ${m.title}: ${m.summary}`);
+  }
+  if (quotes.length) {
+    const at = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+    ctx.push("\n# What was said (transcript lines matching the question)");
+    for (const t of quotes) ctx.push(`[C${t.conversation_id}] (${at(Number(t.start_ts) || 0)}) ${speakerName(t)}: ${String(t.text).trim().slice(0, 400)}`);
+  }
   if (sub.nodes.length) {
     const name: Record<number, string> = {};
     sub.nodes.forEach((n: any) => (name[n.id] = n.canonical_name));
     ctx.push("\n# Knowledge graph");
     for (const e of sub.edges as any[]) ctx.push(`${name[e.src] ?? "?"} --${e.relation}--> ${name[e.dst] ?? "?"}`);
   }
-  const body = memories.length || related.length || sub.nodes.length ? ctx.join("\n") : "(no memories found)";
+  const body = memories.length || related.length || quotes.length || sub.nodes.length ? ctx.join("\n") : "(no memories found)";
   const projectBlock = project
     ? `# Project: ${project.name || "Untitled project"}\n${project.context_enabled !== false && project.brief ? `<project_brief>\n${project.brief}\n</project_brief>\n` : ""}The user is asking about this project.\n`
     : "";
@@ -119,11 +153,11 @@ export async function chat(message: string, provider: Provider, history: { role:
   const cite = (m: any) => ({ conversation_id: m.conversation_id, title: m.title, date: m.started_at ? String(m.started_at).slice(0, 10) : null });
   let citations: any[] = [];
   if (data.supported) {
-    const matched = [...memories, ...related].filter((m) => cited.has(m.conversation_id));
+    const matched = [...memories, ...related, ...quoted].filter((m) => cited.has(m.conversation_id));
     const src = matched;
     const seen = new Set<number>();
     citations = src.filter((m) => (seen.has(m.conversation_id) ? false : (seen.add(m.conversation_id), true))).map(cite);
   }
-  return { answer: data.answer ?? "", supported: !!data.supported, citations,
+  return { answer: data.answer ?? "", supported: !!data.supported, citations, project: project ? { id: project.id, name: project.name } : null,
            retrieved: memories.map((m) => ({ conversation_id: m.conversation_id, title: m.title, score: m.score })) };
 }

@@ -898,3 +898,18 @@ export const listMeetingImages = async (cid: number): Promise<MeetingImage[]> =>
   (await q("SELECT id,conversation_id,name,at,caption FROM meeting_images WHERE conversation_id=? ORDER BY at, id", [cid])) as MeetingImage[];
 export const deleteMeetingImage = async (id: number) => { await run("DELETE FROM meeting_images WHERE id=?", [id]); await persist(); };
 export const clearMeetingImages = async (cid: number) => { await run("DELETE FROM meeting_images WHERE conversation_id=?", [cid]); await persist(); };
+
+/** Transcript lines that mention any of `words` (lowercase), best matches first — what Ask quotes when the
+ *  question is about what someone SAID, which summaries leave out. `convIds` limits it to those meetings. */
+// ponytail: LIKE scan over turns; fine for thousands of meetings, add an FTS5 mirror of turns if it gets slow.
+export async function searchTurns(words: string[], convIds: number[] | null = null, limit = 24) {
+  if (!words.length || (convIds && !convIds.length)) return [];
+  const where = words.map(() => "lower(t.text) LIKE ?").join(" OR ");
+  const inIds = convIds ? ` AND t.conversation_id IN (${convIds.map(() => "?").join(",")})` : "";
+  const rows = (await q(`SELECT t.conversation_id, t.text, t.start_ts, t.session_speaker_label, p.canonical_name person_name, p.is_me
+                         FROM turns t LEFT JOIN people p ON p.id=t.person_id
+                         WHERE t.redacted=0 AND t.conversation_id IS NOT NULL AND (${where})${inIds}
+                         ORDER BY t.id DESC LIMIT 400`, [...words.map((w) => `%${w}%`), ...(convIds ?? [])])) as any[];
+  const hits = (r: any) => { const s = String(r.text).toLowerCase(); return words.filter((w) => s.includes(w)).length; };
+  return rows.map((r) => ({ ...r, hits: hits(r) })).sort((a, b) => b.hits - a.hits).slice(0, limit);
+}

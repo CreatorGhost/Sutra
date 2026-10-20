@@ -35,6 +35,7 @@ export function AskAll() {
     try {
       const r: any = await api.chat(question, history, projectId);
       res = { q: question, a: r.answer, supported: r.supported, citations: r.citations };
+      if (projectId == null && r.project) setProjectId(r.project.id); // the question named a project
     } catch (e) { res = { q: question, a: friendlyError(e), supported: false }; }
     setTurns((xs) => xs.map((x) => (x.q === question && !x.a ? res : x)));
   };
