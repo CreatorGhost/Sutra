@@ -57,13 +57,14 @@ if (!app.isPackaged) {
 
 // ---- preferences (main-process owned so detection works before any window loads) -------------------
 
-interface Prefs { detectMeetings: boolean; autoStop: boolean; enabledEngines: AgentId[] | null; captureScreen: boolean }
-const DEFAULT_PREFS: Prefs = { detectMeetings: true, autoStop: true, enabledEngines: null, captureScreen: false };
+interface Prefs { detectMeetings: boolean; autoStop: boolean; enabledEngines: AgentId[] | null; captureScreen: boolean; theme: "system" | "light" | "dark" }
+const DEFAULT_PREFS: Prefs = { detectMeetings: true, autoStop: true, enabledEngines: null, captureScreen: false, theme: "system" };
 const prefsPath = () => join(app.getPath("userData"), "prefs.json");
 let prefs: Prefs = { ...DEFAULT_PREFS };
 function loadPrefs(): void {
   try { if (existsSync(prefsPath())) prefs = { ...DEFAULT_PREFS, ...JSON.parse(readFileSync(prefsPath(), "utf8")) }; } catch { /* defaults */ }
   prefs.enabledEngines = Array.isArray(prefs.enabledEngines) ? prefs.enabledEngines.filter(isAgentId) : null;
+  if (!["system", "light", "dark"].includes(prefs.theme)) prefs.theme = "system";
   setEnabledEngines(prefs.enabledEngines);
 }
 function savePrefs(): void {
@@ -143,7 +144,12 @@ function harden(win: BrowserWindow): void {
 
 // ---- main window ---------------------------------------------------------------------------------
 
+const TRAFFIC_LIGHTS = { x: 18, y: 20 };
+
 function createMainWindow(): void {
+  // The app's theme before the window exists: switching it later makes macOS re-lay the title bar and
+  // drop the traffic lights to their default spot until the next redraw.
+  nativeTheme.themeSource = prefs.theme;
   const win = new BrowserWindow({
     width: 1180,
     height: 780,
@@ -153,7 +159,7 @@ function createMainWindow(): void {
     title: "Sutra",
     backgroundColor: isMac ? "#00000000" : "#111113",
     ...(isMac
-      ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 18, y: 20 }, vibrancy: "sidebar" as const, visualEffectState: "active" as const }
+      ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: TRAFFIC_LIGHTS, vibrancy: "sidebar" as const, visualEffectState: "active" as const }
       : {
           // Windows/Linux: hide the title bar and let the OS draw only its window buttons over the top-right
           // corner (the sidebar and pane tops are drag regions), matching the frameless macOS look.
@@ -472,7 +478,13 @@ function registerIpc(): void {
   }));
   // The window's frosted sidebar is drawn by macOS in ITS appearance; follow the app's theme so a light
   // app on a dark Mac isn't a light tint over dark blur (muddy grey).
-  ipcMain.on("sutra:theme", (_e, t: unknown) => { if (t === "light" || t === "dark" || t === "system") nativeTheme.themeSource = t; });
+  ipcMain.on("sutra:theme", (_e, t: unknown) => {
+    if ((t !== "light" && t !== "dark" && t !== "system") || t === prefs.theme) return;
+    prefs.theme = t;
+    savePrefs();
+    nativeTheme.themeSource = t;
+    if (isMac) mainWin?.setWindowButtonPosition(TRAFFIC_LIGHTS); // the appearance change resets them
+  });
   ipcMain.handle("sutra:apple:add", (_e, kind: unknown, items: unknown) => addToApple(kind, items));
   ipcMain.handle("sutra:capture:use", (_e, id: unknown) => {
     if (typeof id === "number" && screen.getAllDisplays().some((d) => d.id === id)) chosenScreen = id;
