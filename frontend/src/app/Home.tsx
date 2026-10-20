@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AudioLines, Check, Laptop, Sparkles } from "lucide-react";
+import { ArrowRight, AudioLines, Check, Laptop, Sparkles } from "lucide-react";
 import { useMac } from "../pairing/runtime";
 import { PairControls } from "./settings/MacSection";
 import { api } from "../local/sutra";
 import { desktop, type AgentStatus } from "../desktop/bridge";
 import { isAgentId } from "../shared/agentProtocol";
 import { useRecorder } from "./recorder";
-import { notifyDataChanged } from "./events";
+import { notifyDataChanged, useDataVersion } from "./events";
+import { shortDate } from "./format";
 import { EngineSettings, autoEngine } from "./EngineSettings";
 import { SpeechSettings } from "./SpeechSettings";
 import { friendlyError } from "./ui";
 
-/** Nothing selected: a calm welcome, plus a one-time "what should we call you?" so notes say
- *  "Aditya: …" instead of "Me: …". */
+/** Home: a greeting, Ask, what's still open, and the latest meetings — plus a one-time "what should we
+ *  call you?" so notes say "Aditya: …" instead of "Me: …". */
 export function Home() {
   const { start, state: rec } = useRecorder();
   const nav = useNavigate();
@@ -29,6 +30,15 @@ export function Home() {
     void api.getSettings().then(setSettings);
   }, []);
   const put = async (patch: Record<string, unknown>) => setSettings(await api.putSettings(patch));
+  const version = useDataVersion();
+  const [recent, setRecent] = useState<any[] | null>(null);
+  const [todos, setTodos] = useState<any[]>([]);
+  const [ask, setAsk] = useState("");
+  useEffect(() => {
+    api.listConversations().then((r: any[]) => setRecent(r.slice(0, 6))).catch(() => setRecent([]));
+    api.actionItems("open").then((a: any[]) => setTodos(a.slice(0, 6))).catch(() => {});
+  }, [version]);
+  const done = async (id: number) => { setTodos((xs) => xs.filter((x) => x.id !== id)); await api.updateAction(id, "done"); };
 
   if (dbError) {
     return (
@@ -54,26 +64,83 @@ export function Home() {
     notifyDataChanged();
   };
 
+  const recording = rec.status === "recording" || rec.status === "starting";
+  const hour = new Date().getHours();
+  const hi = `${hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}${me ? `, ${me.split(" ")[0]}` : ""}`;
+
+  if (recent && !recent.length && me !== null) {
+    return (
+      <div className="center">
+        <div>
+          <div className="hero-mark"><AudioLines size={22} /></div>
+          <p className="hero-title">{hi}</p>
+          <p className="hero-text">
+            {desktop
+              ? "Join a call and Sutra notices — a Record button appears at the top of your screen. Notes, decisions and action items are written the moment you stop."
+              : "Start recording and Sutra writes the notes — summary, decisions and action items — the moment you stop."}
+          </p>
+          <button className="btn primary" onClick={() => { void start(); nav("/live"); }}><span className="rec-ring" /> Start recording</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="center">
-      <div>
-        <div className="hero-mark"><AudioLines size={24} /></div>
-        <p className="hero-title">{me ? `Hi ${me.split(" ")[0]}` : "Your meetings, remembered"}</p>
-        <p className="hero-text">
-          {desktop
-            ? "Join a call and Sutra notices — a Record button appears at the top of your screen. Notes, decisions and action items are written the moment you stop."
-            : "Start recording and Sutra writes the notes — summary, decisions and action items — the moment you stop."}
-        </p>
-        {me === null ? (
-          <form onSubmit={(e) => { e.preventDefault(); void saveName(); }} style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-            <input className="search" style={{ maxWidth: 220, color: "var(--text)", outline: 0 }} value={name} onChange={(e) => setName(e.target.value)} placeholder="Your first name" aria-label="Your name" />
+    <div className="scroll">
+      <div className="home">
+        <p className="home-date">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
+        <h1 className="home-hi">{hi}</h1>
+
+        {me === null && (
+          <form className="home-card home-name" onSubmit={(e) => { e.preventDefault(); void saveName(); }}>
+            <span className="grow">What should notes call you?</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your first name" aria-label="Your name" />
             <button className="btn primary" disabled={!name.trim()}>Save</button>
           </form>
-        ) : rec.status === "recording" || rec.status === "starting" ? (
-          <button className="btn" onClick={() => nav("/live")}><span className="live-dot" /> Recording{rec.app ? ` · ${rec.app}` : ""} — open</button>
-        ) : (
-          <button className="btn" onClick={() => void start()}>Start recording</button>
         )}
+
+        <form className="home-ask" onSubmit={(e) => { e.preventDefault(); if (ask.trim()) nav(`/ask?q=${encodeURIComponent(ask.trim())}`); }}>
+          <Sparkles size={16} />
+          <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Ask anything about your meetings…" aria-label="Ask Sutra" />
+          <kbd>↵</kbd>
+        </form>
+
+        {recording && (
+          <button className="home-card home-live" onClick={() => nav("/live")}>
+            <span className="live-dot" /><span className="grow">Recording{rec.app ? ` · ${rec.app}` : ""}</span><span className="faint">Open</span><ArrowRight size={14} />
+          </button>
+        )}
+
+        {todos.length > 0 && (
+          <section className="home-sec">
+            <h2>Open action items</h2>
+            <div className="home-list">
+              {todos.map((a) => (
+                <div key={a.id} className="home-row">
+                  <button className="check" role="checkbox" aria-checked={false} aria-label={`Done: ${a.text}`} onClick={() => void done(a.id)} />
+                  <span className="grow">{a.owner && <b>{a.owner}: </b>}{a.text}</span>
+                  {a.source_conversation != null && <button className="home-link" onClick={() => nav(`/m/${a.source_conversation}`)}>Open</button>}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="home-sec">
+          <h2>Recent meetings</h2>
+          <div className="home-list">
+            {recent === null ? [0, 1, 2].map((i) => <div key={i} className="skel" style={{ height: 44, margin: 6 }} />)
+              : recent.map((m) => (
+                <button key={m.id} className="home-row home-meeting" onClick={() => nav(`/m/${m.id}`)}>
+                  <span className="grow">
+                    <span className="t">{m.title || (m.status === "failed" ? "Couldn't write notes" : "Writing notes…")}</span>
+                    <span className="d">{m.subtitle || m.summary || ""}</span>
+                  </span>
+                  <span className="faint">{shortDate(m.started_at ?? m.created_at)}</span>
+                </button>
+              ))}
+          </div>
+        </section>
       </div>
     </div>
   );

@@ -137,32 +137,41 @@ export function MeetingView() {
     <>
       <div className="pane-top drag">
         <button className="icon-btn ghost sm back-btn" onClick={() => nav("/")} aria-label="Back"><ArrowLeft size={18} /></button>
+        <span className="crumb">{projects.find((p) => p.id === c.project_id)?.name || "Meetings"}<span className="faint"> / </span><span className="crumb-cur">{title}</span></span>
         <div className="spacer" />
+        <div className="top-actions">
+          <button className="icon-btn ghost sm" onClick={() => void copy()} aria-label="Copy notes" title="Copy notes"><Copy size={15} /></button>
+          <button className="icon-btn ghost sm" onClick={() => void copySlack()} aria-label="Copy for Slack" title="Copy for Slack"><Hash size={15} /></button>
+          <button className="icon-btn ghost sm" onClick={() => void exportMd()} aria-label="Export" title="Export as Markdown"><Share size={15} /></button>
+          <button className="icon-btn ghost sm danger" onClick={() => void remove()} aria-label="Delete meeting" title="Delete"><Trash2 size={15} /></button>
+        </div>
       </div>
       <div className="scroll">
         <article className="doc">
+          <div className="m-when">
+            {[longDate(c.started_at ?? c.created_at), duration(c.started_at, c.ended_at)].filter(Boolean).join(" · ")}
+            {c.source_app && <> · <SourceApp name={c.source_app} /></>}
+            {c.is_meeting && <span title="Sutra detected a meeting"> · <Users size={12} style={{ verticalAlign: -1 }} /> Meeting</span>}
+          </div>
           <EditableTitle key={cid} value={title} disabled={!m} onSave={async (t) => { await api.setTitle(cid, t); notifyDataChanged(); }} />
           {(m?.subtitle || m?.summary) && <p className="m-sub">{m.subtitle || firstSentence(m.summary)}</p>}
 
           <div className="meta">
-            <StylePicker style={style} onChange={chooseStyle} />
             <ProjectChip cid={cid} conversation={c} projects={projects} onError={showToast} />
             <TagEditor cid={cid} tags={c.tags ?? []} />
-            <span className="faint when">
-              {c.is_meeting && <span title="Sutra detected a meeting"><Users size={13} style={{ verticalAlign: -2, marginRight: 5 }} />Meeting · </span>}
-              {[longDate(c.started_at ?? c.created_at), duration(c.started_at, c.ended_at)].filter(Boolean).join(" · ")}
-              {c.source_app && <> · <SourceApp name={c.source_app} /></>}
-            </span>
           </div>
 
           {!pending && <RecordingBanner cid={cid} v={visual.v} startedAt={c.started_at ?? null} onChanged={() => { void visual.reload(); void load(); }} toast={showToast} />}
 
-          <div className="seg" role="tablist">
-            <button role="tab" aria-selected={tab === "notes"} onClick={() => setTab("notes")}>Notes</button>
-            <button role="tab" aria-selected={tab === "transcript"} onClick={() => setTab("transcript")}>Transcript</button>
-            <button role="tab" aria-selected={tab === "chat"} onClick={() => setTab("chat")}>
-              Chat{questions > 0 && <span className="seg-count">{questions}</span>}
-            </button>
+          <div className="tabs-row">
+            <div className="seg" role="tablist">
+              <button role="tab" aria-selected={tab === "notes"} onClick={() => setTab("notes")}>Notes</button>
+              <button role="tab" aria-selected={tab === "transcript"} onClick={() => setTab("transcript")}>Transcript</button>
+              <button role="tab" aria-selected={tab === "chat"} onClick={() => setTab("chat")}>
+                Chat{questions > 0 && <span className="seg-count">{questions}</span>}
+              </button>
+            </div>
+            {tab === "notes" && <StylePicker style={style} onChange={chooseStyle} />}
           </div>
 
           <CiteContext.Provider value={cites}>
@@ -188,7 +197,7 @@ export function MeetingView() {
           </CiteContext.Provider>
         </article>
       </div>
-      <AskBar cid={cid} busy={!!chat.pending} onAsk={(question) => { setTab("chat"); void chat.ask(question); }} onCopy={copy} onCopySlack={copySlack} onExport={exportMd} onDelete={remove} />
+      <AskBar cid={cid} busy={!!chat.pending} onAsk={(question) => { setTab("chat"); void chat.ask(question); }} />
       {shot && <ShotViewer cid={cid} img={shot} startedAt={startedAt} onClose={() => setShot(null)} onTranscript={openTime} />}
       {toast}
     </>
@@ -595,10 +604,8 @@ function SpeakerButton({ turn, onRenamed }: { turn: any; onRenamed: () => void }
   );
 }
 
-/** The bar at the bottom: ask about this meeting (answers go to the Chat tab), copy, export, delete. */
-function AskBar({ cid, busy, onAsk, onCopy, onCopySlack, onExport, onDelete }: {
-  cid: number; busy: boolean; onAsk: (q: string) => void; onCopy: () => void; onCopySlack: () => void; onExport: () => void; onDelete: () => void;
-}) {
+/** The bar at the bottom: ask about this meeting (answers go to the Chat tab). */
+function AskBar({ cid, busy, onAsk }: { cid: number; busy: boolean; onAsk: (q: string) => void }) {
   const [q, setQ] = useState("");
   useEffect(() => { setQ(""); }, [cid]);
   const ask = () => { const question = q.trim(); if (!question || busy) return; setQ(""); onAsk(question); };
@@ -612,12 +619,6 @@ function AskBar({ cid, busy, onAsk, onCopy, onCopySlack, onExport, onDelete }: {
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={busy ? "Thinking…" : "Ask about this meeting…"} aria-label="Ask about this meeting" />
           <EnginePicker />
         </form>
-        <div className="ask-actions">
-          <button className="icon-btn" onClick={onCopy} aria-label="Copy notes" title="Copy notes"><Copy size={17} /></button>
-          <button className="icon-btn" onClick={onCopySlack} aria-label="Copy for Slack" title="Copy for Slack"><Hash size={17} /></button>
-          <button className="icon-btn" onClick={onExport} aria-label="Export" title="Export as Markdown"><Share size={17} /></button>
-          <button className="icon-btn danger" onClick={onDelete} aria-label="Delete meeting" title="Delete"><Trash2 size={17} /></button>
-        </div>
       </div>
     </>
   );

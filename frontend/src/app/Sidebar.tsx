@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AudioLines, ChevronRight, FolderClosed, FolderOpen, Laptop, Loader2, Search, Settings as Gear, Sparkles, Square, Waypoints, X } from "lucide-react";
+import { ChevronRight, FolderClosed, FolderOpen, House, Laptop, List, Loader2, Search, Settings as Gear, Sparkles, Square, Waypoints, X } from "lucide-react";
 import { api } from "../local/sutra";
 import { setMeetingFilter, useMeetingFilter } from "./projects/filter";
 import { projectColor, projectFolders, projectName, type ProjectLike } from "./projects/model";
@@ -25,11 +25,11 @@ interface MeetingRow {
   project_id: number | null;
 }
 
-type Mode = "meetings" | "projects" | "graph";
-const NAV: { to: string; mode: Mode; label: string; icon: typeof AudioLines }[] = [
-  { to: "/", mode: "meetings", label: "Meetings", icon: AudioLines },
-  { to: "/projects", mode: "projects", label: "Projects", icon: FolderClosed },
-  { to: "/graph", mode: "graph", label: "Graph", icon: Waypoints },
+const NAV: { to: string; label: string; icon: typeof House; on: (path: string) => boolean }[] = [
+  { to: "/", label: "Home", icon: House, on: (p) => p === "/" },
+  { to: "/ask", label: "Ask Sutra", icon: Sparkles, on: (p) => p.startsWith("/ask") },
+  { to: "/projects", label: "Projects", icon: FolderClosed, on: (p) => p.startsWith("/projects") },
+  { to: "/graph", label: "Graph", icon: Waypoints, on: (p) => p.startsWith("/graph") },
 ];
 
 function matches(m: MeetingRow, q: string): boolean {
@@ -48,14 +48,9 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [detection, setDetection] = useState<DetectionState>({ active: null, visible: false });
   const [projects, setProjects] = useState<Map<number, ProjectLike>>(new Map());
   const filter = useMeetingFilter();
-  // Which list the sidebar shows. Opening a meeting from a project folder keeps the folders in view;
-  // only the Meetings tab (or Home) switches back to the plain list.
+  // How the meeting list is grouped: by date, or in project folders (Projects pages open the folders).
   const [list, setList] = useState<"meetings" | "projects">(pathname.startsWith("/projects") ? "projects" : "meetings");
-  useEffect(() => {
-    if (pathname.startsWith("/projects")) setList("projects");
-    else if (pathname === "/" || pathname === "/live") setList("meetings");
-  }, [pathname]);
-  const mode: Mode = pathname.startsWith("/graph") ? "graph" : list;
+  useEffect(() => { if (pathname.startsWith("/projects")) setList("projects"); }, [pathname]);
   // The project in view: the open project page, or the open meeting's project.
   const openProjectId = (() => {
     const p = Number(pathname.match(/^\/projects\/(\d+)/)?.[1] ?? NaN);
@@ -101,17 +96,16 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
 
   return (
     <aside className="sidebar">
-      <div className="side-top drag">
-        <label className="search">
-          <Search size={15} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onSearchKey} placeholder={list === "projects" ? "Search projects…" : "Search…"} aria-label={list === "projects" ? "Search projects and meetings" : "Search meetings"} />
-          {query && <button className="icon-btn ghost sm" onClick={() => setQuery("")} aria-label="Clear search"><X size={14} /></button>}
-        </label>
-      </div>
+      <div className="side-top drag" />
+      <label className="search side-search">
+        <Search size={14} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onSearchKey} placeholder="Search" aria-label={list === "projects" ? "Search projects and meetings" : "Search meetings"} />
+        {query ? <button className="icon-btn ghost sm" onClick={() => setQuery("")} aria-label="Clear search"><X size={13} /></button> : <kbd>⌘K</kbd>}
+      </label>
       <nav className="side-nav" aria-label="Sections">
-        {NAV.map(({ to, mode: m, label, icon: Icon }) => (
-          <button key={to} aria-current={mode === m ? "page" : undefined} onClick={() => { if (m !== "graph") setList(m); nav(to); }}>
-            <Icon size={14} /> {label}
+        {NAV.map(({ to, label, icon: Icon, on }) => (
+          <button key={to} aria-current={on(pathname) ? "page" : undefined} onClick={() => nav(to)}>
+            <Icon size={15} /> {label}
           </button>
         ))}
       </nav>
@@ -145,6 +139,13 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
         </div>
       ) : !desktop ? <MacChip /> : null}
 
+      <div className="side-section">
+        <span>{list === "projects" ? "By project" : "Meetings"}</span>
+        <span className="side-view" role="group" aria-label="Group meetings">
+          <button aria-pressed={list === "meetings"} onClick={() => setList("meetings")} title="By date" aria-label="By date"><List size={13} /></button>
+          <button aria-pressed={list === "projects"} onClick={() => setList("projects")} title="By project" aria-label="By project"><FolderClosed size={13} /></button>
+        </span>
+      </div>
       {list === "projects" ? (
         <ProjectTree rows={rows} projects={[...projects.values()]} query={query} activeId={activeId} openProjectId={openProjectId}
           askScope={askScope != null ? projects.get(askScope) ?? null : null} onAsk={(pid) => nav(askUrl(pid))} />
@@ -188,7 +189,6 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
       )}
 
       <div className="side-bottom">
-        <button className="icon-btn" onClick={onOpenSettings} aria-label="Settings"><Gear size={18} /></button>
         {recording ? (
           <button className="record-btn is-recording" onClick={() => void stop()} disabled={rec.status === "starting"}>
             {rec.status === "starting" ? <Loader2 size={16} className="spin" /> : <Square size={14} fill="currentColor" />}
@@ -196,9 +196,10 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
           </button>
         ) : (
           <button className="record-btn" onClick={() => { void start({ app: detection.active?.app ?? null }); nav("/live"); }}>
-            Start recording
+            <span className="rec-ring" /> Record
           </button>
         )}
+        <button className="icon-btn ghost" onClick={onOpenSettings} aria-label="Settings" title="Settings (⌘,)"><Gear size={17} /></button>
       </div>
     </aside>
   );
