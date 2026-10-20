@@ -46,12 +46,17 @@ export function mentionedProject<T extends { name?: string | null }>(message: st
 
 /** `projectId`: Ask about one project — only its meetings, its brief, and (desktop, code access on) its
  *  linked code folders, which the agent may read. */
-export async function chat(message: string, provider: Provider, history: { role: string; content: string }[] = [], projectId: number | null = null) {
+/** `opts` (for outside callers like MCP): `transcripts` false keeps transcript lines out of the prompt (the
+ *  user's transcript-sharing setting); `inferProject` false never picks a project from the question's words —
+ *  picking one can open its code folders to the agent. */
+export async function chat(message: string, provider: Provider, history: { role: string; content: string }[] = [], projectId: number | null = null,
+                           opts: { transcripts?: boolean; inferProject?: boolean } = {}) {
+  const { transcripts = true, inferProject = true } = opts;
   message = (message || "").trim();
   if (!message) return { answer: "Please ask a question.", supported: false, citations: [], retrieved: [] };
   // No project picked, but the question names one ("on MCS …"): ask about that project.
   const project = projectId != null ? await getProject(projectId).catch(() => null) as any
-    : mentionedProject(message, await listProjects().catch(() => []) as any[]);
+    : inferProject ? mentionedProject(message, await listProjects().catch(() => []) as any[]) : null;
   let memories = await searchMemories(message, provider, project ? 24 : 8) as any[];
   if (project) {
     const ids = new Set(await projectConversationIds(project.id));
@@ -80,7 +85,7 @@ export async function chat(message: string, provider: Provider, history: { role:
     .sort((a, b) => relatedIds.indexOf(a.conversation_id) - relatedIds.indexOf(b.conversation_id));
 
   // What people actually said: summaries leave out who-said-what, so quote matching transcript lines.
-  const quotes = await searchTurns(questionWords(message, project?.name), project ? await projectConversationIds(project.id) : null).catch(() => [] as any[]);
+  const quotes = !transcripts ? [] : await searchTurns(questionWords(message, project?.name), project ? await projectConversationIds(project.id) : null).catch(() => [] as any[]);
   const known = new Set([...memories, ...related].map((m) => m.conversation_id));
   const quoted = await memoryCardsForConversations([...new Set(quotes.map((t) => t.conversation_id as number))].filter((id) => !known.has(id))).catch(() => []) as any[];
 

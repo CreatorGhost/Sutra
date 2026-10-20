@@ -152,5 +152,10 @@ describe("ask across meetings", () => {
     expect(user).toContain(`[C${cid}] (1:05) Speaker 1: 3MF files should keep the colour data.`);
     expect(user).not.toContain("3MF export is slow");
     expect(r.citations.map((c: any) => c.conversation_id)).toEqual([cid]);
+    // An outside caller (MCP): no transcript lines when sharing is off, and no project picked from the words.
+    const outside: any = await (await import("../chat")).chat("on MCS what was said about 3MF files?", { id: "mock", chat, canEmbed: false } as any, [], null, { transcripts: false, inferProject: false });
+    expect(outside.project).toBeNull();
+    expect((chat.mock.calls[1] as any[])[2]).not.toContain("# What was said");
+    expect((chat.mock.calls[1] as any[])[3]).toBeNull();
   });
 });

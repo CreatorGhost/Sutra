@@ -198,7 +198,8 @@ export const api = {
   entities: () => q("SELECT id,type,canonical_name,importance,mention_count,first_seen,last_seen FROM entities ORDER BY mention_count DESC, importance DESC LIMIT 300"),
 
   search: async (qstr: string, topN?: number) => ({ query: qstr, results: await searchMemories(qstr, await provider(), topN) }),
-  chat: async (message: string, history: any[] = [], projectId: number | null = null) => chatSvc.chat(message, await provider(), history, projectId),
+  chat: async (message: string, history: any[] = [], projectId: number | null = null, opts?: { transcripts?: boolean; inferProject?: boolean }) =>
+    chatSvc.chat(message, await provider(), history, projectId, opts),
 
   actionItems: (status?: string) => repo.listActions(status),
   updateAction: async (id: number, status: string) => { await repo.setActionStatus(id, status); return { id, status }; },

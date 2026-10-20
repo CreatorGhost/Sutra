@@ -127,7 +127,9 @@ export const mcpHandlers: Record<string, (params: any) => Promise<unknown>> = {
         .slice(0, 10)
         .map((h: any) => ({ role: h.role, content: String(h.content) }));
     }
-    return serializeAsk(await api.chat(question, history));
+    const s = await settings();
+    // An outside AI: honour transcript sharing, and never open a project's code because the question named it.
+    return serializeAsk(await api.chat(question, history, null, { transcripts: allowed(s, "mcp_allow_transcripts"), inferProject: false }));
   },
 
   async get_privacy() {
