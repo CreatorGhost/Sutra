@@ -83,8 +83,8 @@ export function ProjectPage() {
   return (
     <>
       <div className="pane-top drag">
-        {/* Always shown (not just on phones): a project page sits one level below the projects list. */}
-        <button className="icon-btn ghost sm" onClick={() => nav("/projects")} aria-label="All projects" title="All projects"><ArrowLeft size={18} /></button>
+        <button className="icon-btn ghost sm back-btn" onClick={() => nav("/projects")} aria-label="All projects" title="All projects"><ArrowLeft size={18} /></button>
+        <span className="crumb"><button className="crumb-link" onClick={() => nav("/projects")}>Projects</button><span className="faint"> / </span><span className="crumb-cur">{name || "Untitled project"}</span></span>
         <div className="spacer" />
       </div>
       <div className="scroll">
@@ -107,7 +107,7 @@ export function ProjectPage() {
                 <button key={c} style={{ ["--pc" as any]: c }} aria-pressed={c === color} aria-label={`Colour ${c}`} onClick={() => void patch({ color: c })} />
               ))}
             </span>
-            <span className="faint when">{plural(meetings.length, "meeting")} · {plural(project.people?.length ?? 0, "person", "people")} · {plural(terms.length, "term")}</span>
+            <span className="faint">{plural(meetings.length, "meeting")} · {plural(project.people?.length ?? 0, "person", "people")} · {plural(terms.length, "term")}</span>
           </div>
 
           <ProjectFolders pid={pid} project={project} act={act} notify={showToast}

@@ -336,8 +336,12 @@ function Failed({ cid, onDone }: { cid: number; onDone: () => void }) {
   );
 }
 
-function Bullets({ items, empty }: { items: string[]; empty?: string }) {
-  if (!items?.length) return empty ? <ul className="bullets"><li className="none">{empty}</li></ul> : null;
+// The model sometimes writes "none" as an item; that's an empty list.
+const realItems = (xs?: string[]) => (xs ?? []).filter((x) => !/^\s*(none|n\/a|nil|-+)\.?\s*$/i.test(String(x)));
+
+function Bullets({ items: raw, empty }: { items: string[]; empty?: string }) {
+  const items = realItems(raw);
+  if (!items.length) return empty ? <ul className="bullets"><li className="none">{empty}</li></ul> : null;
   return <ul className="bullets">{items.map((x, i) => <li key={i}>{x}</li>)}</ul>;
 }
 
@@ -396,9 +400,9 @@ function BriefNotes({ memory, actions }: { memory: any; actions: any[] }) {
   return (
     <>
       <section className="sec"><h2>Summary</h2><p>{memory.summary}</p></section>
-      <section className="sec"><h2>Decisions</h2><Bullets items={memory.decisions} empty="none" /></section>
+      {realItems(memory.decisions).length > 0 && <section className="sec"><h2>Decisions</h2><Bullets items={memory.decisions} /></section>}
       {actions.length > 0 && <section className="sec"><h2>Action items</h2><ActionList actions={actions} /></section>}
-      {memory.open_questions?.length > 0 && <section className="sec"><h2>Open questions</h2><Bullets items={memory.open_questions} /></section>}
+      {realItems(memory.open_questions).length > 0 && <section className="sec"><h2>Open questions</h2><Bullets items={memory.open_questions} /></section>}
     </>
   );
 }

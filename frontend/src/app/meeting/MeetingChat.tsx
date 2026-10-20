@@ -54,7 +54,12 @@ export function ChatThread({ chat, onPath, toast }: { chat: MeetingChatState; on
       <div className="chat-empty">
         <MessageSquareText size={22} />
         <p><b>Ask anything about this meeting</b></p>
-        <p className="muted">What was decided, who owns what, what someone meant — and, when the meeting's project has linked code, where it lives in the code. The chat is saved with the meeting; keep the useful answers with <b>Add to notes</b>.</p>
+        <p className="muted">Answers cite the moment it was said. Keep the useful ones with <b>Add to notes</b>.</p>
+        <div className="ask-suggest">
+          {["What did I commit to?", "What was decided?", "What's still unresolved?", "Summarise what each person said"].map((q) => (
+            <button key={q} className="btn" onClick={() => void chat.ask(q)}>{q}</button>
+          ))}
+        </div>
       </div>
     );
   }
@@ -101,6 +106,14 @@ export function Additions({ chat, onPath, onOpenChat }: { chat: MeetingChatState
   const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
   const save = async () => { const v = text.trim(); if (!v) return; await chat.note(v); setText(""); setWriting(false); };
 
+  // Nothing added yet: one quiet line, not a whole section.
+  if (!added.length && !writing) {
+    return (
+      <button className="add-note" onClick={() => setWriting(true)} title="Your notes, or answers pinned from the chat — kept with the notes and used when you ask about this meeting.">
+        <Plus size={14} /> Add a note to this meeting
+      </button>
+    );
+  }
   return (
     <section className="sec additions">
       <div className="sec-head">

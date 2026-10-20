@@ -68,7 +68,7 @@ export function ProjectsPage() {
                 const meetings = counts.get(p.id) ?? 0;
                 return (
                   <button key={p.id} className="prow" style={{ ["--pc" as any]: projectColor(p) }} onClick={() => nav(`/projects/${p.id}`)}>
-                    <span className="pdot" />
+                    <span className="pdot"><FolderClosed size={13} /></span>
                     <span className="grow">
                       <div className="name">{projectName(p)}</div>
                       {p.brief?.trim() && <div className="snip">{p.brief.trim()}</div>}
