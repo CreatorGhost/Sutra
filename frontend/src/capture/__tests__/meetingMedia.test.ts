@@ -51,3 +51,12 @@ describe("recording with screenshots on", () => {
     expect(a.processSession).toHaveBeenCalledWith(42);
   });
 });
+
+describe("a new voice on the call", async () => {
+  const { shouldKeep, VOICE_SHOT_MIN_MS } = await import("../meetingMedia");
+  it("forces a shot of an unchanged screen, but not more often than the minimum gap", () => {
+    expect(shouldKeep(0, VOICE_SHOT_MIN_MS, 3, true)).toBe(true);
+    expect(shouldKeep(0, VOICE_SHOT_MIN_MS - 1, 3, true)).toBe(false);
+    expect(shouldKeep(0, VOICE_SHOT_MIN_MS, 3, false)).toBe(false);
+  });
+});

@@ -28,9 +28,14 @@ export function frameDiff(a: Uint8Array | null, b: Uint8Array): number {
 
 /** Keep this frame? Always the first; then on a real change, or a still screen after a while. Past the
  *  cap only big changes count, so a very long meeting can't fill the disk. */
-export function shouldKeep(diff: number, msSinceLastKept: number, kept: number): boolean {
+/** A new voice on the call: shoot the next sample (the call app's speaking highlight is too small a change
+ *  to trigger on its own), but not more often than this. */
+export const VOICE_SHOT_MIN_MS = 8_000;
+
+export function shouldKeep(diff: number, msSinceLastKept: number, kept: number, voice = false): boolean {
   if (kept === 0) return true;
   if (kept >= MAX_FRAMES) return diff >= CHANGE_THRESHOLD * 4;
+  if (voice && msSinceLastKept >= VOICE_SHOT_MIN_MS) return true;
   return diff >= CHANGE_THRESHOLD || (msSinceLastKept >= STILL_RESHOT_MS && diff > 0.002);
 }
 
@@ -58,6 +63,10 @@ export class MeetingMedia {
   private ctx: AudioContext | null = null;
   private pending: Promise<unknown>[] = [];
   private busy = false;
+  private voice = false;
+
+  /** Someone on the call started talking (see MeetingController): shoot at the next sample. */
+  voiceStarted(): void { this.voice = true; }
 
   constructor(private readonly sid: number, private readonly sink: MediaSink, private readonly onError: (m: string) => void = () => {}) {}
 
@@ -121,7 +130,9 @@ export class MeetingMedia {
       const gray = toGray(tctx.getImageData(0, 0, THUMB_W, THUMB_H).data);
       const diff = frameDiff(this.lastThumb, gray);
       const now = Date.now();
-      if (!shouldKeep(diff, now - this.lastKeptAt, this.kept)) return;
+      const voice = this.voice;
+      this.voice = false;
+      if (!shouldKeep(diff, now - this.lastKeptAt, this.kept, voice)) return;
       const scale = Math.min(1, MAX_W / v.videoWidth, MAX_H / v.videoHeight);
       const c = document.createElement("canvas");
       c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);

@@ -45,6 +45,13 @@ describe("choosing and labelling screenshots", () => {
     expect(visual.labelShots(picked.slice(0, 2), 0).map((s) => `${s.label} ${s.offset}`)).toEqual(["S01 00:00", "S02 00:05"]);
   });
 
+  it("keeps a shot from while each remote voice talks, even a low-change one", () => {
+    const frames = Array.from({ length: 40 }, (_, i) => ({ name: `shot-${i}.jpg`, at: i * 1000, score: i % 5 === 0 ? 0.9 : 0.1 }));
+    const picked = visual.pickShots(frames, 8, [{ label: "c2", start: 21_000, end: 23_500 }, { label: "me", start: 0, end: 0 }]);
+    expect(picked).toHaveLength(8);
+    expect(picked.some((f) => f.at === 22_000)).toBe(true); // inside c2's turn, ≥0.5 s in
+  });
+
   it("times the transcript from the start", () => {
     expect(visual.timedTranscript([{ abs_start: new Date(T0 + 754_000).toISOString(), session_speaker_label: "me", text: "Hi" }], T0)).toBe("[12:34] Me: Hi");
   });

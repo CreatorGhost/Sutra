@@ -74,6 +74,8 @@ export interface MeetingControllerOptions extends MeetingCallbacks {
 /** The re-share prompt message for the missed "share audio" checkbox (re-exported for the UI/tests). */
 export { NO_AUDIO_TRACK_MESSAGE } from "./stereoCore";
 export const STREAM_ENDED_MESSAGE = "Capture stream ended.";
+/** Call-audio level that counts as someone talking, and the pause before it that makes it a new turn. */
+const VOICE_LEVEL = 0.015, VOICE_GAP_MS = 1500; // raw RMS, like channels.voicedSeconds's 0.012
 
 /**
  * Drives one meeting-capture lifecycle. Construct, call start(); each completed CaptureWindow is
@@ -126,7 +128,7 @@ export class MeetingController {
         output: this.opts.output,
         onWindow: (w) => this.handleWindow(w),
         onError: (err) => this.handleCaptureError(err),
-        onLevel: this.cb.onLevel,
+        onLevel: (me: number, them: number) => { this.cb.onLevel?.(me, them); this.watchVoice(them); },
         ...(sink ? {
           keepVideo: true,
           onStreams: (mic: MediaStream, sys: MediaStream, video: MediaStreamTrack | null) => {
@@ -199,6 +201,16 @@ export class MeetingController {
       void this.discardSession();
       this.cb.onPhase?.("idle");
     }
+  }
+
+  /** The call's audio coming back after a pause = someone (else) started talking: a screenshot then
+   *  catches the call app highlighting who. Levels arrive ~10×/s. */
+  private quietSince = 0;
+  private watchVoice(them: number): void {
+    const now = Date.now();
+    if (them < VOICE_LEVEL) { if (!this.quietSince) this.quietSince = now; return; }
+    if (this.quietSince && now - this.quietSince >= VOICE_GAP_MS) this.media?.voiceStarted();
+    this.quietSince = 0;
   }
 
   /** Screenshots from another screen (a fresh screen track); ignored when screenshots are off. */

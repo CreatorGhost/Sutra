@@ -64,19 +64,43 @@ const mmss = (ms: number) => {
 
 /** At most `max` screenshots across the whole meeting: the meeting is cut into `max` equal stretches and
  *  the biggest screen change in each is taken; leftover slots go to the next-biggest changes. In time order. */
-export function pickShots(frames: Frame[], max = MAX_SHOTS): Frame[] {
+export function pickShots(frames: Frame[], max = MAX_SHOTS, voices: VoiceSpan[] = []): Frame[] {
   const all = [...frames].sort((a, b) => a.at - b.at);
   if (all.length <= max) return all;
-  const t0 = all[0].at, span = Math.max(1, all.at(-1)!.at - t0 + 1);
+  // First, one shot per remote voice taken while it talks (its longest turn that has one), so the call's
+  // speaking highlight can name it — up to a third of the slots.
+  const voiced = new Set<Frame>();
+  const byVoice = new Map<string, VoiceSpan[]>();
+  for (const v of voices) byVoice.set(v.label, [...(byVoice.get(v.label) ?? []), v]);
+  for (const spans of byVoice.values()) {
+    if (voiced.size >= Math.floor(max / 3)) break;
+    for (const v of [...spans].sort((a, b) => (b.end - b.start) - (a.end - a.start))) {
+      const f = all.find((x) => x.at >= v.start + 500 && x.at <= v.end && !voiced.has(x));
+      if (f) { voiced.add(f); break; }
+    }
+  }
+  max -= voiced.size;
+  const rest = all.filter((f) => !voiced.has(f));
+  if (rest.length <= max) return all;
+  const t0 = rest[0].at, span = Math.max(1, rest.at(-1)!.at - t0 + 1);
   const best = new Map<number, Frame>();
-  for (const f of all) {
+  for (const f of rest) {
     const slot = Math.min(max - 1, Math.floor(((f.at - t0) / span) * max));
     const cur = best.get(slot);
     if (!cur || f.score > cur.score) best.set(slot, f);
   }
   const chosen = new Set(best.values());
-  for (const f of [...all].sort((a, b) => b.score - a.score)) { if (chosen.size >= max) break; chosen.add(f); }
-  return all.filter((f) => chosen.has(f));
+  for (const f of [...rest].sort((a, b) => b.score - a.score)) { if (chosen.size >= max) break; chosen.add(f); }
+  return all.filter((f) => chosen.has(f) || voiced.has(f));
+}
+
+/** When a remote voice spoke (ms since epoch), for pickShots. */
+export interface VoiceSpan { label: string; start: number; end: number }
+export function voiceSpans(turns: any[]): VoiceSpan[] {
+  return turns.filter((t) => t.session_speaker_label !== "me" && !t.is_me).map((t) => {
+    const start = Date.parse(String(t.abs_start ?? ""));
+    return { label: String(t.session_speaker_label), start, end: start + Math.max(0, (t.end_ts ?? 0) - (t.start_ts ?? 0)) * 1000 };
+  }).filter((v) => Number.isFinite(v.start));
 }
 
 export function labelShots(frames: Frame[], startMs: number): LabelledFrame[] {
@@ -175,7 +199,7 @@ export async function visualPass(cid: number, sessionId: number, provider: Provi
     const detail: any = await repo.conversationDetailSafe(cid);
     const turns: any[] = detail?.turns ?? [];
     const startMs = Math.min(...[Date.parse(String(detail?.conversation?.started_at ?? "")), frames[0].at].filter(Number.isFinite));
-    const shots = labelShots(pickShots(frames), startMs);
+    const shots = labelShots(pickShots(frames, MAX_SHOTS, voiceSpans(turns)), startMs);
     const user = `Screenshots (time from the start of the meeting): ${shots.map((s) => `${s.label} ${s.offset}`).join(", ")}.\n\n` +
       `# Transcript\n${timedTranscript(turns, startMs)}`;
     const out = await provider.extract(VISUAL_SCHEMA, VISUAL_SYSTEM, user, {
