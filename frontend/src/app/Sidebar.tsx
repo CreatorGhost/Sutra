@@ -96,7 +96,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
 
   return (
     <aside className="sidebar">
-      <div className="side-top drag" />
+      <div className="side-top drag"><span className="side-brand"><img src="./favicon.svg" alt="" />Sutra</span></div>
       <label className="search side-search">
         <Search size={14} />
         <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onSearchKey} placeholder="Search" aria-label={list === "projects" ? "Search projects and meetings" : "Search meetings"} />
