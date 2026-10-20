@@ -3,11 +3,14 @@
 // nothing goes to the Sutra service. Agents can't produce embeddings or rerank, so search runs on
 // keywords with this engine (callers already fall back when embed/rerank throw).
 import type { AskScope, ExtractOpts, Provider, RefineOpts, Transcription } from "./provider";
-import type { AgentId } from "../shared/agentProtocol";
+import { AGENTS, type AgentId } from "../shared/agentProtocol";
 import { desktop } from "../desktop/bridge";
 
 export const NO_ENGINE_MESSAGE =
   "No AI engine is connected. Connect an AI engine in Settings → Intelligence (Claude Code, Codex, Cursor, Gemini, Grok, Droid or Command Code), then retry.";
+
+/** An engine that's out of quota / rate-limited / overloaded: worth retrying on another signed-in engine. */
+export const OUT_OF_QUOTA = /usage limit|rate[ _-]?limit|quota|\b429\b|resource[_ ]exhausted|too many requests|credit balance|out of credits|limit reached|overloaded/i;
 
 const inner = (s: any) => (s && typeof s === "object" && "schema" in s ? s.schema : s);
 
@@ -35,10 +38,32 @@ export class AgentProvider implements Provider {
     return pick.id;
   }
 
+  /** The engine that answered last (differs from the chosen one after a fallback). */
+  lastEngine: AgentId | null = null;
+
   private async json(schema: object, system: string, user: string, workspace?: string[], images?: ExtractOpts["images"]): Promise<any> {
-    const id = await this.engine();
-    const r = await desktop!.ai.run(id, { system, user, schema: inner(schema), model: this.modelFor(id), ...(workspace?.length ? { workspace } : {}), ...(images?.frames.length ? { images } : {}) });
-    return r.json;
+    const run = async (id: AgentId) => {
+      const r = await desktop!.ai.run(id, { system, user, schema: inner(schema), model: this.modelFor(id), ...(workspace?.length ? { workspace } : {}), ...(images?.frames.length ? { images } : {}) });
+      this.lastEngine = id;
+      return r.json;
+    };
+    const first = await this.engine();
+    try { return await run(first); }
+    catch (e: any) {
+      if (!OUT_OF_QUOTA.test(String(e?.message ?? e))) throw e;
+      // Out of quota: the same job on each other signed-in engine (that can see screenshots, if any),
+      // with that engine's chosen model. ponytail: tried in Settings order, no memory of which one is out.
+      const others = (await desktop!.ai.detect().catch(() => []))
+        .filter((st) => st.id !== first && st.installed && st.signedIn === true && (!images?.frames.length || AGENTS[st.id]?.vision));
+      for (const st of others) {
+        try {
+          const out = await run(st.id);
+          console.warn(`${AGENTS[first]?.label ?? first} is out of quota — used ${AGENTS[st.id]?.label ?? st.id} instead.`);
+          return out;
+        } catch (e2: any) { if (!OUT_OF_QUOTA.test(String(e2?.message ?? e2))) console.warn("fallback engine failed", st.id, e2); }
+      }
+      throw e;
+    }
   }
 
   async transcribeDiarize(): Promise<Transcription> { throw new Error("AI engines don't transcribe audio."); }
