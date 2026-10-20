@@ -50,8 +50,8 @@ export function mentionedProject<T extends { name?: string | null }>(message: st
  *  user's transcript-sharing setting); `inferProject` false never picks a project from the question's words —
  *  picking one can open its code folders to the agent. */
 export async function chat(message: string, provider: Provider, history: { role: string; content: string }[] = [], projectId: number | null = null,
-                           opts: { transcripts?: boolean; inferProject?: boolean } = {}) {
-  const { transcripts = true, inferProject = true } = opts;
+                           opts: { transcripts?: boolean; inferProject?: boolean; priors?: boolean; graph?: boolean; outside?: boolean } = {}) {
+  const { transcripts = true, inferProject = true, priors: priorsOn = true, graph = true, outside = false } = opts;
   message = (message || "").trim();
   if (!message) return { answer: "Please ask a question.", supported: false, citations: [], retrieved: [] };
   // No project picked, but the question names one ("on MCS …"): ask about that project.
@@ -74,7 +74,7 @@ export async function chat(message: string, provider: Provider, history: { role:
     periodActions = await actionsForConversations(ids).catch(() => []) as any[];
   }
   let seeds: number[] = [];
-  if (provider.canEmbed !== false) {
+  if (graph && provider.canEmbed !== false) {
     try { const [qvec] = await provider.embed([message]); seeds = await nearestEntities(qvec, 5, 0.25); } catch { /* keyword-only */ }
   }
   const sub = await expand(seeds, 2, 40);
@@ -96,9 +96,9 @@ export async function chat(message: string, provider: Provider, history: { role:
   const contextEnabled = settings["context_enabled"] !== false;
   // An agent engine sends the prompt off this device too (to the agent's vendor), so it gets the same
   // share_cloud filter as the Sutra cloud.
-  const cloudMode = isFullTextEngine(provider);
+  const cloudMode = outside || isFullTextEngine(provider); // an outside caller only gets share_cloud priors
   let priorsBlock = "";
-  if (contextEnabled) {
+  if (contextEnabled && priorsOn) {
     try {
       const priors = await topPriors(message, 6, cloudMode) as any[];
       if (priors.length) {

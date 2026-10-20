@@ -129,7 +129,10 @@ export const mcpHandlers: Record<string, (params: any) => Promise<unknown>> = {
     }
     const s = await settings();
     // An outside AI: honour transcript sharing, and never open a project's code because the question named it.
-    return serializeAsk(await api.chat(question, history, null, { transcripts: allowed(s, "mcp_allow_transcripts"), inferProject: false }));
+    return serializeAsk(await api.chat(question, history, null, {
+      outside: true, inferProject: false, transcripts: allowed(s, "mcp_allow_transcripts"),
+      priors: allowed(s, "mcp_allow_priors"), graph: allowed(s, "mcp_allow_graph"),
+    }));
   },
 
   async get_privacy() {
