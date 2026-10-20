@@ -7,6 +7,9 @@ import { friendlyError } from "./ui";
 import { EnginePicker } from "./EnginePicker";
 import { Markdown } from "./Markdown";
 
+/** Starters for questions across meetings; the period ones pull in that period's meetings (chat.timeWindow). */
+const SUGGESTIONS = ["What did I promise this week?", "What was decided last week?", "What's still open from yesterday?", "Who asked me for something this week?"];
+
 interface Turn { q: string; a?: string; supported?: boolean; citations?: { conversation_id: number; title: string; date: string | null }[] }
 
 /** "Ask Sutra" across every meeting — grounded answers with links back to the meetings they came from. */
@@ -54,6 +57,13 @@ export function AskAll() {
               ? <>Answers from <b>{project.name || "this project"}</b>’s meetings{project.folder_count && project.code_access ? " and its code" : ""}, with links to where they were said.</>
               : "Answers come only from your own meetings, with links to where they were said."}
           </p>
+          {!turns.length && (
+            <div className="ask-suggest">
+              {SUGGESTIONS.map((x) => (
+                <button key={x} className="btn sm" onClick={() => setParams({ q: x, ...(projectId ? { project: String(projectId) } : {}) })}>{x}</button>
+              ))}
+            </div>
+          )}
           {turns.map((t, i) => (
             <section key={i} className="sec">
               <h3 style={{ marginTop: 0 }}>{t.q}</h3>

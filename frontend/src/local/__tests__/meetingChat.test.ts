@@ -86,3 +86,25 @@ describe("meeting chat", () => {
     expect(await repo.listMeetingChat(cid)).toEqual([]);
   });
 });
+
+describe("questions about a period", () => {
+  it("finds the period a question names", async () => {
+    const { timeWindow } = await import("../chat");
+    const now = new Date(2026, 9, 21, 15, 0); // Wed 21 Oct 2026, local
+    const day = (y: number, m: number, d: number) => new Date(y, m, d).toISOString();
+    expect(timeWindow("what did I promise this week?", now)).toEqual([day(2026, 9, 19), day(2026, 9, 22)]);
+    expect(timeWindow("decisions from last week", now)).toEqual([day(2026, 9, 12), day(2026, 9, 19)]);
+    expect(timeWindow("anything yesterday", now)).toEqual([day(2026, 9, 20), day(2026, 9, 21)]);
+    expect(timeWindow("last 3 days", now)).toEqual([day(2026, 9, 19), day(2026, 9, 22)]);
+    expect(timeWindow("what is the pricing plan", now)).toBeNull();
+  });
+});
+
+describe("meetings in a period", () => {
+  it("matches stored ISO start times", async () => {
+    const cid = await meeting(); // started 2026-10-01T10:00Z
+    await repo.upsertMemory({ conversation_id: cid, title: "GLM", summary: "Model choice.", facts: [], action_items: [], decisions: [], open_questions: [], importance: 0.5, type_tags: [] });
+    expect(await repo.conversationsBetween("2026-10-01T00:00:00.000Z", "2026-10-02T00:00:00.000Z")).toContain(cid);
+    expect(await repo.conversationsBetween("2026-10-02T00:00:00.000Z", "2026-10-03T00:00:00.000Z")).not.toContain(cid);
+  });
+});

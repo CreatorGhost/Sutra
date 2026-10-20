@@ -2,8 +2,29 @@ import type { Provider } from "../providers/provider";
 import { isFullTextEngine } from "../providers";
 import { ANSWER_SCHEMA, CHAT_SYSTEM } from "./aiPrompts";
 import { expand, nearestEntities, relatedConversations } from "./graph";
-import { askScopeForProject, getProject, getSettings, memoryCardsForConversations, projectConversationIds, topPriors } from "./repo";
+import { actionsForConversations, askScopeForProject, conversationsBetween, getProject, getSettings, memoryCardsForConversations, projectConversationIds, topPriors } from "./repo";
 import { searchMemories } from "./search";
+
+const DAY = 86_400_000;
+const sqlTs = (d: Date) => d.toISOString(); // compared against started_at with any " " turned into "T"
+/** The period a question names ("today", "yesterday", "this week", "last week", "this month", "last 3
+ *  days"), as [from, to) in the stored timestamp format — or null. Weeks start on Monday, in local time. */
+export function timeWindow(message: string, now = new Date()): [string, string] | null {
+  const m = message.toLowerCase();
+  const day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const monday = new Date(day0.getTime() - ((day0.getDay() + 6) % 7) * DAY);
+  const end = new Date(day0.getTime() + DAY);
+  let from: Date | null = null, to = end;
+  const n = /\b(?:last|past)\s+(\d{1,2})\s+days?\b/.exec(m);
+  if (n) from = new Date(day0.getTime() - (Number(n[1]) - 1) * DAY);
+  else if (/\btoday\b/.test(m)) from = day0;
+  else if (/\byesterday\b/.test(m)) { from = new Date(day0.getTime() - DAY); to = day0; }
+  else if (/\blast week\b/.test(m)) { from = new Date(monday.getTime() - 7 * DAY); to = monday; }
+  else if (/\bthis week\b|\bweek\b/.test(m)) from = monday;
+  else if (/\blast month\b/.test(m)) { from = new Date(now.getFullYear(), now.getMonth() - 1, 1); to = new Date(now.getFullYear(), now.getMonth(), 1); }
+  else if (/\bthis month\b/.test(m)) from = new Date(now.getFullYear(), now.getMonth(), 1);
+  return from ? [sqlTs(from), sqlTs(to)] : null;
+}
 
 /** `projectId`: Ask about one project — only its meetings, its brief, and (desktop, code access on) its
  *  linked code folders, which the agent may read. */
@@ -15,6 +36,17 @@ export async function chat(message: string, provider: Provider, history: { role:
   if (project) {
     const ids = new Set(await projectConversationIds(project.id));
     memories = memories.filter((m) => ids.has(m.conversation_id)).slice(0, 8);
+  }
+  // A question about a period ("what did I promise this week"): that period's meetings and their action
+  // items, whatever words they use — search alone matches words, not dates.
+  const period = timeWindow(message);
+  let periodActions: any[] = [];
+  if (period) {
+    let ids = await conversationsBetween(period[0], period[1]).catch(() => [] as number[]);
+    if (project) { const mine = new Set(await projectConversationIds(project.id)); ids = ids.filter((id) => mine.has(id)); }
+    const have = new Set(memories.map((m) => m.conversation_id));
+    memories = [...memories, ...(await memoryCardsForConversations(ids.filter((id) => !have.has(id))).catch(() => []) as any[])];
+    periodActions = await actionsForConversations(ids).catch(() => []) as any[];
   }
   let seeds: number[] = [];
   if (provider.canEmbed !== false) {
@@ -54,6 +86,10 @@ export async function chat(message: string, provider: Provider, history: { role:
     const date = m.started_at ? String(m.started_at).slice(0, 10) : "?";
     const facts = Array.isArray(m.facts) ? m.facts.join("; ") : "";
     ctx.push(`[C${m.conversation_id}] (${date}) ${m.title}: ${m.summary} Facts: ${facts}`);
+  }
+  if (periodActions.length) {
+    ctx.push("\n# Action items from meetings in that period");
+    for (const a of periodActions) ctx.push(`[C${a.source_conversation}] ${a.status === "done" ? "(done) " : ""}${a.owner ? `${a.owner}: ` : ""}${a.text}${a.due ? ` (due ${a.due})` : ""}`);
   }
   if (related.length) {
     ctx.push("\n# Related meetings (linked through the knowledge graph; may be from other projects)");

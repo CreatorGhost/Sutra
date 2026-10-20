@@ -380,6 +380,13 @@ export const memoryCardsForConversations = (cids: number[]) =>
   cids.length ? q(`SELECT m.id,m.conversation_id,m.title,m.summary,m.facts,m.importance,m.created_at,c.started_at,c.project_id,p.name project_name
                    FROM memories m JOIN conversations c ON c.id=m.conversation_id LEFT JOIN projects p ON p.id=c.project_id
                    WHERE m.conversation_id IN (${cids.map(() => "?").join(",")})`, cids) : Promise.resolve([]);
+/** Meetings (with notes) started in [from, to), newest first — for "what did I … this week". */
+export const conversationsBetween = async (from: string, to: string, limit = 12): Promise<number[]> =>
+  ((await q(`SELECT c.id FROM conversations c JOIN memories m ON m.conversation_id=c.id
+             WHERE REPLACE(COALESCE(c.started_at,c.created_at),' ','T') >= ? AND REPLACE(COALESCE(c.started_at,c.created_at),' ','T') < ?
+             ORDER BY COALESCE(c.started_at,c.created_at) DESC LIMIT ?`, [from, to, limit])) as any[]).map((r) => r.id);
+export const actionsForConversations = (cids: number[]) =>
+  cids.length ? q(`SELECT text,owner,status,due,source_conversation FROM action_items WHERE source_conversation IN (${cids.map(() => "?").join(",")})`, cids) : Promise.resolve([]);
 export const memoryCards = (ids: number[]) =>
   ids.length ? q(`SELECT m.id,m.conversation_id,m.title,m.summary,m.facts,m.importance,m.created_at,c.started_at
                   FROM memories m JOIN conversations c ON c.id=m.conversation_id WHERE m.id IN (${ids.map(() => "?").join(",")})`, ids) : Promise.resolve([]);
