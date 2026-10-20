@@ -14,6 +14,7 @@
 // function below cleanly no-ops and turns keep the cloud diarizer's labels.
 import * as repo from "./repo";
 import { cosine, meanVector } from "./util";
+import { OWNER_LABEL } from "./channelAttribution";
 
 // --- thresholds (see evals/voiceprint_check.py; v1, calibrated on a real 3-speaker Hinglish clip) ---
 export const SEED_MIN_SECONDS = 1.2;  // only turns this long are trusted to define a speaker (short = noisy)
@@ -95,20 +96,31 @@ export async function clusterSession(sessionId: number): Promise<Cluster[]> {
 
   // 5) Short / no-embedding / empty turns inherit a neighbour's cluster, but ONLY within the same
   //    cloud-diarizer speaker segment — never bleed a label across a speaker boundary.
+  //    The owner's mic turns sit between the remotes' in time order; they're skipped, not a boundary
+  //    (else a lone short "Hello." between two of the owner's lines keeps its raw label — a 2nd "speaker").
+  const remoteRows = rows.filter((r) => r.cloud !== OWNER_LABEL);
   let carry: string | null = null, prevCloud: string | null = null;
-  for (const r of rows) {
+  for (const r of remoteRows) {
     if (r.cloud !== prevCloud) { carry = null; prevCloud = r.cloud; }
     const lbl = labelOf.get(r.id);
     if (lbl !== undefined) carry = lbl;
     else if (carry) labelOf.set(r.id, carry);
   }
   let back: string | null = null, nextCloud: string | null = null;
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const r = rows[i];
+  for (let i = remoteRows.length - 1; i >= 0; i--) {
+    const r = remoteRows[i];
     if (r.cloud !== nextCloud) { back = null; nextCloud = r.cloud; }
     const lbl = labelOf.get(r.id);
     if (lbl !== undefined) back = lbl;
     else if (back) labelOf.set(r.id, back);
+  }
+
+  //    Still unlabelled (no labelled neighbour at all): the cluster its diarizer label went to, if only one.
+  const clustersOf = new Map<string, Set<string>>();
+  for (const r of remoteRows) { const l = labelOf.get(r.id); if (l) clustersOf.set(r.cloud, (clustersOf.get(r.cloud) ?? new Set()).add(l)); }
+  for (const r of remoteRows) {
+    const only = clustersOf.get(r.cloud);
+    if (!labelOf.has(r.id) && only?.size === 1) labelOf.set(r.id, [...only][0]);
   }
 
   // 6) Persist the new labels, grouped per cluster.

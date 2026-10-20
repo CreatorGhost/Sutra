@@ -115,3 +115,24 @@ describe("clusterSession excludes owner (voiceprint-less) turns", () => {
     for (const id of [2, 3, 5, 6]) expect(labelled.has(id)).toBe(true);
   });
 });
+
+describe("a short remote line between the owner's lines", () => {
+  it("joins its speaker's cluster instead of becoming a second speaker", async () => {
+    const A = [1, 0, 0], B = [0, 1, 0];
+    (repo.turnsForClustering as any).mockResolvedValue([
+      { id: 1, text: "Hello.", cloud: "r0", start_ts: 0, end_ts: 0.6, vec: null },            // too short for a voiceprint
+      { id: 2, text: "Hello.", cloud: "me", start_ts: 0.5, end_ts: 1, vec: null },
+      { id: 3, text: "Hi, how are you doing today?", cloud: "r0", start_ts: 5, end_ts: 9, vec: A },
+      { id: 4, text: "Pretty well.", cloud: "me", start_ts: 9, end_ts: 10, vec: null },
+      { id: 5, text: "Same here, thanks for asking.", cloud: "r0", start_ts: 10, end_ts: 14, vec: A },
+      { id: 6, text: "Morning all, shall we start?", cloud: "r1", start_ts: 14, end_ts: 18, vec: B },
+      { id: 7, text: "Yes let's begin with updates.", cloud: "r1", start_ts: 18, end_ts: 22, vec: B },
+    ]);
+    vi.mocked(repo.setTurnSpeakerLabel).mockClear();
+    await clusterSession(1);
+    const labelOf = new Map<number, string>();
+    for (const [ids, l] of (repo.setTurnSpeakerLabel as any).mock.calls) for (const id of ids) labelOf.set(id, l);
+    expect(labelOf.get(1)).toBe(labelOf.get(3));
+    expect(labelOf.has(2)).toBe(false);
+  });
+});
