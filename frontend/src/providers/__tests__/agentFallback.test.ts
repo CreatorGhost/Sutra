@@ -7,6 +7,7 @@ const run = vi.fn(async (id: string) => {
 });
 (globalThis as any).sutraDesktop = {
   isDesktop: true, platform: "darwin", db: () => null,
+  prefs: { get: vi.fn(async () => ({ enabledEngines: ["claude", "codex"] })) },
   ai: {
     run,
     detect: async () => [
@@ -24,6 +25,14 @@ describe("engine out of quota", () => {
     expect(await p.extract({}, "sys", "user")).toEqual({ ok: "codex" });
     expect(run.mock.calls.map((c) => c[0])).toEqual(["claude", "codex"]);
     expect(p.lastEngine).toBe("codex");
+  });
+
+  it("never sends to an engine the user didn't enable", async () => {
+    const { AgentProvider } = await import("../agentProvider");
+    (globalThis as any).sutraDesktop.prefs.get.mockResolvedValueOnce({ enabledEngines: ["claude"] });
+    run.mockClear();
+    await expect(new AgentProvider("claude", () => null).extract({}, "s", "u")).rejects.toThrow(/usage limit/);
+    expect(run.mock.calls.map((c) => c[0])).toEqual(["claude"]);
   });
 
   it("doesn't fall back on other errors", async () => {

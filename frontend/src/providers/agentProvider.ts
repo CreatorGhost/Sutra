@@ -51,10 +51,14 @@ export class AgentProvider implements Provider {
     try { return await run(first); }
     catch (e: any) {
       if (!OUT_OF_QUOTA.test(String(e?.message ?? e))) throw e;
-      // Out of quota: the same job on each other signed-in engine (that can see screenshots, if any),
-      // with that engine's chosen model. ponytail: tried in Settings order, no memory of which one is out.
+      // Out of quota: the same job on each other engine the user explicitly enabled in Settings →
+      // Intelligence (their consent to send it there), signed in, and able to see screenshots if any —
+      // with that engine's chosen model. Never chosen a list = no fallback.
+      // ponytail: tried in Settings order, no memory of which one is out.
+      const allowed = (await desktop!.prefs.get().catch(() => null))?.enabledEngines;
+      if (!allowed?.length) throw e;
       const others = (await desktop!.ai.detect().catch(() => []))
-        .filter((st) => st.id !== first && st.installed && st.signedIn === true && (!images?.frames.length || AGENTS[st.id]?.vision));
+        .filter((st) => st.id !== first && allowed.includes(st.id) && st.installed && st.signedIn === true && (!images?.frames.length || AGENTS[st.id]?.vision));
       for (const st of others) {
         try {
           const out = await run(st.id);
