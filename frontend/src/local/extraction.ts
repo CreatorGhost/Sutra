@@ -111,7 +111,9 @@ export async function extractConversation(convId: number, provider: Provider, sc
       // showed is untrusted, and a roster match only fixes its spelling, never raises its trust.
       const fromScreen = sn?.basis === "screen_roster" || screenText.includes(name.toLowerCase());
       if (fromScreen && isMe) continue;
-      try { await people.relabelSpeaker(sessionId, label, isMe ? { name: "Me", is_me: true } : { name, ...(fromScreen ? { untrusted: true } : {}) }); }
+      // The owner: their existing person row (named in Settings), never a second person called "Me".
+      const ownerId = isMe ? ((await repo.listPeople().catch(() => [])) as any[]).find((p) => p.is_me)?.id : undefined;
+      try { await people.relabelSpeaker(sessionId, label, isMe ? (ownerId != null ? { person_id: ownerId } : { name: "Me", is_me: true }) : { name, ...(fromScreen ? { untrusted: true } : {}) }); }
       catch (e) { console.warn("auto speaker-name skipped", label, e); }
     }
   }

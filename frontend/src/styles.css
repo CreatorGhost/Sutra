@@ -49,7 +49,7 @@
   --line-2: rgba(0, 0, 0, 0.12);
   --text: #111113;
   --text-2: #5d5d66;
-  --text-3: #9a9aa3;
+  --text-3: #76767f; /* ≥4:1 on the sidebar; #9a9aa3 left dates near-invisible */
   --accent-soft: rgba(79, 124, 255, 0.12);
   --invert: #111113;
   --on-invert: #ffffff;
@@ -91,6 +91,7 @@ button { cursor: pointer; }
   min-height: 0;
 }
 .mac-desktop .sidebar { background: color-mix(in srgb, var(--sidebar) 62%, transparent); }
+:root[data-theme="light"] .mac-desktop .sidebar { background: color-mix(in srgb, var(--sidebar) 82%, transparent); }
 .pane {
   flex: 1;
   min-width: 0;

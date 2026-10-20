@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AudioLines, Check, Laptop, Sparkles } from "lucide-react";
 import { useMac } from "../pairing/runtime";
 import { PairControls } from "./settings/MacSection";
@@ -14,14 +15,16 @@ import { friendlyError } from "./ui";
 /** Nothing selected: a calm welcome, plus a one-time "what should we call you?" so notes say
  *  "Aditya: …" instead of "Me: …". */
 export function Home() {
-  const { start } = useRecorder();
+  const { start, state: rec } = useRecorder();
+  const nav = useNavigate();
   const [me, setMe] = useState<string | null | undefined>(undefined);
   const [name, setName] = useState("");
 
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
   useEffect(() => {
-    api.listPeople().then((ps: any[]) => setMe(ps.find((p) => p.is_me)?.canonical_name ?? null)).catch((e) => { setMe(null); setDbError(friendlyError(e)); });
+    // The owner's real name — skip a placeholder "Me" row (older builds could create one).
+    api.listPeople().then((ps: any[]) => setMe(ps.find((p) => p.is_me && !/^me$/i.test(String(p.canonical_name).trim()))?.canonical_name ?? null)).catch((e) => { setMe(null); setDbError(friendlyError(e)); });
     void api.getSettings().then(setSettings);
   }, []);
   const put = async (patch: Record<string, unknown>) => setSettings(await api.putSettings(patch));
@@ -65,6 +68,8 @@ export function Home() {
             <input className="search" style={{ maxWidth: 220, color: "var(--text)", outline: 0 }} value={name} onChange={(e) => setName(e.target.value)} placeholder="Your first name" aria-label="Your name" />
             <button className="btn primary" disabled={!name.trim()}>Save</button>
           </form>
+        ) : rec.status === "recording" || rec.status === "starting" ? (
+          <button className="btn" onClick={() => nav("/live")}><span className="live-dot" /> Recording{rec.app ? ` · ${rec.app}` : ""} — open</button>
         ) : (
           <button className="btn" onClick={() => void start()}>Start recording</button>
         )}

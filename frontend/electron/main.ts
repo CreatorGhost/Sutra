@@ -12,7 +12,7 @@
 //
 // Security: contextIsolation ON, nodeIntegration OFF, sandbox ON; the renderer only sees the frozen
 // preload bridge (electron/preload.ts).
-import { app, BrowserWindow, Menu, Tray, desktopCapturer, dialog, ipcMain, nativeImage, screen, session, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, Menu, Tray, desktopCapturer, dialog, ipcMain, nativeImage, nativeTheme, screen, session, shell, systemPreferences } from "electron";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -467,6 +467,9 @@ function registerIpc(): void {
     screens: screensInOrder().map((d) => ({ id: d.id, label: d.label || `${d.size.width}×${d.size.height}` })),
     current: capturedScreen,
   }));
+  // The window's frosted sidebar is drawn by macOS in ITS appearance; follow the app's theme so a light
+  // app on a dark Mac isn't a light tint over dark blur (muddy grey).
+  ipcMain.on("sutra:theme", (_e, t: unknown) => { if (t === "light" || t === "dark" || t === "system") nativeTheme.themeSource = t; });
   ipcMain.handle("sutra:apple:add", (_e, kind: unknown, items: unknown) => addToApple(kind, items));
   ipcMain.handle("sutra:capture:use", (_e, id: unknown) => {
     if (typeof id === "number" && screen.getAllDisplays().some((d) => d.id === id)) chosenScreen = id;

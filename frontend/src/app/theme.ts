@@ -16,6 +16,7 @@ export function applyTheme(choice: ThemeChoice = readTheme(), persist = false): 
   if (persist) { try { localStorage.setItem(KEY, choice); } catch { /* ignore */ } }
   const light = choice === "light" || (choice === "system" && !!window.matchMedia?.("(prefers-color-scheme: light)").matches);
   const root = document.documentElement;
+  try { (window as any).sutraDesktop?.theme?.(choice); } catch { /* not the desktop app */ }
   if (light) root.setAttribute("data-theme", "light");
   else root.removeAttribute("data-theme");
   // Follow live OS changes only while "system" is chosen.
