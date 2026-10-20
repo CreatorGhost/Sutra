@@ -7,7 +7,7 @@
 // Screenshots the AI picks for the notes are copied to recordings/kept/<conversation>/ and live as long as
 // the meeting does. Only this process reads or writes these files; the renderer asks over IPC.
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export interface FrameInfo { name: string; at: number; score: number }
@@ -25,11 +25,16 @@ export interface KeyBox { available: boolean; seal(b: Buffer): string; open(s: s
 export function loadKey(root: string, box: KeyBox): Buffer {
   mkdirSync(root, { recursive: true });
   const file = join(root, "key.json");
-  try {
-    const k = JSON.parse(readFileSync(file, "utf8"));
-    const key = k.sealed ? box.open(k.key) : Buffer.from(k.key, "base64");
-    if (key.length === 32) return key;
-  } catch { /* new install, or a keychain that can't open it: start over (old media becomes unreadable) */ }
+  if (existsSync(file)) {
+    try {
+      const k = JSON.parse(readFileSync(file, "utf8"));
+      const key = k.sealed ? box.open(k.key) : Buffer.from(k.key, "base64");
+      if (key.length === 32) return key;
+    } catch { /* keychain can't open it now */ }
+    // Never overwrite it: set it aside so the recordings it sealed can still be opened once the keychain
+    // allows it again; new recordings get a new key.
+    renameSync(file, join(root, `key.unreadable-${Date.now()}.json`));
+  }
   const key = randomBytes(32);
   writeFileSync(file, JSON.stringify(box.available ? { sealed: true, key: box.seal(key) } : { sealed: false, key: key.toString("base64") }), { mode: 0o600 });
   return key;

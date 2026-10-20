@@ -21,22 +21,21 @@ const KEY_FILE = "sutra.key"; // safeStorage-sealed ciphertext, NOT a plaintext 
 const DB_FILE = "sutra.db";
 
 /** Load the sealed key from userData, or mint + seal a fresh one on first run. Returns the plaintext
- *  hex key, which stays only in this process's memory. */
-function provisionKey(): string {
-  const keyPath = join(app.getPath("userData"), KEY_FILE);
-  if (existsSync(keyPath) && safeStorage.isEncryptionAvailable()) {
-    try {
-      return safeStorage.decryptString(readFileSync(keyPath));
-    } catch {
-      /* corrupt/rotated OS key — fall through and re-mint (a fresh DB will be created) */
-    }
+ *  hex key, which stays only in this process's memory. An existing key that can't be opened right now
+ *  (keychain locked, access denied after the app's signature changed) is NEVER replaced — that would
+ *  lose the database for good; opening fails with a fix instead, and the next launch can retry. */
+export function provisionKey(dir: string, box: { available: boolean; seal(k: string): Buffer; open(b: Buffer): string }): string {
+  const keyPath = join(dir, KEY_FILE);
+  if (existsSync(keyPath)) {
+    if (!box.available) throw new Error(KEY_LOCKED);
+    try { return box.open(readFileSync(keyPath)); } catch { throw new Error(KEY_LOCKED); }
   }
+  if (existsSync(join(dir, DB_FILE))) throw new Error("Sutra's database is here but its key file (sutra.key) is missing, so it can't be opened. Restore sutra.key from a backup — Sutra won't create a new one over your data.");
   const key = randomBytes(32).toString("hex");
-  if (safeStorage.isEncryptionAvailable()) {
-    writeFileSync(keyPath, safeStorage.encryptString(key));
-  }
+  if (box.available) writeFileSync(keyPath, box.seal(key));
   return key;
 }
+export const KEY_LOCKED = "Sutra couldn't unlock your data's key from the macOS keychain (it may have asked for access and been denied, or the keychain is locked). Your meetings are untouched. Quit and reopen Sutra, and choose “Always Allow” when macOS asks.";
 
 let storage: StorageProvider | null = null;
 let openError: string | null = null;
@@ -65,7 +64,11 @@ export function initDesktopStorage(): string | null {
   try {
     storage = openDesktopStorage({
       filename: join(app.getPath("userData"), DB_FILE),
-      key: provisionKey(),
+      key: provisionKey(app.getPath("userData"), {
+        get available() { return safeStorage.isEncryptionAvailable(); },
+        seal: (k) => safeStorage.encryptString(k),
+        open: (b) => safeStorage.decryptString(b),
+      }),
     });
   } catch (e) {
     openError = describe(e);
