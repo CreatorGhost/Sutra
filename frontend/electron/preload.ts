@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld(
       screens: () => ipcRenderer.invoke("sutra:capture:screens"),
       use: (displayId: number) => ipcRenderer.invoke("sutra:capture:use", displayId),
     },
+    apple: Object.freeze({
+      add: (kind: "reminders" | "calendar", items: unknown[]) => ipcRenderer.invoke("sutra:apple:add", kind, items),
+    }),
     ai: Object.freeze({
       detect: (refresh?: boolean) => ipcRenderer.invoke("sutra:ai:detect", refresh === true),
       run: (id: string, req: unknown) => ipcRenderer.invoke("sutra:ai:run", id, req),

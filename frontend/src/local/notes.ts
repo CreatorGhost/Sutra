@@ -158,3 +158,18 @@ export async function chatMeeting(cid: number, question: string, provider: Provi
     return { question: q, answer: await repo.addMeetingChat(cid, { role: "assistant", content: String(e?.message ?? e), question, error: true }) };
   }
 }
+
+/** Markdown → Slack's mrkdwn: headings and **bold** become *bold*, *italic* _italic_, bullets •, links <url|text>. */
+export function toSlack(md: string): string {
+  return md.split("\n").map((line) => {
+    const h = /^#{1,6}\s+(.*)$/.exec(line);
+    if (h) return `*${h[1].replace(/\*\*/g, "")}*`;
+    return line
+      .replace(/^(\s*)[-*]\s+\[[ x]\]\s+/i, "$1• ")
+      .replace(/^(\s*)[-*]\s+/, "$1• ")
+      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, "<$2|$1>")
+      .replace(/(?<![*\w])\*(?!\s)([^*\n]+?)\*(?![*\w])/g, "_$1_")
+      .replace(/\*\*([^*]+)\*\*/g, "*$1*");
+  }).join("\n");
+}
+

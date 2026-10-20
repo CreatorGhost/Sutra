@@ -26,6 +26,7 @@ import { cancelSpeechDownload, deleteSpeechModel, downloadSpeechModel, speechSta
 import { initPairing, stopPairing } from "./pairing";
 import { grantedWorkspace, registerProjectFolderIpc } from "./projectFolders";
 import { registerRecordingIpc } from "./recordings";
+import { addToApple } from "./appleApps";
 import { AutoStop, macAppCandidates, meetingWindow, type Detection, type ScreenWindow, type TrackerUpdate } from "../src/shared/meetingRules";
 import { isAgentId, type AgentId, type AgentRequest } from "../src/shared/agentProtocol";
 
@@ -466,6 +467,7 @@ function registerIpc(): void {
     screens: screensInOrder().map((d) => ({ id: d.id, label: d.label || `${d.size.width}×${d.size.height}` })),
     current: capturedScreen,
   }));
+  ipcMain.handle("sutra:apple:add", (_e, kind: unknown, items: unknown) => addToApple(kind, items));
   ipcMain.handle("sutra:capture:use", (_e, id: unknown) => {
     if (typeof id === "number" && screen.getAllDisplays().some((d) => d.id === id)) chosenScreen = id;
   });

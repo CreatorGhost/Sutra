@@ -52,3 +52,11 @@ describe("Markdown for AI answers", () => {
     expect(clockSeconds("1:02:03")).toBe(3723);
   });
 });
+
+describe("copy for Slack", () => {
+  it("turns Markdown into Slack's format", async () => {
+    const { toSlack } = await import("../../local/notes");
+    expect(toSlack("## Action items\n- **Aditya**: fix the *merge* conflict\n- [ ] see [PR](https://x.io/1)"))
+      .toBe("*Action items*\n• *Aditya*: fix the _merge_ conflict\n• see <https://x.io/1|PR>");
+  });
+});

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Camera, Check, ChevronDown, Copy, Loader2, RotateCcw, Share, Sparkles, Tag as TagIcon, Trash2, Users, Wand2, X } from "lucide-react";
+import { ArrowLeft, Bell, CalendarPlus, Camera, Check, ChevronDown, Copy, Hash, Loader2, RotateCcw, Share, Sparkles, Tag as TagIcon, Trash2, Users, Wand2, X } from "lucide-react";
 import { api } from "../local/sutra";
 import { minutesToMarkdown } from "../local/minutes";
-import { NOTE_STYLES, type DetailedNotes, type NoteStyle } from "../local/notes";
+import { NOTE_STYLES, toSlack, type DetailedNotes, type NoteStyle } from "../local/notes";
+import { desktop } from "../desktop/bridge";
 import { isMe, speakerName } from "../local/speakers";
 import { notifyDataChanged, useDataVersion } from "./events";
 import { duration, longDate, offsetLabel, parseTs } from "./format";
@@ -108,6 +109,10 @@ export function MeetingView() {
     const md = minutesMd || (await api.notesMarkdown(cid, style === "minutes" ? "brief" : style));
     showToast((await api.copyText(md)) ? (minutesMd ? "Minutes copied" : "Notes copied") : "Couldn't copy");
   };
+  const copySlack = async () => {
+    const md = minutesMd || (await api.notesMarkdown(cid, style === "minutes" ? "brief" : style));
+    showToast((await api.copyText(toSlack(md))) ? "Copied for Slack" : "Couldn't copy");
+  };
   const exportMd = async () => {
     const md = minutesMd || (await api.notesMarkdown(cid, style === "minutes" ? "brief" : style, true));
     const safe = String(title).replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "meeting";
@@ -170,6 +175,7 @@ export function MeetingView() {
                 : style === "minutes" ? <MinutesNotes cid={cid} minutes={detail.minutes as any} meetingTitle={title} isMeeting={!!c.is_meeting} toast={showToast} />
                 : style === "detailed" ? <DetailedNotesView cid={cid} actions={detail.actions as any[]} />
                 : <BriefNotes memory={m} actions={detail.actions as any[]} />}
+              {!pending && <SendToApps actions={detail.actions as any[]} events={(detail as any).events ?? []} toast={showToast} />}
               {!pending && <OnScreen cid={cid} images={images} startedAt={startedAt} onChanged={() => void visual.reload()} onOpen={setShot} />}
               {!pending && <Additions chat={chat} onPath={openPath} onOpenChat={() => setTab("chat")} />}
             </>
@@ -182,7 +188,7 @@ export function MeetingView() {
           </CiteContext.Provider>
         </article>
       </div>
-      <AskBar cid={cid} busy={!!chat.pending} onAsk={(question) => { setTab("chat"); void chat.ask(question); }} onCopy={copy} onExport={exportMd} onDelete={remove} />
+      <AskBar cid={cid} busy={!!chat.pending} onAsk={(question) => { setTab("chat"); void chat.ask(question); }} onCopy={copy} onCopySlack={copySlack} onExport={exportMd} onDelete={remove} />
       {shot && <ShotViewer cid={cid} img={shot} startedAt={startedAt} onClose={() => setShot(null)} onTranscript={openTime} />}
       {toast}
     </>
@@ -324,6 +330,32 @@ function Failed({ cid, onDone }: { cid: number; onDone: () => void }) {
 function Bullets({ items, empty }: { items: string[]; empty?: string }) {
   if (!items?.length) return empty ? <ul className="bullets"><li className="none">{empty}</li></ul> : null;
   return <ul className="bullets">{items.map((x, i) => <li key={i}>{x}</li>)}</ul>;
+}
+
+/** Open action items → Reminders, dated events → Calendar (desktop on macOS). */
+function SendToApps({ actions, events, toast }: { actions: any[]; events: any[]; toast: (m: string) => void }) {
+  const [busy, setBusy] = useState<null | "reminders" | "calendar">(null);
+  const apple = desktop?.platform === "darwin" ? desktop.apple : undefined;
+  const open = actions.filter((a) => a.status !== "done");
+  const dated = events.filter((e) => e.start_ts);
+  if (!apple || (!open.length && !dated.length)) return null;
+  const send = async (kind: "reminders" | "calendar") => {
+    setBusy(kind);
+    try {
+      const items = kind === "reminders"
+        ? open.map((a) => ({ title: a.text, notes: a.owner ? `Owner: ${a.owner}` : "", at: a.due ?? null }))
+        : dated.map((e) => ({ title: e.title, notes: e.when_text ?? "", at: e.start_ts }));
+      const n = await apple.add(kind, items);
+      toast(kind === "reminders" ? `Added ${n} to Reminders` : `Added ${n} to Calendar`);
+    } catch (e) { toast(friendlyError(e)); }
+    finally { setBusy(null); }
+  };
+  return (
+    <div className="send-apps">
+      {open.length > 0 && <button className="btn sm" disabled={!!busy} onClick={() => void send("reminders")}>{busy === "reminders" ? <Loader2 size={13} className="spin" /> : <Bell size={13} />} Add {open.length} to Reminders</button>}
+      {dated.length > 0 && <button className="btn sm" disabled={!!busy} onClick={() => void send("calendar")}>{busy === "calendar" ? <Loader2 size={13} className="spin" /> : <CalendarPlus size={13} />} Add {dated.length} to Calendar</button>}
+    </div>
+  );
 }
 
 function ActionList({ actions }: { actions: { id?: number; text: string; owner?: string | null; status?: string }[] }) {
@@ -564,8 +596,8 @@ function SpeakerButton({ turn, onRenamed }: { turn: any; onRenamed: () => void }
 }
 
 /** The bar at the bottom: ask about this meeting (answers go to the Chat tab), copy, export, delete. */
-function AskBar({ cid, busy, onAsk, onCopy, onExport, onDelete }: {
-  cid: number; busy: boolean; onAsk: (q: string) => void; onCopy: () => void; onExport: () => void; onDelete: () => void;
+function AskBar({ cid, busy, onAsk, onCopy, onCopySlack, onExport, onDelete }: {
+  cid: number; busy: boolean; onAsk: (q: string) => void; onCopy: () => void; onCopySlack: () => void; onExport: () => void; onDelete: () => void;
 }) {
   const [q, setQ] = useState("");
   useEffect(() => { setQ(""); }, [cid]);
@@ -582,6 +614,7 @@ function AskBar({ cid, busy, onAsk, onCopy, onExport, onDelete }: {
         </form>
         <div className="ask-actions">
           <button className="icon-btn" onClick={onCopy} aria-label="Copy notes" title="Copy notes"><Copy size={17} /></button>
+          <button className="icon-btn" onClick={onCopySlack} aria-label="Copy for Slack" title="Copy for Slack"><Hash size={17} /></button>
           <button className="icon-btn" onClick={onExport} aria-label="Export" title="Export as Markdown"><Share size={17} /></button>
           <button className="icon-btn danger" onClick={onDelete} aria-label="Delete meeting" title="Delete"><Trash2 size={17} /></button>
         </div>

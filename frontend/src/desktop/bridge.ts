@@ -74,6 +74,8 @@ export interface DesktopBridge {
     screens(): Promise<{ screens: { id: number; label: string }[]; current: number | null }>;
     use(displayId: number): Promise<void>;
   };
+  /** Action items → Reminders, events → Calendar (macOS). Resolves to how many were added. */
+  apple?: { add(kind: "reminders" | "calendar", items: { title: string; notes?: string; at?: string | null }[]): Promise<number> };
   ai: { detect(refresh?: boolean): Promise<AgentStatus[]>; run(id: AgentId, req: AgentRequest): Promise<{ text: string; json?: unknown }> };
   stt: {
     status(): Promise<SttStatus>;
