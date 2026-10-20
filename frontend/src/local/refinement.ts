@@ -16,7 +16,7 @@ const BATCH = 30; // 30 turns is ample local context for a conservative cleanup 
 export async function cleanConversation(
   convId: number,
   provider: Provider,
-): Promise<{ ok: boolean; refinedTurns?: number; reason?: string }> {
+): Promise<{ ok: boolean; refinedTurns?: number; reason?: string; extracted?: any }> {
   if (!isFullTextEngine(provider)) return { ok: false, reason: "cloud-only" };
   try {
     const lang = String((await repo.getSettings()).transcript_lang ?? "english");
@@ -84,8 +84,8 @@ export async function cleanConversation(
     }
 
     await repo.setConversationRefined(convId, true);
-    await extractConversation(convId, provider); // rebuild memory/graph/embeddings from cleaned text
-    return { ok: true, refinedTurns };
+    const extracted = await extractConversation(convId, provider); // rebuild memory/graph/embeddings from cleaned text
+    return { ok: true, refinedTurns, extracted };
   } catch (e) {
     // Top-level failure: raw text is intact and refined defaults to 0, so no revert needed.
     console.warn("cleanConversation failed", convId, e);

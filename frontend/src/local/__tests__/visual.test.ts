@@ -199,3 +199,29 @@ describe("naming voices from the participant list", () => {
     expect(lawrence.enroll_count ?? 0).toBe(0);
   });
 });
+
+describe("clean the transcript before the notes", () => {
+  it("writes the notes once, from the cleaned text, and reports each step", async () => {
+    await repo.putSettings({ auto_clean: true, transcript_lang: "other" });
+    const s = await repo.createSession("electron", "meeting", "Google Meet");
+    await repo.insertTurn({ session_id: s.id, session_speaker_label: "c1", text: "the dot M_V_ file is ready", start_ts: 0, end_ts: 3, abs_start: new Date(T0).toISOString() });
+    const steps: string[] = [];
+    const on = (e: Event) => steps.push((e as CustomEvent).detail.step);
+    const w: any = (globalThis as any).window ?? ((globalThis as any).window = new EventTarget());
+    w.addEventListener("sutra:processing", on);
+    const extract = vi.fn(async (_s: any, _sys: string, _user: string) => ({
+      title: "Files", subtitle: "", summary: "File ready.", participants: [], facts: [], action_items: [], decisions: [], open_questions: [],
+      entities: [], relations: [], importance_score: 0.3, type_tags: [], events: [], is_meeting: false, speaker_names: [],
+    }));
+    const provider = { id: "agent:claude", canEmbed: false, extract, refine: vi.fn(async (t: string[]) => t.map(() => "the .md file is ready")), translate: async (t: string[]) => t } as any;
+    const { processSession } = await import("../extraction");
+    await processSession(s.id, provider);
+    w.removeEventListener("sutra:processing", on);
+    const notes = extract.mock.calls.filter((c) => String(c[1]).startsWith("You extract durable memory"));
+    expect(notes).toHaveLength(1);
+    expect(notes[0][2]).toContain("the .md file is ready");
+    expect(steps).toContain("Cleaning the transcript");
+    expect(steps).not.toContain("Writing the notes");
+    await repo.putSettings({ auto_clean: false });
+  });
+});

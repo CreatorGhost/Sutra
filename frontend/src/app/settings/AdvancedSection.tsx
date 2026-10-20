@@ -41,6 +41,8 @@ export function AdvancedSection({ settings, put, toast }: SectionProps) {
       <Group label="Meetings">
         <SwitchRow title="Write minutes automatically" desc="When a recording is a meeting, Sutra writes formal minutes too. You can always make them by hand."
           checked={settings["auto_minutes"] !== false} onChange={(v) => void put({ auto_minutes: v })} />
+        <SwitchRow title="Clean the transcript before the notes" desc="Fixes mishearings first, so the notes are written once from the cleaned text. Processing takes longer (several extra AI calls per meeting)."
+          checked={settings["auto_clean"] === true} onChange={(v) => void put({ auto_clean: v })} />
       </Group>
 
       <Group label="Search">

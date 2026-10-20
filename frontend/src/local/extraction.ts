@@ -180,8 +180,15 @@ export async function autoMapConversation(convId: number): Promise<void> {
 
 /** `projectId`: what the user said the meeting was for when they stopped (null = no project); left
  *  undefined, Sutra maps it itself after the notes. */
+/** What processing is doing now, for the recording view: window event `sutra:processing` {sessionId, step}. */
+export const PROCESS_EVENT = "sutra:processing";
+const step = (sessionId: number, text: string | null) => {
+  try { window.dispatchEvent(new CustomEvent(PROCESS_EVENT, { detail: { sessionId, step: text } })); } catch { /* non-DOM */ }
+};
+
 export async function processSession(sessionId: number, provider: Provider, projectId?: number | null) {
   // The mic hearing the call (speakers) duplicates every remote line as "Me"; drop those copies first.
+  step(sessionId, "Sorting out who said what");
   await repo.dropMicBleed(sessionId).catch((e) => console.warn("mic bleed check skipped", e));
   // Speaker-ID first (hybrid only; no-ops on-device): cluster turns by voiceprint into stable per-session
   // speakers and auto-tag enrolled people, so segmentation/extraction/display see corrected speakers.
@@ -196,11 +203,25 @@ export async function processSession(sessionId: number, provider: Provider, proj
   if (projectId !== undefined) for (const cid of newConvIds) await repo.setConversationProject(cid, projectId, false);
   const extracted: any[] = [];
   let lastError: string | null = null;
+  const autoClean = isFullTextEngine(provider) && (await repo.getSettings().catch(() => ({} as any))).auto_clean === true;
   for (const cid of toExtract) {
     // Screenshots of this recording (desktop, when on): the engine looks at them first; what it saw on
     // screen goes into the notes. Best-effort — the notes never wait on it failing.
+    step(sessionId, "Reading the screenshots");
     const facts = await visualPass(cid, sessionId, provider).catch(() => null);
-    try { const r = await extractConversation(cid, provider, facts); if (r) extracted.push(r); }
+    try {
+      // "Clean the transcript before the notes": the clean-up writes the notes itself, once, from the
+      // cleaned text; if it fails the notes come from the raw transcript as usual.
+      let r: any = null;
+      if (autoClean) {
+        step(sessionId, "Cleaning the transcript");
+        const { cleanConversation } = await import("./refinement");
+        const c = await cleanConversation(cid, provider);
+        r = c.ok ? c.extracted ?? null : null;
+      }
+      if (!r) { step(sessionId, "Writing the notes"); r = await extractConversation(cid, provider, facts); }
+      if (r) extracted.push(r);
+    }
     catch (e: any) {
       lastError = String(e?.message ?? e);
       try { await repo.setConversationStatus(cid, "failed"); } catch { /* status best-effort */ }
@@ -222,6 +243,7 @@ export async function processSession(sessionId: number, provider: Provider, proj
     if (autoMinutes && isFullTextEngine(provider)) {
       for (const r of extracted) {
         if (!r?.is_meeting) continue;
+        step(sessionId, "Writing the minutes");
         try { await generateMinutes(r.conversation_id, provider); }
         catch (e) { console.warn("auto minutes skipped", r.conversation_id, e); }
       }

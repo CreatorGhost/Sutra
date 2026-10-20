@@ -1,3 +1,4 @@
+import { PROCESS_EVENT } from "../local/extraction";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Camera, Loader2, Mic, ShieldCheck, Square } from "lucide-react";
@@ -21,6 +22,14 @@ export function LiveView() {
   type Screens = Awaited<ReturnType<NonNullable<typeof desktop>["capture"]["screens"]>>;
   const [screens, setScreens] = useState<Screens | null>(null);
   const [switching, setSwitching] = useState(false);
+  // What processing is doing now ("Reading the screenshots", "Writing the notes" …).
+  const [step, setStep] = useState<string | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => setStep((e as CustomEvent).detail?.step ?? null);
+    window.addEventListener(PROCESS_EVENT, on);
+    return () => window.removeEventListener(PROCESS_EVENT, on);
+  }, []);
+  useEffect(() => { if (rec.status !== "processing") setStep(null); }, [rec.status]);
   const loadScreens = async () => {
     const on = (await desktop?.prefs.get().catch(() => null))?.captureScreen;
     const s = on ? await desktop!.capture.screens().catch(() => null) : null;
@@ -53,8 +62,8 @@ export function LiveView() {
         {rec.status === "processing" ? (
           <>
             <div className="hero-mark"><Loader2 size={24} className="spin" /></div>
-            <p className="hero-title">Writing your notes…</p>
-            <p className="hero-text">Transcribing the last few seconds and pulling out the summary, decisions and action items.</p>
+            <p className="hero-title">{step ? `${step}…` : "Writing your notes…"}</p>
+            <p className="hero-text">{step ? "Then the summary, decisions and action items." : "Transcribing the last few seconds and pulling out the summary, decisions and action items."}</p>
           </>
         ) : recording || rec.status === "starting" ? (
           <>
