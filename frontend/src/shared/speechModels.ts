@@ -123,6 +123,30 @@ const WHISPER_CPP_MODELS: SpeechModel[] = [
 ];
 
 export const SPEECH_MODELS: SpeechModel[] = [...SHERPA_MODELS, ...WHISPER_CPP_MODELS];
+/** SHA-256 of each download, by file name — from GitHub's release-asset digests and Hugging Face's LFS ids
+ *  (the two speaker-pack files GitHub has no digest for were hashed on 2026-10-20). A download that doesn't
+ *  match is rejected. ponytail: sherpa's whisper-* archives have no published digest and are 0.4–1.7 GB,
+ *  so they stay unpinned; hash them once if those models get used. */
+const SHA256: Record<string, string> = {
+  "silero_vad.onnx": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+  "sherpa-onnx-pyannote-segmentation-3-0.tar.bz2": "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488",
+  "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx": "1a331345f04805badbb495c775a6ddffcdd1a732567d5ec8b3d5749e3c7a5e4b",
+  "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2": "393f8a14e2f5fb96746aaab342997a40641001fbd5bf9592a080a8329178ee96",
+  "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+  "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2": "5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf",
+  "sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-v2-int8-2026-02-05.tar.bz2": "951b32409aade32bd525310bb39e9666773ba3fc611a39e817f620936d76c631",
+  "ggml-large-v3-turbo-q5_0.bin": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+  "ggml-large-v3-turbo.bin": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+  "ggml-large-v3-q5_0.bin": "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1",
+  "ggml-large-v3.bin": "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
+  "ggml-medium.bin": "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
+  "ggml-small.bin": "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+  "ggml-base.en.bin": "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
+};
+for (const m of [SPEAKER_PACK, ...SPEECH_MODELS]) {
+  m.assets = m.assets.map((a) => (a.sha256 ? a : { ...a, sha256: SHA256[a.url.split("/").pop()!] }));
+}
+
 export const DEFAULT_SPEECH_MODEL = "qwen3-asr-0.6b";
 export const findSpeechModel = (id: string | null | undefined): SpeechModel | null =>
   id === SPEAKER_PACK_ID ? SPEAKER_PACK : SPEECH_MODELS.find((m) => m.id === id) ?? null;
