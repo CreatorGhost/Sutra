@@ -15,7 +15,7 @@ import { MeetingMedia, type MediaSink } from "./meetingMedia";
 import type { CaptureProvider, CaptureWindow, CaptureStartOptions } from "./CaptureProvider";
 import type { AudioOutputKind } from "./stereoCore";
 import { windowToWavBlob } from "./wav";
-import { MIN_VOICED_SECONDS, STT_SAMPLE_RATE, deinterleave, downsample, voicedSeconds } from "./channels";
+import { MIN_VOICED_SECONDS, STT_SAMPLE_RATE, deinterleave, downsample, gateEcho, voicedSeconds } from "./channels";
 import type { IngestChannelOpts } from "../local/ingest";
 
 /** The slice of `api` this controller needs — injected so tests can mock it without the DB. */
@@ -162,8 +162,10 @@ export class MeetingController {
       this.send(windowToWavBlob(w.pcm, w.sampleRate, w.channels), w.index, `window-${w.index}.wav`, windowStartMs, true);
       return;
     }
+    const call = deinterleave(w.pcm, 1);
     for (const channel of [0, 1] as const) {
-      const mono = deinterleave(w.pcm, channel);
+      // Your mic: minus the call it heard through the speakers (see gateEcho).
+      const mono = channel === 0 ? gateEcho(deinterleave(w.pcm, 0), call, w.sampleRate) : call;
       if (voicedSeconds(mono, w.sampleRate) < MIN_VOICED_SECONDS) continue; // silence on this side
       const pcm16k = downsample(mono, w.sampleRate, STT_SAMPLE_RATE);
       const name = `window-${w.index}-${channel === 0 ? "me" : "them"}.wav`;

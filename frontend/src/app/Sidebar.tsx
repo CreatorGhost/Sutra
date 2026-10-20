@@ -104,7 +104,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
       <div className="side-top drag">
         <label className="search">
           <Search size={15} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onSearchKey} placeholder={list === "projects" ? "Search projects and meetings…" : "Search…"} aria-label={list === "projects" ? "Search projects and meetings" : "Search meetings"} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onSearchKey} placeholder={list === "projects" ? "Search projects…" : "Search…"} aria-label={list === "projects" ? "Search projects and meetings" : "Search meetings"} />
           {query && <button className="icon-btn ghost sm" onClick={() => setQuery("")} aria-label="Clear search"><X size={14} /></button>}
         </label>
       </div>

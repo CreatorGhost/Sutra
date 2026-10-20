@@ -41,6 +41,9 @@ app.setName("Sutra");
 if (process.platform === "win32") app.setAppUserModelId("app.sutra.desktop");
 // Dev builds used to store data under the package name; keep using it so nothing is orphaned.
 if (existsSync(legacyUserData) && !existsSync(join(app.getPath("appData"), "Sutra"))) app.setPath("userData", legacyUserData);
+// Dev only: a separate data folder (SUTRA_USER_DATA), so a dev copy can run beside the installed app
+// without sharing — or locking — its database.
+if (!app.isPackaged && process.env.SUTRA_USER_DATA) app.setPath("userData", process.env.SUTRA_USER_DATA);
 
 // macOS system-audio loopback for getDisplayMedia goes through ScreenCaptureKit; these Chromium
 // features gate it on current Electron builds (unknown feature names are ignored, so this is safe).

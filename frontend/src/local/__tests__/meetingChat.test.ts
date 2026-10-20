@@ -108,3 +108,18 @@ describe("meetings in a period", () => {
     expect(await repo.conversationsBetween("2026-10-02T00:00:00.000Z", "2026-10-03T00:00:00.000Z")).not.toContain(cid);
   });
 });
+
+describe("placeholder owner", () => {
+  it("moves a second \"Me\" owner's lines to the real owner", async () => {
+    const real = await repo.insertPerson("Aditya", true);
+    const s = await repo.createSession("electron", "meeting", "Zoom");
+    await repo.insertTurn({ session_id: s.id, session_speaker_label: "me", person_id: real, text: "Earlier, as Aditya.", start_ts: 0, end_ts: 1, abs_start: "2026-10-01T09:00:00.000Z" });
+    const fake = await repo.insertPerson("Me", true); // what the old bug did: "Aditya" stops being the owner
+    const t = await repo.insertTurn({ session_id: s.id, session_speaker_label: "me", person_id: fake, text: "My update.", start_ts: 0, end_ts: 1, abs_start: "2026-10-01T10:00:00.000Z" });
+    expect(await repo.mergePlaceholderOwner()).toBe(1);
+    const people = (await repo.listPeople()) as any[];
+    expect(people.filter((p) => p.is_me).map((p) => p.canonical_name)).toEqual(["Aditya"]);
+    const row = (await (await import("../db")).q("SELECT person_id FROM turns WHERE id=?", [t]))[0] as any;
+    expect(row.person_id).toBe(real);
+  });
+});

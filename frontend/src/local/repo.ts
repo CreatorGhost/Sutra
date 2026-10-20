@@ -96,6 +96,30 @@ export async function insertPerson(name: string, isMe = false, voiceprint?: numb
   await persist();
   return lastId;
 }
+/** Older builds could replace the owner ("Aditya") with a new owner row named "Me" (insertPerson clears
+ *  the old is_me). The real owner is the named person with the most lines from the owner's own mic: make
+ *  them the owner again, move the placeholder's lines to them, remove it. Returns rows removed. */
+export async function mergePlaceholderOwner(): Promise<number> {
+  const fake = ((await q("SELECT id,canonical_name FROM people")) as any[]).filter((p) => /^me$/i.test(String(p.canonical_name ?? "").trim()));
+  if (!fake.length) return 0;
+  const ids = fake.map((f) => f.id);
+  const ph = ids.map(() => "?").join(",");
+  const real = (await q(`SELECT p.id FROM people p JOIN turns t ON t.person_id=p.id
+                         WHERE t.session_speaker_label='me' AND p.id NOT IN (${ph})
+                         GROUP BY p.id ORDER BY (p.is_me=1) DESC, COUNT(*) DESC LIMIT 1`, ids))[0] as any
+    ?? (await q(`SELECT id FROM people WHERE is_me=1 AND id NOT IN (${ph}) LIMIT 1`, ids))[0] as any;
+  if (!real) return 0; // no named owner to give the lines to — keep "Me"
+  await run("UPDATE people SET is_me=0 WHERE is_me=1 AND id<>?", [real.id]);
+  await run("UPDATE people SET is_me=1 WHERE id=?", [real.id]);
+  for (const f of ids) {
+    await run("UPDATE turns SET person_id=? WHERE person_id=?", [real.id, f]);
+    await run("UPDATE entities SET person_id=? WHERE person_id=?", [real.id, f]);
+    await run("DELETE FROM project_people WHERE person_id=?", [f]);
+    await run("DELETE FROM people WHERE id=?", [f]);
+  }
+  await persist();
+  return ids.length;
+}
 export const deletePerson = async (id: number) => { await run("DELETE FROM project_people WHERE person_id=?", [id]); await run("DELETE FROM people WHERE id=?", [id]); await persist(); };
 /** Fold a new centroid into a person's enrolled voiceprint (running mean over enroll events, re-normalized),
  *  so naming a speaker once teaches Sutra to auto-recognize them in later sessions. */

@@ -124,7 +124,7 @@ export function GraphPage() {
         <Popover open={searchOpen && matches.length > 0} onOpenChange={setSearchOpen} trigger={
           <label className="search">
             <Search size={15} />
-            <input value={query} placeholder="Find a person, project, topic…" aria-label="Find in graph"
+            <input value={query} placeholder="Find in graph…" aria-label="Find in graph"
               onFocus={() => setSearchOpen(true)}
               onChange={(e) => { setQuery(e.target.value); setSearchOpen(true); }}
               onKeyDown={(e) => { if (e.key === "Enter" && matches[0]) { void select(matches[0].id); setSearchOpen(false); } }} />

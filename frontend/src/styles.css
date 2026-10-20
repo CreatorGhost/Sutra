@@ -339,6 +339,8 @@ button { cursor: pointer; }
   color: var(--spk, var(--text));
 }
 .speaker:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* The speaker palette is pastel for dark; on white it needs darkening to read. */
+:root[data-theme="light"] .speaker { color: color-mix(in srgb, var(--spk, var(--text)) 58%, #000); }
 .turn-time { font-size: 12.5px; color: var(--text-3); font-variant-numeric: tabular-nums; font-family: var(--mono); }
 .turn-text { font-size: 16px; line-height: 1.65; }
 

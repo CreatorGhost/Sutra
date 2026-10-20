@@ -230,6 +230,7 @@ export const api = {
 
   // Projects — user-authored, per-project context (on-device only in v1). Local CRUD; no provider needed.
   createProject: (name?: string) => repo.createProject(name),
+  mergePlaceholderOwner: () => repo.mergePlaceholderOwner(),
   updateProject: (id: number, patch: Parameters<typeof repo.updateProject>[1]) => repo.updateProject(id, patch),
   deleteProject: (id: number) => repo.deleteProject(id),
   listProjects: () => repo.listProjects(),

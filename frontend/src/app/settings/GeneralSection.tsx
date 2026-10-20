@@ -60,7 +60,7 @@ export function GeneralSection({ settings, put }: SectionProps) {
             {mics.map((m) => <option key={m.deviceId} value={m.deviceId}>{m.label || "Microphone"}</option>)}
           </select>
         </Row>
-        <Row title="Listening on" desc="Speakers turns on echo cancellation so the call isn't recorded twice.">
+        <Row title="Listening on" desc="On speakers your mic also hears the call; Sutra drops those copies from the transcript either way. Speakers also turns on the mic's echo cancellation.">
           <div className="mini-seg">
             <button aria-pressed={output === "headphones"} onClick={() => void put({ audio_output: "headphones" })}>Headphones</button>
             <button aria-pressed={output === "speakers"} onClick={() => void put({ audio_output: "speakers" })}>Speakers</button>

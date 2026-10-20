@@ -41,9 +41,11 @@ export function ProjectsPage() {
         <div className="doc">
           <div className="page-head">
             <h1>{PROJECT_LABEL}</h1>
-            <button className="btn" onClick={() => void create()} disabled={busy}>
-              {busy ? <Loader2 size={15} className="spin" /> : <Plus size={15} />} New project
-            </button>
+            {!!projects?.length && ( /* empty: the empty state has its own button */
+              <button className="btn" onClick={() => void create()} disabled={busy}>
+                {busy ? <Loader2 size={15} className="spin" /> : <Plus size={15} />} New project
+              </button>
+            )}
           </div>
           <p className="m-sub">A project's brief and glossary help Sutra spell names and terms right, and fix mishearings in transcripts and notes.</p>
           {error && <div className="notice err"><div className="grow">{error}</div></div>}

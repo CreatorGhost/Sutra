@@ -23,7 +23,8 @@ export function Home() {
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
   useEffect(() => {
-    // The owner's real name — skip a placeholder "Me" row (older builds could create one).
+    // The owner's real name — and fold away a placeholder "Me" owner older builds could create.
+    void api.mergePlaceholderOwner().then((n) => { if (n) notifyDataChanged(); }).catch(() => {});
     api.listPeople().then((ps: any[]) => setMe(ps.find((p) => p.is_me && !/^me$/i.test(String(p.canonical_name).trim()))?.canonical_name ?? null)).catch((e) => { setMe(null); setDbError(friendlyError(e)); });
     void api.getSettings().then(setSettings);
   }, []);
