@@ -182,3 +182,6 @@
 }
 .scope-pop .mp-row { gap: 9px; color: var(--text-2); }
 .scope-pop .mp-row .mp-name { color: var(--text); }
+
+/* Light: popovers are white paper over the tinted surfaces, like menus. */
+:root[data-theme="light"] .mp, :root[data-theme="light"] .ms-pop, :root[data-theme="light"] .scope-pop { background: var(--panel); }

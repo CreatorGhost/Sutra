@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Bell, CalendarPlus, Camera, Check, ChevronDown, Copy, Hash, Loader2, RotateCcw, Share, Sparkles, Tag as TagIcon, Trash2, Users, Wand2, X } from "lucide-react";
+import { ArrowLeft, ArrowUp, AudioLines, Bell, CalendarPlus, Camera, Check, ChevronDown, CircleHelp, Copy, FileText, Flag, Footprints, Hash, ListChecks, Loader2, MessageSquare, RotateCcw, Share, Sparkles, Tag as TagIcon, Trash2, Users, Wand2, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { api } from "../local/sutra";
 import { minutesToMarkdown } from "../local/minutes";
 import { NOTE_STYLES, toSlack, type DetailedNotes, type NoteStyle } from "../local/notes";
@@ -11,7 +12,8 @@ import { duration, longDate, offsetLabel, parseTs } from "./format";
 import { AppIcon, Popover, friendlyError, useAppIcon, useToast } from "./ui";
 import { MinutesNotes } from "./meeting/Minutes";
 import { ProjectChip, useProjects } from "./meeting/ProjectChip";
-import { projectName } from "./projects/model";
+import { projectColor, projectName } from "./projects/model";
+import { MeetingTile } from "./meetingTile";
 import { EnginePicker } from "./EnginePicker";
 import { Additions, ChatThread, pathOpener, useMeetingChat } from "./meeting/MeetingChat";
 import { OnScreen, RecordingBanner, ShotViewer, shotOffset, shotTime, useMeetingVisual } from "./meeting/MeetingMedia";
@@ -148,12 +150,18 @@ export function MeetingView() {
       </div>
       <div className="scroll">
         <article className="doc">
-          <div className="m-when">
-            {[longDate(c.started_at ?? c.created_at), duration(c.started_at, c.ended_at)].filter(Boolean).join(" · ")}
-            {c.source_app && <> · <SourceApp name={c.source_app} /></>}
-            {c.is_meeting && <span title="Sutra detected a meeting"> · <Users size={12} style={{ verticalAlign: -1 }} /> Meeting</span>}
+          <div className="m-hero">
+            <MeetingTile size="lg" writing={pending} m={{ id: cid, title: m?.title ?? c.title, summary: m?.summary, subtitle: m?.subtitle, tags: c.tags, status: c.status }}
+              projectColor={c.project_id != null ? projectColor(projects.find((p) => p.id === c.project_id)) : null} />
+            <div className="grow">
+              <div className="m-when">
+                {[longDate(c.started_at ?? c.created_at), duration(c.started_at, c.ended_at)].filter(Boolean).join(" · ")}
+                {c.source_app && <> · <SourceApp name={c.source_app} /></>}
+                {c.is_meeting && <span title="Sutra detected a meeting"> · <Users size={12} style={{ verticalAlign: -1 }} /> Meeting</span>}
+              </div>
+              <EditableTitle key={cid} value={title} disabled={!m} onSave={async (t) => { await api.setTitle(cid, t); notifyDataChanged(); }} />
+            </div>
           </div>
-          <EditableTitle key={cid} value={title} disabled={!m} onSave={async (t) => { await api.setTitle(cid, t); notifyDataChanged(); }} />
           {(m?.subtitle || m?.summary) && <p className="m-sub">{m.subtitle || firstSentence(m.summary)}</p>}
 
           <div className="meta">
@@ -165,10 +173,10 @@ export function MeetingView() {
 
           <div className="tabs-row">
             <div className="seg" role="tablist">
-              <button role="tab" aria-selected={tab === "notes"} onClick={() => setTab("notes")}>Notes</button>
-              <button role="tab" aria-selected={tab === "transcript"} onClick={() => setTab("transcript")}>Transcript</button>
+              <button role="tab" aria-selected={tab === "notes"} onClick={() => setTab("notes")}><FileText size={15} /> Notes</button>
+              <button role="tab" aria-selected={tab === "transcript"} onClick={() => setTab("transcript")}><AudioLines size={15} /> Transcript</button>
               <button role="tab" aria-selected={tab === "chat"} onClick={() => setTab("chat")}>
-                Chat{questions > 0 && <span className="seg-count">{questions}</span>}
+                <MessageSquare size={15} /> Chat{questions > 0 && <span className="seg-count">{questions}</span>}
               </button>
             </div>
             {tab === "notes" && <StylePicker style={style} onChange={chooseStyle} />}
@@ -380,8 +388,9 @@ function ActionList({ actions }: { actions: { id?: number; text: string; owner?:
     setLocal((xs) => xs.map((x) => (x.id === a.id ? { ...x, status } : x)));
     await api.updateAction(a.id, status);
   };
+  const left = local.filter((a) => a.status !== "done").length;
   return (
-    <div>
+    <div className="todos" aria-label={`${left} of ${local.length} open`}>
       {local.map((a, i) => (
         <div key={a.id ?? i} className={`todo${a.status === "done" ? " done" : ""}`}>
           <button className={`check${a.status === "done" ? " on" : ""}`} onClick={() => void toggle(a)} disabled={a.id == null}
@@ -395,14 +404,24 @@ function ActionList({ actions }: { actions: { id?: number; text: string; owner?:
   );
 }
 
+/** A section heading with its small accent icon tile. */
+function H({ icon: Icon, children, aside }: { icon?: LucideIcon; children: ReactNode; aside?: ReactNode }) {
+  return <h2>{Icon && <span className="sec-ic"><Icon size={15} /></span>}{children}{aside}</h2>;
+}
+
+function Progress({ actions }: { actions: { status?: string }[] }) {
+  const done = actions.filter((a) => a.status === "done").length;
+  return <span className="sec-progress">{done}/{actions.length} done</span>;
+}
+
 function BriefNotes({ memory, actions }: { memory: any; actions: any[] }) {
   if (!memory) return null;
   return (
     <>
-      <section className="sec"><h2>Summary</h2><p>{memory.summary}</p></section>
-      {realItems(memory.decisions).length > 0 && <section className="sec"><h2>Decisions</h2><Bullets items={memory.decisions} /></section>}
-      {actions.length > 0 && <section className="sec"><h2>Action items</h2><ActionList actions={actions} /></section>}
-      {realItems(memory.open_questions).length > 0 && <section className="sec"><h2>Open questions</h2><Bullets items={memory.open_questions} /></section>}
+      <section className="sec lead-card"><h2>Summary</h2><p>{memory.summary}</p></section>
+      {realItems(memory.decisions).length > 0 && <section className="sec"><H icon={Flag}>Decisions</H><Bullets items={memory.decisions} /></section>}
+      {actions.length > 0 && <section className="sec"><H icon={ListChecks} aside={<Progress actions={actions} />}>Action items</H><ActionList actions={actions} /></section>}
+      {realItems(memory.open_questions).length > 0 && <section className="sec"><H icon={CircleHelp}>Open questions</H><Bullets items={memory.open_questions} /></section>}
     </>
   );
 }
@@ -437,12 +456,12 @@ function DetailedNotesView({ cid, actions }: { cid: number; actions: any[] }) {
   }
   return (
     <>
-      {notes.overview && <section className="sec"><h2>Overview</h2><p>{notes.overview}</p></section>}
+      {notes.overview && <section className="sec lead-card"><h2>Overview</h2><p>{notes.overview}</p></section>}
       {notes.topics.map((t, i) => <section key={i} className="sec"><h2>{t.heading}</h2><Bullets items={t.points} /></section>)}
-      <section className="sec"><h2>Decisions</h2><Bullets items={notes.decisions} empty="none" /></section>
-      {actions.length > 0 && <section className="sec"><h2>Action items</h2><ActionList actions={actions} /></section>}
-      {notes.open_questions.length > 0 && <section className="sec"><h2>Open questions</h2><Bullets items={notes.open_questions} /></section>}
-      {notes.next_steps.length > 0 && <section className="sec"><h2>Next steps</h2><Bullets items={notes.next_steps} /></section>}
+      <section className="sec"><H icon={Flag}>Decisions</H><Bullets items={notes.decisions} empty="none" /></section>
+      {actions.length > 0 && <section className="sec"><H icon={ListChecks} aside={<Progress actions={actions} />}>Action items</H><ActionList actions={actions} /></section>}
+      {notes.open_questions.length > 0 && <section className="sec"><H icon={CircleHelp}>Open questions</H><Bullets items={notes.open_questions} /></section>}
+      {notes.next_steps.length > 0 && <section className="sec"><H icon={Footprints}>Next steps</H><Bullets items={notes.next_steps} /></section>}
       <button className="btn" onClick={() => void run(true)} disabled={busy}>{busy ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />} Regenerate</button>
     </>
   );
@@ -622,6 +641,7 @@ function AskBar({ cid, busy, onAsk }: { cid: number; busy: boolean; onAsk: (q: s
           {busy ? <Loader2 size={17} className="spin" /> : <Sparkles size={17} />}
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={busy ? "Thinking…" : "Ask about this meeting…"} aria-label="Ask about this meeting" />
           <EnginePicker />
+          <button className="ask-send" aria-label="Ask" disabled={!q.trim() || busy}><ArrowUp size={16} strokeWidth={2.4} /></button>
         </form>
       </div>
     </>

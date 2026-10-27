@@ -2,6 +2,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, HashRouter } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
+// Inter with the optical-size axis: display cuts at heading sizes, text cuts in the body. Bundled, so
+// the desktop app and phones render the same type offline.
+import "@fontsource-variable/inter/opsz.css";
 import "./styles.css";
 import { applyTheme } from "./app/theme";
 import { desktop } from "./desktop/bridge";

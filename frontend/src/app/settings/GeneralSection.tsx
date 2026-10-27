@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ShieldCheck } from "lucide-react";
+import { Moon, ShieldCheck, Sun } from "lucide-react";
 import { api } from "../../local/sutra";
 import { LANGS, type Lang } from "../../providers";
 import { desktop, type DesktopPrefs } from "../../desktop/bridge";
@@ -92,13 +92,14 @@ export function GeneralSection({ settings, put }: SectionProps) {
       )}
 
       <Group label="Appearance">
-        <Row title="Theme">
-          <div className="mini-seg">
-            {(["system", "dark", "light"] as ThemeChoice[]).map((t) => (
-              <button key={t} aria-pressed={theme === t} onClick={() => chooseTheme(t)}>{t[0].toUpperCase() + t.slice(1)}</button>
-            ))}
-          </div>
-        </Row>
+        <div className="theme-pick" role="radiogroup" aria-label="Theme">
+          {(["dark", "light"] as ThemeChoice[]).map((t) => (
+            <button key={t} role="radio" aria-checked={theme === t} className={`theme-card ${t}`} onClick={() => chooseTheme(t)}>
+              <span className="theme-mini" aria-hidden><i /><b><em /><em /><em /></b></span>
+              <span className="theme-name">{t === "dark" ? <Moon size={14} /> : <Sun size={14} />}{t === "dark" ? "Dark" : "Light"}</span>
+            </button>
+          ))}
+        </div>
       </Group>
 
       <p className="faint" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, margin: "20px 2px 0" }}>

@@ -5,7 +5,7 @@ import { ArrowLeft, Camera, Loader2, Mic, ShieldCheck, Square } from "lucide-rea
 import { speakerName } from "../local/speakers";
 import { clock } from "./format";
 import { useNow, useRecorder } from "./recorder";
-import { LevelBars } from "./ui";
+import { LiveOrb } from "./ui";
 import { useMac } from "../pairing/runtime";
 import { desktop } from "../desktop/bridge";
 
@@ -61,17 +61,17 @@ export function LiveView() {
       <div className="live-head">
         {rec.status === "processing" ? (
           <>
-            <div className="hero-mark"><Loader2 size={24} className="spin" /></div>
+            <LiveOrb state="busy"><Loader2 size={26} className="spin" /></LiveOrb>
             <p className="hero-title">{step ? `${step}…` : "Writing your notes…"}</p>
             <p className="hero-text">{step ? "Then the summary, decisions and action items." : "Transcribing the last few seconds and pulling out the summary, decisions and action items."}</p>
           </>
         ) : recording || rec.status === "starting" ? (
           <>
-            <div className="muted" style={{ fontWeight: 600 }}>
+            <LiveOrb state="rec" level={rec.level}><Mic size={26} /></LiveOrb>
+            <div className="live-status">
               <span className="live-dot" />{rec.status === "starting" ? "Starting…" : `Recording${rec.app ? ` · ${rec.app}` : ""}`}
             </div>
-            <div className="live-clock">{rec.startedAt ? clock(now - rec.startedAt) : "0:00"}</div>
-            <div style={{ color: "var(--rec)", marginBottom: screens ? 8 : 20 }}><LevelBars level={rec.level} count={7} /></div>
+            <div className="live-clock" style={{ marginBottom: screens ? 10 : 22 }}>{rec.startedAt ? clock(now - rec.startedAt) : "0:00"}</div>
             {screens && (
               <div className="shot-screens" role="radiogroup" aria-label="Screenshots from">
                 <span className="faint"><Camera size={14} /> Screenshots from</span>
@@ -83,16 +83,16 @@ export function LiveView() {
                 ))}
               </div>
             )}
-            <button className="btn primary" onClick={() => void stop()} disabled={!recording}><Square size={13} fill="currentColor" /> Stop & write notes</button>
+            <button className="btn lg stop" onClick={() => void stop()} disabled={!recording}><Square size={13} fill="currentColor" /> Stop & write notes</button>
           </>
         ) : (
           <>
-            <div className="hero-mark"><Mic size={24} /></div>
+            <LiveOrb state="ready"><Mic size={26} /></LiveOrb>
             <p className="hero-title">Ready when you are</p>
             <p className="hero-text">
               {rec.mode === "mic" ? "Sutra listens through your microphone." : "Sutra records your mic and the meeting's audio — no bot joins the call."}
             </p>
-            <button className="btn primary" onClick={() => void start()}>Start recording</button>
+            <button className="btn thread lg" onClick={() => void start()}><span className="rec-ring" /> Start recording</button>
           </>
         )}
         {rec.notice && !rec.error && (

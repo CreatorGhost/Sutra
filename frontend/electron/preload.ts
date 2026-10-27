@@ -44,7 +44,7 @@ contextBridge.exposeInMainWorld(
       screens: () => ipcRenderer.invoke("sutra:capture:screens"),
       use: (displayId: number) => ipcRenderer.invoke("sutra:capture:use", displayId),
     },
-    theme: (choice: "system" | "light" | "dark") => ipcRenderer.send("sutra:theme", choice),
+    theme: (choice: "light" | "dark") => ipcRenderer.send("sutra:theme", choice),
     apple: Object.freeze({
       add: (kind: "reminders" | "calendar", items: unknown[]) => ipcRenderer.invoke("sutra:apple:add", kind, items),
     }),

@@ -10,6 +10,7 @@ import { useDataVersion } from "./events";
 import { clock, groupByPeriod, shortDate } from "./format";
 import { useNow, useRecorder } from "./recorder";
 import { AppIcon } from "./ui";
+import { MeetingTile } from "./meetingTile";
 import { useMac, useQueueStats } from "../pairing/runtime";
 
 interface MeetingRow {
@@ -96,7 +97,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
 
   return (
     <aside className="sidebar">
-      <div className="side-top drag"><span className="side-brand"><img src="./favicon.svg" alt="" />Sutra</span></div>
+      <div className="side-top drag"><span className="side-brand"><img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" />Sutra</span></div>
       <label className="search side-search">
         <Search size={14} />
         <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onSearchKey} placeholder="Search" aria-label={list === "projects" ? "Search projects and meetings" : "Search meetings"} />
@@ -166,20 +167,24 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
             <section key={g.label}>
               <div className="group-label">{g.label}</div>
               {g.items.map((m) => (
-                <button key={m.id} className={`item${m.id === activeId ? " active" : ""}`} onClick={() => nav(`/m/${m.id}`)}>
-                  <div className="item-head">
-                    <span className="item-title">{m.title || (m.status === "failed" ? "Couldn't write notes" : "Writing notes…")}</span>
-                    <span className="item-date">{shortDate(m.started_at ?? m.created_at)}</span>
-                  </div>
-                  <div className="item-sub">
-                    {m.status === "failed" && <span className="dot" style={{ background: "var(--warn)" }} />}
-                    {m.project_id != null && projects.has(m.project_id) && (
-                      <span className="item-proj" style={{ ["--pc" as any]: projectColor(projects.get(m.project_id)) }}>
-                        <span className="pdot" />{projectName(projects.get(m.project_id))} ·{" "}
-                      </span>
-                    )}
-                    {m.subtitle || m.summary || (m.status === "failed" ? "Open to retry." : "Transcribed — notes are on the way.")}
-                  </div>
+                <button key={m.id} className={`item has-tile${m.id === activeId ? " active" : ""}`} onClick={() => nav(`/m/${m.id}`)}>
+                  <MeetingTile m={m} writing={!m.title && m.status !== "failed"}
+                    projectColor={m.project_id != null && projects.has(m.project_id) ? projectColor(projects.get(m.project_id)) : null} />
+                  <span className="item-body">
+                    <span className="item-head">
+                      <span className="item-title">{m.title || (m.status === "failed" ? "Couldn't write notes" : "Writing notes…")}</span>
+                      <span className="item-date">{shortDate(m.started_at ?? m.created_at)}</span>
+                    </span>
+                    <span className="item-sub">
+                      {m.status === "failed" && <span className="dot" style={{ background: "var(--warn)" }} />}
+                      {m.project_id != null && projects.has(m.project_id) && (
+                        <span className="item-proj" style={{ ["--pc" as any]: projectColor(projects.get(m.project_id)) }}>
+                          {projectName(projects.get(m.project_id))} ·{" "}
+                        </span>
+                      )}
+                      {m.subtitle || m.summary || (m.status === "failed" ? "Open to retry." : "Transcribed — notes are on the way.")}
+                    </span>
+                  </span>
                 </button>
               ))}
             </section>

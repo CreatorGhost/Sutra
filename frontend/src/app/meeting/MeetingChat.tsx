@@ -52,7 +52,7 @@ export function ChatThread({ chat, onPath, toast }: { chat: MeetingChatState; on
   if (!turns.length && !chat.pending) {
     return (
       <div className="chat-empty">
-        <MessageSquareText size={22} />
+        <span className="hero-mark"><MessageSquareText size={24} /></span>
         <p><b>Ask anything about this meeting</b></p>
         <p className="muted">Answers cite the moment it was said. Keep the useful ones with <b>Add to notes</b>.</p>
         <div className="ask-suggest">

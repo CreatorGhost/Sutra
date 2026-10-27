@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, AudioLines, Check, Laptop, Sparkles } from "lucide-react";
+import { ArrowRight, ArrowUpRight, AudioLines, Check, CheckCircle2, Clock3, Laptop, Sparkles, Users } from "lucide-react";
 import { useMac } from "../pairing/runtime";
 import { PairControls } from "./settings/MacSection";
 import { api } from "../local/sutra";
@@ -8,7 +8,8 @@ import { desktop, type AgentStatus } from "../desktop/bridge";
 import { isAgentId } from "../shared/agentProtocol";
 import { useRecorder } from "./recorder";
 import { notifyDataChanged, useDataVersion } from "./events";
-import { shortDate } from "./format";
+import { duration, parseTs, shortDate } from "./format";
+import { MeetingTile } from "./meetingTile";
 import { EngineSettings, autoEngine } from "./EngineSettings";
 import { SpeechSettings } from "./SpeechSettings";
 import { friendlyError } from "./ui";
@@ -32,13 +33,15 @@ export function Home() {
   const put = async (patch: Record<string, unknown>) => setSettings(await api.putSettings(patch));
   const version = useDataVersion();
   const [recent, setRecent] = useState<any[] | null>(null);
+  const [week, setWeek] = useState<WeekStats | null>(null);
   const [todos, setTodos] = useState<any[]>([]);
+  const [openCount, setOpenCount] = useState(0);
   const [ask, setAsk] = useState("");
   useEffect(() => {
-    api.listConversations().then((r: any[]) => setRecent(r.slice(0, 6))).catch(() => setRecent([]));
-    api.actionItems("open").then((a: any[]) => setTodos(a.slice(0, 6))).catch(() => {});
+    api.listConversations().then((r: any[]) => { setRecent(r.slice(0, 6)); setWeek(weekStats(r)); }).catch(() => setRecent([]));
+    api.actionItems("open").then((a: any[]) => { setTodos(a.slice(0, 6)); setOpenCount(a.length); }).catch(() => {});
   }, [version]);
-  const done = async (id: number) => { setTodos((xs) => xs.filter((x) => x.id !== id)); await api.updateAction(id, "done"); };
+  const done = async (id: number) => { setTodos((xs) => xs.filter((x) => x.id !== id)); setOpenCount((n) => Math.max(0, n - 1)); await api.updateAction(id, "done"); };
 
   if (dbError) {
     return (
@@ -70,16 +73,16 @@ export function Home() {
 
   if (recent && !recent.length && me !== null) {
     return (
-      <div className="center">
+      <div className="center home-empty">
         <div>
-          <div className="hero-mark"><AudioLines size={22} /></div>
+          <div className="hero-mark thread"><AudioLines size={24} /></div>
           <p className="hero-title">{hi}</p>
           <p className="hero-text">
             {desktop
               ? "Join a call and Sutra notices — a Record button appears at the top of your screen. Notes, decisions and action items are written the moment you stop."
               : "Start recording and Sutra writes the notes — summary, decisions and action items — the moment you stop."}
           </p>
-          <button className="btn primary" onClick={() => { void start(); nav("/live"); }}><span className="rec-ring" /> Start recording</button>
+          <button className="btn thread lg" onClick={() => { void start(); nav("/live"); }}><span className="rec-ring" /> Start recording</button>
         </div>
       </div>
     );
@@ -87,9 +90,12 @@ export function Home() {
 
   return (
     <div className="scroll">
+      <div className="home-glow" aria-hidden />
       <div className="home">
-        <p className="home-date">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
-        <h1 className="home-hi">{hi}</h1>
+        <header className="home-head">
+          <p className="home-date">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
+          <h1 className="home-hi">{hi}</h1>
+        </header>
 
         {me === null && (
           <form className="home-card home-name" onSubmit={(e) => { e.preventDefault(); void saveName(); }}>
@@ -100,10 +106,18 @@ export function Home() {
         )}
 
         <form className="home-ask" onSubmit={(e) => { e.preventDefault(); if (ask.trim()) nav(`/ask?q=${encodeURIComponent(ask.trim())}`); }}>
-          <Sparkles size={16} />
+          <span className="spark"><Sparkles size={15} /></span>
           <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Ask anything about your meetings…" aria-label="Ask Sutra" />
-          <kbd>↵</kbd>
+          <button className="send" aria-label="Ask" disabled={!ask.trim()}><ArrowRight size={16} /></button>
         </form>
+
+        {week && (
+          <div className="home-stats" aria-label="Your week">
+            <div className="stat"><span className="ic"><Users size={15} /></span><b>{week.meetings}</b><span>{week.meetings === 1 ? "meeting" : "meetings"} this week</span></div>
+            <div className="stat"><span className="ic"><Clock3 size={15} /></span><b>{week.time || "0 min"}</b><span>in conversations</span></div>
+            <div className="stat"><span className="ic"><CheckCircle2 size={15} /></span><b>{openCount}</b><span>open action {openCount === 1 ? "item" : "items"}</span></div>
+          </div>
+        )}
 
         {recording && (
           <button className="home-card home-live" onClick={() => nav("/live")}>
@@ -113,13 +127,15 @@ export function Home() {
 
         {todos.length > 0 && (
           <section className="home-sec">
-            <h2>Open action items</h2>
+            <h2>Open action items{openCount > todos.length && <span className="n">{openCount}</span>}</h2>
             <div className="home-list">
               {todos.map((a) => (
                 <div key={a.id} className="home-row">
                   <button className="check" role="checkbox" aria-checked={false} aria-label={`Done: ${a.text}`} onClick={() => void done(a.id)} />
                   <span className="grow">{a.owner && <b>{a.owner}: </b>}{a.text}</span>
-                  {a.source_conversation != null && <button className="home-link" onClick={() => nav(`/m/${a.source_conversation}`)}>Open</button>}
+                  {a.source_conversation != null && (
+                    <button className="home-link" onClick={() => nav(`/m/${a.source_conversation}`)} aria-label="Open the meeting" title="Open the meeting"><ArrowUpRight size={15} /></button>
+                  )}
                 </div>
               ))}
             </div>
@@ -132,11 +148,15 @@ export function Home() {
             {recent === null ? [0, 1, 2].map((i) => <div key={i} className="skel" style={{ height: 44, margin: 6 }} />)
               : recent.map((m) => (
                 <button key={m.id} className="home-row home-meeting" onClick={() => nav(`/m/${m.id}`)}>
+                  <MeetingTile m={m} size="md" writing={!m.title && m.status !== "failed"} />
                   <span className="grow">
                     <span className="t">{m.title || (m.status === "failed" ? "Couldn't write notes" : "Writing notes…")}</span>
                     <span className="d">{m.subtitle || m.summary || ""}</span>
                   </span>
-                  <span className="faint">{shortDate(m.started_at ?? m.created_at)}</span>
+                  <span className="when">
+                    <span>{shortDate(m.started_at ?? m.created_at)}</span>
+                    {duration(m.started_at, m.ended_at) && <span className="faint">{duration(m.started_at, m.ended_at)}</span>}
+                  </span>
                 </button>
               ))}
           </div>
@@ -144,6 +164,24 @@ export function Home() {
       </div>
     </div>
   );
+}
+
+interface WeekStats { meetings: number; time: string }
+
+/** The last seven days: how many recordings, and how long they ran in total. */
+function weekStats(rows: any[], now = Date.now()): WeekStats {
+  const since = now - 7 * 864e5;
+  let meetings = 0, ms = 0;
+  for (const r of rows) {
+    const a = parseTs(r.started_at ?? r.created_at);
+    if (!a || a.getTime() < since) continue;
+    meetings++;
+    const b = parseTs(r.ended_at);
+    if (b && b > a) ms += b.getTime() - a.getTime();
+  }
+  const min = Math.round(ms / 60000);
+  const time = min < 1 ? "" : min < 60 ? `${min} min` : `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} m` : ""}`;
+  return { meetings, time };
 }
 
 /** The phone's first screen: pair with Sutra on the Mac (scan its code, or paste the link). The phone

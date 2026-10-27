@@ -20,6 +20,18 @@ export function LevelBars({ level, count = 5 }: { level: number; count?: number 
   );
 }
 
+/** The live orb: a ring of the thread gradient that swells with your voice while recording, breathes
+ *  while idle, and spins while the notes are being written. */
+export function LiveOrb({ level = 0, state, children }: { level?: number; state: "ready" | "rec" | "busy"; children?: ReactNode }) {
+  const l = Math.min(1, Math.max(0, level * 6)); // same stretch as LevelBars
+  return (
+    <div className={`orb ${state}`} style={{ ["--lvl" as any]: l.toFixed(3) }} aria-hidden>
+      <i className="orb-haze" /><i className="orb-ring" />
+      <span className="orb-core">{children}</span>
+    </div>
+  );
+}
+
 /** A click-away popover anchored under its trigger. */
 export function Popover({ trigger, children, open, onOpenChange }: {
   trigger: ReactNode; children: ReactNode; open: boolean; onOpenChange: (v: boolean) => void;

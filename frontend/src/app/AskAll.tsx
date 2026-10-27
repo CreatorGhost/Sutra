@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Check, ChevronDown, FolderClosed, FolderCode, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowUp, Check, ChevronDown, FolderClosed, FolderCode, Loader2, Sparkles } from "lucide-react";
 import { api } from "../local/sutra";
 import { shortDate } from "./format";
 import { friendlyError } from "./ui";
 import { EnginePicker } from "./EnginePicker";
 import { Markdown } from "./Markdown";
+import { MeetingTile } from "./meetingTile";
 
 /** Starters for questions across meetings; the period ones pull in that period's meetings (chat.timeWindow). */
 const SUGGESTIONS = ["What did I promise this week?", "What was decided last week?", "What's still open from yesterday?", "Who asked me for something this week?"];
@@ -52,7 +53,10 @@ export function AskAll() {
       </div>
       <div className="scroll">
         <div className="doc">
-          <h1 className="m-title" style={{ display: "flex", alignItems: "center", gap: 10 }}><Sparkles size={24} /> Ask Sutra</h1>
+          <div className="m-hero">
+            <span className="tile lg thread-tile"><Sparkles size={24} /></span>
+            <h1 className="m-title">Ask Sutra</h1>
+          </div>
           <p className="m-sub">
             {project
               ? <>Answers from <b>{project.name || "this project"}</b>’s meetings{project.folder_count && project.code_access ? " and its code" : ""}, with links to where they were said.</>
@@ -65,21 +69,29 @@ export function AskAll() {
               ))}
             </div>
           )}
-          {turns.map((t, i) => (
-            <section key={i} className="sec">
-              <h3 style={{ marginTop: 0 }}>{t.q}</h3>
-              {t.a === undefined ? <p className="muted"><Loader2 size={14} className="spin" /> {project?.folder_count && project.code_access ? "Searching meetings and code…" : "Searching your meetings…"}</p> : <Markdown text={t.a} />}
-              {!!t.citations?.length && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-                  {t.citations.map((c) => (
-                    <Link key={c.conversation_id} className="tag" style={{ textDecoration: "none", paddingRight: 10 }} to={`/m/${c.conversation_id}`}>
-                      {c.title}{c.date ? ` · ${shortDate(c.date)}` : ""}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </section>
-          ))}
+          {turns.length > 0 && (
+            <div className="chat ask-chat">
+              {turns.map((t, i) => (
+                <Fragment key={i}>
+                  <div className="chat-q"><div className="bubble">{t.q}</div></div>
+                  <div className="chat-a">
+                    {t.a === undefined ? <p className="muted thinking"><Loader2 size={14} className="spin" /> {project?.folder_count && project.code_access ? "Searching meetings and code…" : "Searching your meetings…"}</p> : <Markdown text={t.a} />}
+                    {!!t.citations?.length && (
+                      <div className="sources">
+                        {t.citations.map((c) => (
+                          <Link key={c.conversation_id} className="source" to={`/m/${c.conversation_id}`}>
+                            <MeetingTile m={{ id: c.conversation_id, title: c.title }} />
+                            <span className="grow">{c.title}</span>
+                            {c.date && <span className="faint">{shortDate(c.date)}</span>}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </Fragment>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       <div className="pane-fade" />
@@ -89,6 +101,7 @@ export function AskAll() {
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask anything about your meetings…" aria-label="Ask Sutra" autoFocus={!initial} />
           {projects.length > 0 && <ProjectScope projects={projects} value={projectId} onChange={setProjectId} />}
           <EnginePicker />
+          <button className="ask-send" aria-label="Ask" disabled={!q.trim()}><ArrowUp size={16} strokeWidth={2.4} /></button>
         </form>
       </div>
     </>

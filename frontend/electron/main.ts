@@ -57,14 +57,17 @@ if (!app.isPackaged) {
 
 // ---- preferences (main-process owned so detection works before any window loads) -------------------
 
-interface Prefs { detectMeetings: boolean; autoStop: boolean; enabledEngines: AgentId[] | null; captureScreen: boolean; theme: "system" | "light" | "dark" }
-const DEFAULT_PREFS: Prefs = { detectMeetings: true, autoStop: true, enabledEngines: null, captureScreen: false, theme: "system" };
+interface Prefs { detectMeetings: boolean; autoStop: boolean; enabledEngines: AgentId[] | null; captureScreen: boolean; theme: "light" | "dark" | null }
+// theme null = not chosen yet; loadPrefs settles it on the OS appearance.
+const DEFAULT_PREFS: Prefs = { detectMeetings: true, autoStop: true, enabledEngines: null, captureScreen: false, theme: null };
 const prefsPath = () => join(app.getPath("userData"), "prefs.json");
 let prefs: Prefs = { ...DEFAULT_PREFS };
 function loadPrefs(): void {
   try { if (existsSync(prefsPath())) prefs = { ...DEFAULT_PREFS, ...JSON.parse(readFileSync(prefsPath(), "utf8")) }; } catch { /* defaults */ }
   prefs.enabledEngines = Array.isArray(prefs.enabledEngines) ? prefs.enabledEngines.filter(isAgentId) : null;
-  if (!["system", "light", "dark"].includes(prefs.theme)) prefs.theme = "system";
+  // Two themes only. Not chosen yet (or "system" from older builds): settle on what the OS shows right
+  // now — themeSource hasn't been set yet, so this is the OS appearance.
+  if (prefs.theme !== "light" && prefs.theme !== "dark") prefs.theme = nativeTheme.shouldUseDarkColors ? "dark" : "light";
   setEnabledEngines(prefs.enabledEngines);
 }
 function savePrefs(): void {
@@ -149,7 +152,7 @@ const TRAFFIC_LIGHTS = { x: 18, y: 20 };
 function createMainWindow(): void {
   // The app's theme before the window exists: switching it later makes macOS re-lay the title bar and
   // drop the traffic lights to their default spot until the next redraw.
-  nativeTheme.themeSource = prefs.theme;
+  nativeTheme.themeSource = prefs.theme ?? "system";
   const win = new BrowserWindow({
     width: 1180,
     height: 780,
@@ -479,7 +482,7 @@ function registerIpc(): void {
   // The window's frosted sidebar is drawn by macOS in ITS appearance; follow the app's theme so a light
   // app on a dark Mac isn't a light tint over dark blur (muddy grey).
   ipcMain.on("sutra:theme", (_e, t: unknown) => {
-    if ((t !== "light" && t !== "dark" && t !== "system") || t === prefs.theme) return;
+    if ((t !== "light" && t !== "dark") || t === prefs.theme) return;
     prefs.theme = t;
     savePrefs();
     nativeTheme.themeSource = t;
