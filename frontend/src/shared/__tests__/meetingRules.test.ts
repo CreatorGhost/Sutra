@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
-  DetectionTracker,
+  AutoStop, DetectionTracker,
   appFromBundleId,
   appName,
   bundlePath,
@@ -108,6 +108,30 @@ describe("DetectionTracker", () => {
     expect(end.ended?.key).toBe(meet.key);
   });
 
+  it("the same call seen through another signal is not a new call (no mid-meeting auto-stop)", () => {
+    const t = new DetectionTracker(2, 3);
+    t.update(meet);
+    t.update(meet);
+    // A window title names it "Browser|Google Meet"; the mic alone, before the tab matches, "Google Chrome|".
+    const viaTitle = { app: "Browser", service: "Google Meet", source: "window" as const, key: "Browser|Google Meet" };
+    const viaMic = { app: "Google Chrome", source: "mic" as const, key: "Google Chrome|" };
+    for (const d of [viaTitle, viaTitle, viaTitle, viaMic, viaMic, viaMic]) {
+      const up = t.update(d);
+      expect(up.ended).toBeUndefined();
+      expect(up.active).toMatchObject({ key: meet.key, app: "Google Chrome", service: "Google Meet" });
+    }
+    // Hanging up still ends it — under the key the recording was started with.
+    t.update(null); t.update(null);
+    expect(t.update(null).ended?.key).toBe(meet.key);
+  });
+
+  it("a different meeting service on the same app is a new call", () => {
+    const t = new DetectionTracker(1, 3);
+    t.update(meet);
+    const zoomWeb = { app: "Google Chrome", service: "Zoom", source: "tab" as const, key: "Google Chrome|Zoom" };
+    expect(t.update(zoomWeb).ended?.key).toBe(meet.key);
+  });
+
   it("a single flicker never raises", () => {
     const t = new DetectionTracker(2, 3);
     t.update(meet);
@@ -123,6 +147,79 @@ describe("DetectionTracker", () => {
     expect(t.update(meet).visible).toBe(false);
     t.update(null); // call ended
     expect(t.update(meet).visible).toBe(true);
+  });
+});
+
+describe("AutoStop (stop when the call ends, with a grace period)", () => {
+  const meet = { app: "Google Chrome", service: "Google Meet", source: "tab" as const, key: "Google Chrome|Google Meet" };
+  const viaTitle = { app: "Browser", service: "Google Meet", source: "window" as const, key: "Browser|Google Meet" };
+  function harness() {
+    let pending: (() => void) | null = null;
+    let waited = 0;
+    const stop = vi.fn();
+    const a = new AutoStop(stop, 45_000, 120_000, { set: (fn, ms) => { pending = fn; waited = ms; return 1; }, clear: () => { pending = null; } });
+    return { a, stop, fire: () => { const f = pending; pending = null; f?.(); }, get pending() { return pending; }, get waited() { return waited; } };
+  }
+
+  it("a call that vanishes and comes back (switching Chrome tabs) never stops the recording", () => {
+    const h = harness();
+    h.a.recording(meet);
+    h.a.update({ active: null, ended: meet }, true); // gone: grace period starts
+    expect(h.pending).not.toBeNull();
+    h.a.update({ active: viaTitle }, true);           // back, under another name
+    expect(h.pending).toBeNull();
+    h.fire();
+    expect(h.stop).not.toHaveBeenCalled();
+  });
+
+  it("stops once the call stays gone, and only when the setting is on", () => {
+    const h = harness();
+    h.a.recording(meet);
+    h.a.update({ active: null, ended: viaTitle }, true);
+    h.fire();
+    expect(h.stop).toHaveBeenCalledTimes(1);
+    const off = harness();
+    off.a.recording(meet);
+    off.a.update({ active: null, ended: meet }, false);
+    expect(off.pending).toBeNull();
+  });
+
+  it("a recording with no call yet is left alone, and a stopped one is never auto-stopped", () => {
+    const h = harness();
+    h.a.recording(null);
+    h.a.update({ active: null, ended: meet }, true);
+    expect(h.pending).toBeNull();
+    h.a.recording(meet);
+    h.a.update({ active: null, ended: meet }, true);
+    h.a.idle();
+    h.fire();
+    expect(h.stop).not.toHaveBeenCalled();
+  });
+
+  it("a recording started before the call was detected follows the first call seen", () => {
+    const h = harness();
+    h.a.recording(null);
+    h.a.update({ active: viaTitle }, true);   // the Meet shows up mid-recording: adopted
+    expect(h.pending).toBeNull();
+    h.a.update({ active: null }, true);       // and later goes away for good
+    h.fire();
+    expect(h.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("once the call held the mic, a leftover 'Meet – …' title doesn't keep it alive", () => {
+    const viaMic = { ...meet, source: "mic" as const };
+    const h = harness();
+    h.a.recording(viaTitle);
+    h.a.update({ active: viaMic }, true);     // Chrome holding the mic: the call is live
+    expect(h.pending).toBeNull();
+    h.a.update({ active: viaTitle }, true);   // left the call: mic released, only the tab title remains
+    expect(h.pending).not.toBeNull();
+    expect(h.waited).toBe(120_000);           // longer: it could be a mute in an app that releases the mic
+    h.a.update({ active: viaMic }, true);     // unmuted / back within the grace period: keep recording
+    expect(h.pending).toBeNull();
+    h.a.update({ active: viaTitle }, true);
+    h.fire();
+    expect(h.stop).toHaveBeenCalledTimes(1);
   });
 });
 

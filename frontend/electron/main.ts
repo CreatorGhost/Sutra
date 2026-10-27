@@ -12,16 +12,23 @@
 //
 // Security: contextIsolation ON, nodeIntegration OFF, sandbox ON; the renderer only sees the frozen
 // preload bridge (electron/preload.ts).
-import { app, BrowserWindow, Menu, Tray, desktopCapturer, dialog, ipcMain, nativeImage, screen, session, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, Menu, Tray, desktopCapturer, dialog, ipcMain, nativeImage, nativeTheme, screen, session, shell, systemPreferences } from "electron";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { realpath } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { initDesktopStorage } from "./storage";
 import { userPath } from "./proc";
 import { MeetingDetector } from "./meetingDetector";
-import { detectAgents, runAgent } from "./agents";
-import { cancelDownload, deleteModel, downloadModel, sttStatus, transcribeLocal } from "./localStt";
-import { macAppCandidates, type Detection, type TrackerUpdate } from "../src/shared/meetingRules";
-import type { AgentId, AgentRequest } from "../src/shared/agentProtocol";
+import { detectAgents, runAgent, setEnabledEngines } from "./agents";
+import { mcpInstall, mcpRemove, mcpSnippet, mcpStatus, type McpClientId } from "./mcpConnect";
+import { cancelSpeechDownload, deleteSpeechModel, downloadSpeechModel, speechStatus, transcribeSpeech } from "./speech/service";
+import { initPairing, stopPairing } from "./pairing";
+import { grantedWorkspace, registerProjectFolderIpc } from "./projectFolders";
+import { registerRecordingIpc } from "./recordings";
+import { addToApple } from "./appleApps";
+import { AutoStop, macAppCandidates, meetingWindow, type Detection, type ScreenWindow, type TrackerUpdate } from "../src/shared/meetingRules";
+import { isAgentId, type AgentId, type AgentRequest } from "../src/shared/agentProtocol";
 
 const isMac = process.platform === "darwin";
 
@@ -30,8 +37,13 @@ const isMac = process.platform === "darwin";
 // name); the packaged app is "Sutra".
 const legacyUserData = join(app.getPath("appData"), "sutra-frontend");
 app.setName("Sutra");
+// Windows: notifications and taskbar grouping are keyed by the AppUserModelID (must match electron-builder appId).
+if (process.platform === "win32") app.setAppUserModelId("app.sutra.desktop");
 // Dev builds used to store data under the package name; keep using it so nothing is orphaned.
 if (existsSync(legacyUserData) && !existsSync(join(app.getPath("appData"), "Sutra"))) app.setPath("userData", legacyUserData);
+// Dev only: a separate data folder (SUTRA_USER_DATA), so a dev copy can run beside the installed app
+// without sharing — or locking — its database.
+if (!app.isPackaged && process.env.SUTRA_USER_DATA) app.setPath("userData", process.env.SUTRA_USER_DATA);
 
 // macOS system-audio loopback for getDisplayMedia goes through ScreenCaptureKit; these Chromium
 // features gate it on current Electron builds (unknown feature names are ignored, so this is safe).
@@ -45,12 +57,18 @@ if (!app.isPackaged) {
 
 // ---- preferences (main-process owned so detection works before any window loads) -------------------
 
-interface Prefs { detectMeetings: boolean; autoStop: boolean; }
-const DEFAULT_PREFS: Prefs = { detectMeetings: true, autoStop: true };
+interface Prefs { detectMeetings: boolean; autoStop: boolean; enabledEngines: AgentId[] | null; captureScreen: boolean; theme: "light" | "dark" | null }
+// theme null = not chosen yet; loadPrefs settles it on the OS appearance.
+const DEFAULT_PREFS: Prefs = { detectMeetings: true, autoStop: true, enabledEngines: null, captureScreen: false, theme: null };
 const prefsPath = () => join(app.getPath("userData"), "prefs.json");
 let prefs: Prefs = { ...DEFAULT_PREFS };
 function loadPrefs(): void {
   try { if (existsSync(prefsPath())) prefs = { ...DEFAULT_PREFS, ...JSON.parse(readFileSync(prefsPath(), "utf8")) }; } catch { /* defaults */ }
+  prefs.enabledEngines = Array.isArray(prefs.enabledEngines) ? prefs.enabledEngines.filter(isAgentId) : null;
+  // Two themes only. Not chosen yet (or "system" from older builds): settle on what the OS shows right
+  // now — themeSource hasn't been set yet, so this is the OS appearance.
+  if (prefs.theme !== "light" && prefs.theme !== "dark") prefs.theme = nativeTheme.shouldUseDarkColors ? "dark" : "light";
+  setEnabledEngines(prefs.enabledEngines);
 }
 function savePrefs(): void {
   try { writeFileSync(prefsPath(), JSON.stringify(prefs, null, 2)); } catch { /* best-effort */ }
@@ -66,6 +84,7 @@ interface RecorderSnapshot {
   level?: number;
   conversationId?: number | null;
   error?: string | null;
+  askProject?: boolean;
 }
 
 let mainWin: BrowserWindow | null = null;
@@ -76,9 +95,12 @@ let quitAfterStop = false;
 let recorder: RecorderSnapshot = { status: "idle" };
 let detection: { active: (Detection & { icon?: string }) | null; visible: boolean } = { active: null, visible: false };
 /** The call that was live when the current recording started — auto-stop fires when THAT call ends. */
-let recordingCallKey: string | null = null;
+// "Stop when the call ends", with a grace period (src/shared/meetingRules.ts AutoStop).
+const autoStop = new AutoStop(() => { if (recorder.status === "recording") stopRecording(); });
 /** "Notes ready" flash after a recording finishes. */
 let doneFlash: { conversationId: number | null; until: number } | null = null;
+/** The user hid the pill during a recording / note-writing (e.g. while sharing their screen). */
+let pillHidden = false;
 let doneTimer: NodeJS.Timeout | null = null;
 
 const iconCache = new Map<string, string>();
@@ -86,7 +108,12 @@ async function appIcon(path?: string): Promise<string | undefined> {
   if (!path) return undefined;
   if (iconCache.has(path)) return iconCache.get(path);
   try {
-    const img = await app.getFileIcon(path, { size: "normal" });
+    // macOS 26 apps (Chrome, Zoom…) ship icons getFileIcon can't read — it returns a blank placeholder.
+    // Quick Look renders the real icon, as Finder shows it.
+    // Follow links first (/Applications/Safari.app points into the system Cryptex), or Quick Look shows a file icon.
+    const real = await realpath(path).catch(() => path);
+    let img = isMac ? await nativeImage.createThumbnailFromPath(real, { width: 64, height: 64 }).catch(() => null) : null;
+    if (!img || img.isEmpty()) img = await app.getFileIcon(real, { size: "normal" });
     const url = img.isEmpty() ? "" : img.toDataURL();
     iconCache.set(path, url);
     return url || undefined;
@@ -120,7 +147,12 @@ function harden(win: BrowserWindow): void {
 
 // ---- main window ---------------------------------------------------------------------------------
 
+const TRAFFIC_LIGHTS = { x: 18, y: 20 };
+
 function createMainWindow(): void {
+  // The app's theme before the window exists: switching it later makes macOS re-lay the title bar and
+  // drop the traffic lights to their default spot until the next redraw.
+  nativeTheme.themeSource = prefs.theme ?? "system";
   const win = new BrowserWindow({
     width: 1180,
     height: 780,
@@ -130,8 +162,14 @@ function createMainWindow(): void {
     title: "Sutra",
     backgroundColor: isMac ? "#00000000" : "#111113",
     ...(isMac
-      ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 18, y: 20 }, vibrancy: "sidebar" as const, visualEffectState: "active" as const }
-      : { autoHideMenuBar: true }),
+      ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: TRAFFIC_LIGHTS, vibrancy: "sidebar" as const, visualEffectState: "active" as const }
+      : {
+          // Windows/Linux: hide the title bar and let the OS draw only its window buttons over the top-right
+          // corner (the sidebar and pane tops are drag regions), matching the frameless macOS look.
+          autoHideMenuBar: true,
+          titleBarStyle: "hidden" as const,
+          titleBarOverlay: { color: "#00000000", symbolColor: "#a2a2aa", height: 44 },
+        }),
     webPreferences: {
       preload: join(__dirname, "../preload/preload.cjs"),
       contextIsolation: true,
@@ -156,10 +194,15 @@ function createMainWindow(): void {
   const ses = win.webContents.session;
   if (typeof ses.setDisplayMediaRequestHandler === "function") {
     ses.setDisplayMediaRequestHandler(
-      (_request, callback) => {
-        desktopCapturer
-          .getSources({ types: ["screen"] })
-          .then((sources) => callback(sources[0] ? { video: sources[0], audio: "loopback" } : {}))
+      (request, callback) => {
+        // Screenshots come from this video, so use the screen the call is on (not always the main one).
+        // The screen the user picked for this recording wins; otherwise the one the call is on.
+        Promise.all([desktopCapturer.getSources({ types: ["screen"] }), chosenScreen ?? callScreenId()])
+          .then(([sources, id]) => {
+            const src = sources.find((s) => id != null && s.display_id === String(id)) ?? sources[0];
+            capturedScreen = src ? Number(src.display_id) || null : null;
+            callback(src ? { video: src, ...(request.audioRequested ? { audio: "loopback" as const } : {}) } : {});
+          })
           .catch(() => callback({}));
       },
       { useSystemPicker: false },
@@ -181,6 +224,10 @@ function showMain(path?: string): void {
 
 const PILL_H = 64; // capsule (44) + room for its soft shadow
 let pillWidth = 360;
+/** On a notched screen the window is a fixed stage under the camera; the island animates inside it and
+ *  everything around it is click-through (the renderer says when the pointer is on the island). */
+const NOTCH_STAGE = { width: 520, height: 160 };
+let lastPillMode: PillMode = "hidden";
 
 function createPillWindow(): void {
   const win = new BrowserWindow({
@@ -199,6 +246,8 @@ function createPillWindow(): void {
     alwaysOnTop: true,
     focusable: !isMac ? false : true,
     ...(isMac ? { type: "panel" as const } : {}),
+    // Lets the notch island sit over the menu bar (macOS otherwise pushes windows below it).
+    enableLargerThanScreen: true,
     backgroundColor: "#00000000",
     webPreferences: {
       preload: join(__dirname, "../preload/preload.cjs"),
@@ -210,23 +259,91 @@ function createPillWindow(): void {
   pillWin = win;
   harden(win);
   win.setAlwaysOnTop(true, "screen-saver");
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // Keep the pill out of screen shares and recordings, so a call never sees "Recording".
+  win.setContentProtection(true);
+  // skipTransformProcessType: joining every Space otherwise makes the Dock icon flicker.
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
   win.on("closed", () => { pillWin = null; });
   win.webContents.on("did-finish-load", () => pushPill());
   load(win, "pill");
 }
 
+// ---- notch (MacBooks since 2021): the pill wraps the camera housing like a menu-bar island ---------
+// Electron doesn't expose the notch, so it's read from NSScreen through JXA (osascript ships with macOS,
+// no Xcode needed). `left` = where the notch starts and `width` its size, in points from the screen's left.
+interface Notch { x: number; w: number; left: number; width: number; height: number }
+let notches: Notch[] = [];
+const NOTCH_JXA = `ObjC.import("AppKit"); const o = []; const ss = $.NSScreen.screens;
+for (let i = 0; i < ss.count; i++) { const s = ss.objectAtIndex(i), f = s.frame;
+  if (!s.respondsToSelector("auxiliaryTopLeftArea")) continue;
+  const l = s.auxiliaryTopLeftArea, r = s.auxiliaryTopRightArea;
+  if (l.size.width > 0 && r.size.width > 0) o.push({ x: f.origin.x, w: f.size.width, left: l.size.width, width: r.origin.x - l.size.width, height: s.safeAreaInsets.top }); }
+JSON.stringify(o)`;
+function readNotches(): void {
+  if (!isMac) return;
+  execFile("osascript", ["-l", "JavaScript", "-e", NOTCH_JXA], { timeout: 5000 }, (err, out) => {
+    try { notches = err ? [] : (JSON.parse(out) as Notch[]).filter((n) => n.width > 0 && n.width < 400); } catch { notches = []; }
+    if (pillWin?.isVisible()) placePill();
+    pushPill();
+  });
+}
+// Every on-screen app window with its bounds (titles need Screen Recording, which capture already has).
+const WINDOWS_JXA = `ObjC.import("CoreGraphics");
+const l = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, 0))) || [];
+JSON.stringify(l.filter((w) => w.kCGWindowLayer === 0 && w.kCGWindowBounds).map((w) => ({ app: w.kCGWindowOwnerName || "", title: w.kCGWindowName || "",
+  x: w.kCGWindowBounds.X, y: w.kCGWindowBounds.Y, width: w.kCGWindowBounds.Width, height: w.kCGWindowBounds.Height })))`;
+/** The display showing the call's window, or null (→ the main screen). */
+function callScreenId(): Promise<number | null> {
+  if (!isMac) return Promise.resolve(null);
+  return new Promise((resolve) => execFile("osascript", ["-l", "JavaScript", "-e", WINDOWS_JXA], { timeout: 3000 }, (err, out) => {
+    try {
+      const w = err ? null : meetingWindow(JSON.parse(out) as ScreenWindow[], detection.active);
+      resolve(w ? screen.getDisplayMatching({ x: Math.round(w.x), y: Math.round(w.y), width: Math.round(w.width), height: Math.round(w.height) }).id : null);
+    } catch { resolve(null); }
+  }));
+}
+/** The display the current recording's screenshots come from, and the one the user picked (this recording only). */
+let capturedScreen: number | null = null;
+let chosenScreen: number | null = null;
+/** Screen 1 is the main display, then left to right. */
+const screensInOrder = () => {
+  const main = screen.getPrimaryDisplay().id;
+  return screen.getAllDisplays().sort((a, b) => (a.id === main ? -1 : b.id === main ? 1 : a.bounds.x - b.bounds.x));
+};
+const pillDisplay = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+const notchOf = (d: Electron.Display) => notches.find((n) => Math.round(n.x) === d.bounds.x && Math.round(n.w) === d.bounds.width) ?? null;
+/** On a notched screen: the notch size the island grows out of. */
+function pillNotch(d = pillDisplay()): { width: number; height: number } | null {
+  const n = notchOf(d);
+  // The camera housing's own height (not the menu bar's), so the island's edge lines up with the notch.
+  return n ? { width: Math.round(n.width), height: Math.round(n.height) || Math.max(24, d.workArea.y - d.bounds.y) } : null;
+}
+
 function placePill(): void {
   if (!pillWin) return;
-  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const display = pillDisplay();
+  const n = notchOf(display), bar = pillNotch(display);
+  if (n && bar) {
+    // Flush with the top edge, centred on the camera.
+    // Stage width shares the notch's parity, so the island lands on whole pixels (no soft grey edges).
+    const width = NOTCH_STAGE.width + (Math.round(n.width) % 2);
+    const x = Math.round(display.bounds.x + n.left + n.width / 2 - width / 2);
+    pillWin.setBounds({ x, y: display.bounds.y, width, height: NOTCH_STAGE.height });
+    pillWin.setIgnoreMouseEvents(true, { forward: true });
+    return;
+  }
+  pillWin.setIgnoreMouseEvents(false);
   const wa = display.workArea;
   const x = Math.round(wa.x + (wa.width - pillWidth) / 2);
   pillWin.setBounds({ x, y: wa.y + 6, width: pillWidth, height: PILL_H });
 }
 
 type PillMode = "hidden" | "detected" | "recording" | "processing" | "done";
-function pillState(): { mode: PillMode; app?: string | null; service?: string; icon?: string; recorder: RecorderSnapshot; conversationId?: number | null } {
-  const base = { recorder, app: detection.active?.app ?? recorder.app, service: detection.active?.service, icon: detection.active?.icon };
+function pillState(): { mode: PillMode; app?: string | null; service?: string; icon?: string; recorder: RecorderSnapshot; conversationId?: number | null; notch: { width: number; height: number } | null; tucked: boolean } {
+  const base = { recorder, app: detection.active?.app ?? recorder.app, service: detection.active?.service, icon: detection.active?.icon, notch: pillNotch(),
+    tucked: pillHidden && recorder.status !== "idle" };
+  // Hidden: on the notch the island tucks behind the camera (hovering it still opens Stop); elsewhere it hides.
+  if (pillHidden && recorder.status !== "idle" && !base.notch) return { ...base, mode: "hidden" };
   if (recorder.status === "recording" || recorder.status === "starting") return { ...base, mode: "recording", app: recorder.app ?? base.app };
   if (recorder.status === "processing") return { ...base, mode: "processing", app: recorder.app ?? base.app };
   if (doneFlash && doneFlash.until > Date.now()) return { ...base, mode: "done", conversationId: doneFlash.conversationId };
@@ -240,6 +357,16 @@ function pushPill(): void {
   refreshTray();
   if (!pillWin) return;
   pillWin.webContents.send("sutra:pill:state", st);
+  const was = lastPillMode;
+  lastPillMode = st.mode;
+  if (st.notch) {
+    // Notch: the window stays shown — transparent and click-through — so the island can grow out of and
+    // shrink back into the camera, and its animations start on the first frame (a freshly shown window
+    // only begins painting ~400 ms later). It moves to the cursor's screen when something new appears.
+    if (!pillWin.isVisible() || (was === "hidden" && st.mode !== "hidden")) placePill();
+    if (!pillWin.isVisible()) pillWin.showInactive();
+    return;
+  }
   if (st.mode === "hidden") {
     if (pillWin.isVisible()) pillWin.hide();
   } else if (!pillWin.isVisible()) {
@@ -260,7 +387,6 @@ function recorderCall(method: "start" | "stop", arg?: unknown): void {
 }
 
 function startRecording(): void {
-  recordingCallKey = detection.active?.key ?? null;
   recorderCall("start", { app: detection.active?.app ?? null });
 }
 function stopRecording(): void {
@@ -269,13 +395,21 @@ function stopRecording(): void {
 
 function onRecorderState(snap: RecorderSnapshot): void {
   const prev = recorder.status;
+  if (snap.askProject && !recorder.askProject) showMain();
+  if (snap.status !== "recording" && snap.status !== "starting" && recorder.status === "recording") chosenScreen = null;
   recorder = snap;
+  // Hidden only for what was on screen then: a new recording or the end of note-writing shows it again.
+  if (snap.status === "idle" || (snap.status === "starting" && prev !== "starting")) pillHidden = false;
   if (prev === "processing" && snap.status === "idle" && !snap.error) {
     doneFlash = { conversationId: snap.conversationId ?? null, until: Date.now() + 9000 };
     if (doneTimer) clearTimeout(doneTimer);
     doneTimer = setTimeout(() => { doneFlash = null; pushPill(); }, 9100);
   }
-  if (snap.status === "idle") recordingCallKey = null;
+  const capturing = (s: string) => s === "recording" || s === "starting";
+  // Any recording (island, tray or the app window) follows the call it's for — the one detected now,
+  // or the first one detected while it runs.
+  if (capturing(snap.status) && !capturing(prev)) autoStop.recording(detection.active ?? null);
+  if (!capturing(snap.status)) autoStop.idle();
   pushPill();
   if (quitAfterStop && snap.status === "idle") { quitting = true; app.quit(); }
 }
@@ -283,10 +417,8 @@ function onRecorderState(snap: RecorderSnapshot): void {
 async function onDetection(up: TrackerUpdate): Promise<void> {
   const active = up.active ? { ...up.active, icon: await appIcon(up.active.appPath) } : null;
   detection = { active, visible: up.visible };
-  // The call we were recording has ended → stop and write the notes.
-  if (up.ended && prefs.autoStop && recorder.status === "recording" && recordingCallKey && up.ended.key === recordingCallKey) {
-    stopRecording();
-  }
+  // The call we were recording has ended (and stays gone) → stop and write the notes.
+  if (recorder.status === "recording") autoStop.update(up, prefs.autoStop);
   pushPill();
 }
 
@@ -312,7 +444,8 @@ function refreshTray(): void {
     { type: "separator" },
     rec
       ? { label: "Stop recording", click: () => stopRecording() }
-      : { label: detection.active ? `Record ${detection.active.app} call` : "Start recording", enabled: recorder.status === "idle", click: () => startRecording() },
+      : { label: detection.active ? `Record ${detection.active.app} call` : "Start recording", click: () => startRecording() },
+    ...(pillHidden && recorder.status !== "idle" ? [{ label: "Show recording pill", click: () => { pillHidden = false; pushPill(); } }] : []),
     { type: "separator" },
     { label: "Detect meetings automatically", type: "checkbox", checked: prefs.detectMeetings, click: (i) => setPrefs({ detectMeetings: i.checked }) },
     { label: "Stop when the call ends", type: "checkbox", checked: prefs.autoStop, click: (i) => setPrefs({ autoStop: i.checked }) },
@@ -326,6 +459,10 @@ function refreshTray(): void {
 const detector = new MeetingDetector({ onChange: (up) => void onDetection(up) });
 
 function setPrefs(patch: Partial<Prefs>): Prefs {
+  if ("enabledEngines" in patch) {
+    patch = { ...patch, enabledEngines: Array.isArray(patch.enabledEngines) ? patch.enabledEngines.filter(isAgentId) : null };
+    setEnabledEngines(patch.enabledEngines ?? null);
+  }
   prefs = { ...prefs, ...patch };
   savePrefs();
   if (prefs.detectMeetings) detector.start();
@@ -338,9 +475,30 @@ function setPrefs(patch: Partial<Prefs>): Prefs {
 
 function registerIpc(): void {
   ipcMain.handle("sutra:prefs:get", () => prefs);
+  ipcMain.handle("sutra:capture:screens", () => ({
+    screens: screensInOrder().map((d) => ({ id: d.id, label: d.label || `${d.size.width}×${d.size.height}` })),
+    current: capturedScreen,
+  }));
+  // The window's frosted sidebar is drawn by macOS in ITS appearance; follow the app's theme so a light
+  // app on a dark Mac isn't a light tint over dark blur (muddy grey).
+  ipcMain.on("sutra:theme", (_e, t: unknown) => {
+    if ((t !== "light" && t !== "dark") || t === prefs.theme) return;
+    prefs.theme = t;
+    savePrefs();
+    nativeTheme.themeSource = t;
+    if (isMac) mainWin?.setWindowButtonPosition(TRAFFIC_LIGHTS); // the appearance change resets them
+  });
+  ipcMain.handle("sutra:apple:add", (_e, kind: unknown, items: unknown) => addToApple(kind, items));
+  ipcMain.handle("sutra:capture:use", (_e, id: unknown) => {
+    if (typeof id === "number" && screen.getAllDisplays().some((d) => d.id === id)) chosenScreen = id;
+  });
   ipcMain.handle("sutra:prefs:set", (_e, patch: Partial<Prefs>) => setPrefs(patch ?? {}));
   ipcMain.handle("sutra:detection:get", () => ({ active: detection.active, visible: detection.visible && prefs.detectMeetings }));
   ipcMain.on("sutra:recorder:state", (_e, snap: RecorderSnapshot) => onRecorderState(snap ?? { status: "idle" }));
+  // Notch island: take clicks only while the pointer is over it.
+  ipcMain.on("sutra:pill:hover", (_e, on: boolean) => {
+    if (pillWin && pillNotch()) pillWin.setIgnoreMouseEvents(!on, { forward: true });
+  });
   ipcMain.on("sutra:pill:resize", (_e, width: number) => {
     const w = Math.max(200, Math.min(640, Math.round(Number(width) || 360)));
     if (w === pillWidth) return;
@@ -352,6 +510,7 @@ function registerIpc(): void {
       case "record": startRecording(); break;
       case "stop": stopRecording(); break;
       case "dismiss": detector.dismiss(); break;
+      case "hide": pillHidden = true; pushPill(); break;
       case "open": {
         const cid = doneFlash?.conversationId ?? recorder.conversationId;
         doneFlash = null;
@@ -370,21 +529,32 @@ function registerIpc(): void {
     return (await appIcon(p)) ?? null;
   });
 
-  // Local AI agents (Claude Code / Codex / Cursor Agent) as the text engine.
-  ipcMain.handle("sutra:ai:detect", () => detectAgents());
+  registerProjectFolderIpc();
+  registerRecordingIpc();
+
+  // The user's AI agent CLIs (Claude Code, Codex, Cursor, Gemini, Grok, Droid, Command Code) as the text engine.
+  ipcMain.handle("sutra:ai:detect", (_e, refresh?: boolean) => detectAgents(refresh === true));
   ipcMain.handle("sutra:ai:run", (_e, id: AgentId, req: AgentRequest) => {
-    if (!["claude", "codex", "cursor"].includes(id)) throw new Error("unknown agent");
-    return runAgent(id, { system: String(req?.system ?? ""), user: String(req?.user ?? ""), schema: req?.schema, model: req?.model ?? null });
+    if (!isAgentId(id)) throw new Error("unknown AI engine");
+    const schema = req?.schema && typeof req.schema === "object" ? req.schema : undefined;
+    // Only folders the user linked through the system picker; anything else is dropped.
+    const workspace = grantedWorkspace(req?.workspace);
+    // Screenshots by recording + frame name only (main decrypts them itself); labels are short tokens.
+    const im = req?.images;
+    const frames = Array.isArray(im?.frames) ? im!.frames.filter((f) => typeof f?.name === "string" && /^[A-Za-z0-9_-]{1,16}$/.test(String(f?.label))).slice(0, 30) : [];
+    const images = Number.isInteger(im?.session) && frames.length ? { session: im!.session, frames: frames.map((f) => ({ name: f.name, label: f.label })) } : undefined;
+    return runAgent(id, { system: String(req?.system ?? ""), user: String(req?.user ?? ""), schema, model: typeof req?.model === "string" ? req.model : null,
+      ...(workspace.length ? { workspace } : {}), ...(images ? { images } : {}) });
   });
 
-  // Local speech-to-text (whisper.cpp).
-  ipcMain.handle("sutra:stt:status", () => sttStatus());
+  // On-device speech: transcription + speaker separation (electron/speech/*, runs in a utility process).
+  ipcMain.handle("sutra:stt:status", () => speechStatus());
   ipcMain.handle("sutra:stt:download", (e, id: string) =>
-    downloadModel(String(id), (p) => { if (!e.sender.isDestroyed()) e.sender.send("sutra:stt:progress", p); }));
-  ipcMain.handle("sutra:stt:cancel", () => cancelDownload());
-  ipcMain.handle("sutra:stt:delete", (_e, id: string) => deleteModel(String(id)));
-  ipcMain.handle("sutra:stt:transcribe", (_e, wav: ArrayBuffer, opts: { model: string; language?: string | null }) =>
-    transcribeLocal(wav, { model: String(opts?.model ?? ""), language: opts?.language ?? null }));
+    downloadSpeechModel(String(id), (p) => { if (!e.sender.isDestroyed()) e.sender.send("sutra:stt:progress", p); }));
+  ipcMain.handle("sutra:stt:cancel", () => cancelSpeechDownload());
+  ipcMain.handle("sutra:stt:delete", (_e, id: string) => deleteSpeechModel(String(id)));
+  ipcMain.handle("sutra:stt:transcribe", (_e, wav: ArrayBuffer, opts: { model?: unknown; language?: unknown; speakers?: unknown }) =>
+    transcribeSpeech(wav, { model: String(opts?.model ?? ""), language: typeof opts?.language === "string" ? opts.language : null, speakers: opts?.speakers !== false }));
 
   ipcMain.handle("sutra:permissions:get", () => ({
     microphone: isMac || process.platform === "win32" ? systemPreferences.getMediaAccessStatus("microphone") : "granted",
@@ -397,6 +567,30 @@ function registerIpc(): void {
     return false;
   });
 }
+
+// ---- settings: AI-tool connections (sutra:mcp:*) + backup files (sutra:backup:*) ------------------------
+// Registered at load (ipcMain works before `ready`). The pairing token comes from the renderer, which
+// owns it in the local DB; it's only used to write the configs the user asked for.
+
+function registerMcpAndBackupIpc(): void {
+  const tok = (t: unknown) => String(t ?? "");
+  ipcMain.handle("sutra:mcp:status", (_e, token: string) => mcpStatus(tok(token)));
+  ipcMain.handle("sutra:mcp:snippet", (_e, id: McpClientId | "other", token: string, url?: string) => mcpSnippet(id, tok(token), url));
+  ipcMain.handle("sutra:mcp:install", (_e, id: McpClientId, token: string, url?: string) => mcpInstall(id, tok(token), url));
+  ipcMain.handle("sutra:mcp:remove", (_e, id: McpClientId) => mcpRemove(id));
+  ipcMain.handle("sutra:mcp:reveal", (_e, path: string) => { if (existsSync(String(path))) shell.showItemInFolder(String(path)); });
+
+  // The backup is plaintext (it's the decrypted DB), so it's written 0600 to a place the user picks.
+  ipcMain.handle("sutra:backup:save", async (e, json: string, filename: string) => {
+    const owner = BrowserWindow.fromWebContents(e.sender) ?? undefined;
+    const opts = { defaultPath: join(app.getPath("documents"), String(filename || "sutra-backup.json")), filters: [{ name: "Sutra backup", extensions: ["json"] }] };
+    const r = owner ? await dialog.showSaveDialog(owner, opts) : await dialog.showSaveDialog(opts);
+    if (r.canceled || !r.filePath) return null;
+    writeFileSync(r.filePath, String(json), { mode: 0o600 });
+    return r.filePath;
+  });
+}
+registerMcpAndBackupIpc();
 
 // ---- lifecycle -----------------------------------------------------------------------------------------
 
@@ -416,7 +610,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", () => showMain());
 
   app.whenReady().then(() => {
-    session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === "media"));
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === "media" || permission === "notifications"));
     loadPrefs();
     void userPath(); // resolve the login-shell PATH once, up front, so Record never waits on it
     const dbError = initDesktopStorage();
@@ -426,13 +620,17 @@ if (!app.requestSingleInstanceLock()) {
       if (existsSync(icon)) app.dock?.setIcon(nativeImage.createFromPath(icon));
     }
     registerIpc();
+    // Phones paired in Settings → Phones send audio and AI jobs here (electron/pairing/*).
+    initPairing(() => mainWin);
     createMainWindow();
     createPillWindow();
     tray = new Tray(trayImage());
     tray.on("click", () => { if (!isMac) showMain(); });
     refreshTray();
     if (prefs.detectMeetings) detector.start();
-    screen.on("display-metrics-changed", () => placePill());
+    readNotches();
+    // Notches come and go with displays (lid closed, external monitor as main…).
+    for (const ev of ["display-metrics-changed", "display-added", "display-removed"] as const) screen.on(ev as "display-added", () => readNotches());
     void initAutoUpdate();
 
     app.on("activate", () => showMain());
@@ -451,6 +649,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     quitting = true;
     detector.stop();
+    void stopPairing();
   });
   app.on("window-all-closed", () => {
     // Windows are hidden, not closed, until quit — nothing to do here.

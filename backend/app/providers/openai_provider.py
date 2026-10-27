@@ -18,7 +18,7 @@ log = logging.getLogger("sutra.openai")
 class OpenAIProvider:
     def __init__(self) -> None:
         if not settings.openai_api_key or settings.openai_api_key.startswith("sk-REPLACE"):
-            log.warning("OPENAI_API_KEY missing/placeholder — OpenAI calls will fail.")
+            log.debug("OPENAI_API_KEY missing/placeholder — OpenAI calls will fail unless a BYO key is supplied.")
         self._base = settings.openai_base_url.rstrip("/")
         self._headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
 
@@ -37,21 +37,45 @@ class OpenAIProvider:
         # Hinglish/Devanagari/Verbatim transcribe IN-LANGUAGE. `None` -> fall back to the server
         # default; an explicit "" (Verbatim) -> NO prompt (transcribe exactly as spoken, no normalize).
         effective_prompt = settings.transcribe_prompt if prompt is None else prompt
-        if effective_prompt:
+        # Diarization models (e.g. gpt-4o-transcribe-diarize) reject `prompt` with a 400
+        # ("prompt is not supported for diarization models"). Don't attach it for those — it
+        # only triggers a wasteful retry and gives no steering anyway. Non-diarize models keep
+        # the prompt exactly as before (future-proof).
+        is_diarize_model = "diarize" in settings.model_transcribe.lower()
+        if effective_prompt and not is_diarize_model:
             data["prompt"] = effective_prompt
+        elif effective_prompt and is_diarize_model:
+            log.info(
+                "transcribe: skipping prompt for diarization model=%s (prompt not supported)",
+                settings.model_transcribe,
+            )
+        log.info(
+            "transcribe: model=%s rf=%s prompt_attached=%s prompt_len=%d",
+            settings.model_transcribe,
+            data.get("response_format"),
+            bool(data.get("prompt")),
+            len(effective_prompt or ""),
+        )
         async with self._client(600.0) as c:
             resp = await c.post("/audio/transcriptions", data=data, files=files)
             if resp.status_code == 400:
                 # Some model variants reject optional params (prompt, or chunking_strategy on short
-                # clips). Drop whichever the error names — or both if unclear — and retry once.
+                # clips). Drop whichever the error names and retry once. NEVER blindly drop the
+                # prompt when the error is ambiguous — that silently kills language steering. Only
+                # drop the prompt if the error text actually names "prompt"; otherwise prefer
+                # dropping chunking_strategy and keep the steering prompt intact.
                 txt = resp.text.lower()
-                if "prompt" in txt:
+                drop_prompt = "prompt" in txt
+                if drop_prompt:
                     data.pop("prompt", None)
-                if "chunk" in txt:
+                if "chunk" in txt or not drop_prompt:
                     data.pop("chunking_strategy", None)
-                if "prompt" not in txt and "chunk" not in txt:
-                    data.pop("prompt", None)
-                    data.pop("chunking_strategy", None)
+                if drop_prompt:
+                    log.warning(
+                        "transcribe 400: dropping prompt (status=%s) body=%s",
+                        resp.status_code,
+                        txt[:200],
+                    )
                 resp = await c.post("/audio/transcriptions", data=data, files=files)
             resp.raise_for_status()
             body = resp.json()
@@ -85,10 +109,22 @@ class OpenAIProvider:
         }
         async with self._client(180.0) as c:
             resp = await c.post("/chat/completions", json=payload)
+            if resp.status_code >= 400:
+                # Surface the UPSTREAM error body so an intermittent 400 (e.g. context length, a rejected
+                # param, or schema issue) is diagnosable instead of an opaque 500. Model name in a log is fine.
+                log.warning("text-channel %s (model=%s, schema=%s): %s",
+                            resp.status_code, settings.model_extract,
+                            (json_schema or {}).get("name"), resp.text[:400])
             resp.raise_for_status()
             body = resp.json()
-        content = body["choices"][0]["message"]["content"]
-        return json.loads(content)
+        choice = body["choices"][0]
+        content = choice["message"]["content"]
+        if not content:
+            raise httpx.HTTPError(f"empty completion (finish={choice.get('finish_reason')})")
+        try:
+            return json.loads(content)
+        except (json.JSONDecodeError, TypeError) as e:
+            raise httpx.HTTPError(f"bad completion JSON (finish={choice.get('finish_reason')}): {e}")
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
@@ -133,4 +169,11 @@ class OpenAIProvider:
             body = resp.json()
         scores = json.loads(body["choices"][0]["message"]["content"]).get("scores", [])
         scores = (list(scores) + [0.0] * len(docs))[: len(docs)]
-        return [float(x) for x in scores]
+        out = []
+        for x in scores:
+            try:
+                v = float(x)
+            except (TypeError, ValueError):
+                v = 0.0
+            out.append(min(1.0, max(0.0, v)))
+        return out

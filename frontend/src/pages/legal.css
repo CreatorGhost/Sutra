@@ -1,0 +1,9 @@
+.legal-doc { max-width: 680px; margin: 0 auto; line-height: 1.6; }
+.legal-doc h1 { font-size: var(--fs-lg); margin: 1rem 0 0.5rem; }
+.legal-doc h2 { font-size: var(--fs-md); margin: 1.2rem 0 0.4rem; }
+.legal-doc h3 { font-size: var(--fs-sm); margin: 1rem 0 0.3rem; }
+.legal-doc p { margin: 0.5rem 0; }
+.legal-doc p.bullet { margin: 0.25rem 0 0.25rem 1rem; }
+.legal-doc blockquote { padding-left: 0.75rem; border-left: 2px solid var(--border); opacity: 0.75; font-style: italic; margin: 0.75rem 0; }
+.legal-doc hr { border: 0; border-top: 1px solid var(--border); margin: 1rem 0; }
+.legal-doc .legal-back { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; color: var(--accent-2); cursor: pointer; padding: 8px 0; }

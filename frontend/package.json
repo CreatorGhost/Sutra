@@ -5,16 +5,17 @@
   "type": "module",
   "main": "out/main/main.cjs",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/build-relay-worker.mjs && electron-vite dev",
     "dev:web": "vite",
     "build": "tsc -b && vite build",
     "build:pwa": "tsc -b && vite build",
-    "build:desktop": "npm run typecheck && node scripts/build-mac-helper.mjs && electron-vite build && electron-builder --config electron-builder.json",
+    "build:desktop": "npm run typecheck && npm run build:mcp && node scripts/build-mac-helper.mjs && electron-vite build && node scripts/build-relay-worker.mjs && electron-builder --config electron-builder.json",
     "typecheck": "tsc -b && tsc -p tsconfig.electron.json",
     "preview": "vite preview",
     "test": "vitest run",
     "postinstall": "electron-builder install-app-deps",
-    "rebuild:electron": "electron-builder install-app-deps"
+    "rebuild:electron": "electron-builder install-app-deps",
+    "build:mcp": "cd ../mcp-server && npm ci && npm run build"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^6.0.2",
@@ -28,20 +29,39 @@
     "@capacitor/local-notifications": "^6.1.3",
     "@capacitor/share": "^6.0.4",
     "@capacitor/status-bar": "^6.0.3",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@gsap/react": "^2.1.2",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "@react-three/postprocessing": "^3.0.4",
     "better-sqlite3-multiple-ciphers": "^11.10.0",
     "electron-updater": "^6.8.9",
+    "gsap": "^3.15.0",
     "jeep-sqlite": "^2.8.0",
+    "jsqr": "^1.4.0",
     "lucide-react": "^0.468.0",
+    "maath": "^0.10.8",
+    "postprocessing": "^6.39.1",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-force-graph-2d": "^1.27.0",
     "react-router-dom": "^7.1.0",
-    "sql.js": "^1.11.0"
+    "sherpa-onnx-node": "1.13.8",
+    "sql.js": "^1.11.0",
+    "tar": "^7.5.22",
+    "three": "^0.184.0",
+    "unbzip2-stream": "^1.4.3",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.2.1",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/unbzip2-stream": "^1.4.3",
+    "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^4.3.4",
     "better-sqlite3": "^11.10.0",
     "electron": "^33.4.11",
@@ -52,5 +72,11 @@
     "vite": "^6.0.0",
     "vite-plugin-pwa": "^0.21.0",
     "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "overrides": {
+    "node-gyp": "^11.0.0"
   }
 }

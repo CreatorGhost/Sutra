@@ -23,6 +23,7 @@ dist-ssr/
 .env
 .env.*
 !.env.example
+!frontend/.env.production
 
 # Models / caches (downloaded at runtime)
 backend/.cache/
@@ -49,6 +50,14 @@ artifacts/
 # Tool caches / benchmarks
 .benchmarks/
 .playwright-mcp/
+.impeccable/
+graphify-out/
+
+# Electron build output (compiled from electron/ + renderer)
+frontend/out/
+
+# Stray wasm backups (the tracked sql-wasm.wasm is the FTS5 build)
+*.sql-wasm-fts5-backup.wasm
 
 # Editor
 .vscode/
@@ -64,3 +73,8 @@ screenshots/
 
 # Compiled macOS mic watcher (built by scripts/build-mac-helper.mjs)
 frontend/electron/native/micwatch
+
+# Local CA certificates for Docker builds behind TLS inspection — never commit them (certs/README.md).
+certs/*
+!certs/README.md
+frontend/release/

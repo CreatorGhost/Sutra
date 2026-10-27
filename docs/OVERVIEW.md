@@ -11,7 +11,7 @@
 
 **Sutra is a privacy-first, local-first ambient-memory app that turns your real conversations into a searchable, connected personal memory you actually own.**
 
-You tap once; Sutra listens to a conversation, transcribes it and separates who said what, then distills it into durable memory — a title and summary, key facts, decisions, action items with steps, and scheduled events — and links it all into a personal knowledge graph you can search and ask questions of. Everything Sutra remembers lives **encrypted on your own device**, and your **raw audio is never stored** — it's processed in the moment and discarded. And it's built for how people in India actually talk, treating **Hindi–English (Hinglish) code-switching as a first-class language**, not an afterthought.
+You tap once; Sutra listens to a conversation, transcribes it and separates who said what, then distills it into durable memory — a title and summary, key facts, decisions, action items with steps, and scheduled events — and links it all into a personal knowledge graph you can search and ask questions of. Everything Sutra remembers lives **encrypted on your own device**, and your **raw audio is never persisted by default** — it's processed in the moment and discarded. (The one exception: if you explicitly opt into on-device audio training, those samples are stored encrypted on your device and never uploaded — and that opt-in is currently disabled in the app.) And it's built for how people in India actually talk, treating **Hindi–English (Hinglish) code-switching as a first-class language**, not an afterthought.
 
 It is a **phone app today** (Android, plus a web/PWA build) — not a hardware wearable.
 
@@ -30,7 +30,7 @@ Sutra exists to give you the upside (never forget a conversation) without the tr
 
 ## Principles (the non-negotiables)
 
-1. **Raw audio is never persisted.** Audio is used in-flight only and discarded — the data model has no place to store it. This is enforced in the schema, not just a policy.
+1. **Raw audio is never persisted by default.** Audio is used in-flight only and then discarded. The single, narrow exception is if you explicitly opt into on-device audio training — and only then are samples stored, encrypted on your device and never uploaded. That opt-in is currently disabled/hidden in the app, so today nothing audio is written anywhere. We say "by default" deliberately rather than overclaiming an absolute.
 2. **Local-first & you own your data.** Derived memory is stored encrypted on your device; you can export or wipe it anytime; nothing is auto-uploaded.
 3. **Hinglish is first-class.** The whole pipeline reads mixed Hindi–English fluently, with honest choices for how it's written down.
 4. **Honesty over hype.** Answers cite their sources and say "I don't have a record" instead of inventing. The app is clear about what ships now vs. later.
@@ -71,9 +71,9 @@ The bar we're driving to right now is a **rock-solid core loop**:
 
 ## How we're different (in one line each)
 
-- **vs. cloud-first memory pendants/apps:** we never keep your audio and your memory never leaves your device.
+- **vs. cloud-first memory pendants/apps:** we don't keep your audio by default, and your memory never leaves your device.
 - **vs. English-first transcription tools:** Hinglish and code-switching are first-class, end to end.
-- **vs. "trust us" privacy claims:** the no-audio guarantee is structural, and answers are cited and honest.
+- **vs. "trust us" privacy claims:** the no-audio-by-default behavior is structural (the only way audio is ever stored is an explicit, currently-disabled on-device training opt-in), and answers are cited and honest.
 
 (For a deeper competitive picture, see the market notes in the marketing brief.)
 

@@ -22,9 +22,19 @@ export interface DetailedNotes {
 
 type Detail = NonNullable<Awaited<ReturnType<typeof repo.conversationDetail>>>;
 
-/** Transcript as "Name: text" lines, capped so a very long meeting still fits one request. */
-export function transcriptText(turns: any[], maxChars = 90000): string {
-  const lines = turns.map((t) => `${speakerName(t)}: ${String(t.text ?? "").trim()}`);
+/** "12:34" (or "1:02:03") from the meeting's start — the same clock the transcript shows. */
+export function offsetClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+export const tsMs = (ts: unknown) => { const s = String(ts ?? ""); return s ? Date.parse(s.includes("T") ? s : s.replace(" ", "T") + "Z") : NaN; };
+
+/** Transcript as "Name: text" lines ("[12:34] Name: text" given the meeting's start), capped so a very
+ *  long meeting still fits one request. */
+export function transcriptText(turns: any[], maxChars = 90000, startMs = NaN): string {
+  const at = (t: any) => { const a = tsMs(t.abs_start); return Number.isFinite(startMs) && Number.isFinite(a) ? `[${offsetClock(a - startMs)}] ` : ""; };
+  const lines = turns.map((t) => `${at(t)}${speakerName(t)}${t.is_me || t.session_speaker_label === "me" ? " (me)" : ""}: ${String(t.text ?? "").trim()}`);
   let text = lines.join("\n");
   if (text.length > maxChars) {
     // Keep the start and the end — decisions and next steps cluster at the end of meetings.
@@ -72,9 +82,23 @@ export async function askMeeting(cid: number, question: string, provider: Provid
       ].filter(Boolean).join("\n")
     : "(no notes yet)";
   const prior = history.slice(-4).map((h) => `Q: ${h.q}\nA: ${h.a}`).join("\n\n");
-  const user = `# Notes\n${notes}\n\n# Transcript\n${transcriptText(d.turns, 60000)}\n\n` +
+  // What the user added to this meeting (answers they kept, notes they wrote) is part of its record.
+  const visual = await repo.getMeetingVisual(cid).catch(() => null);
+  const images = await repo.listMeetingImages(cid).catch(() => []);
+  const startMs = tsMs(d.conversation.started_at);
+  const when = (at: number | null) => (at && Number.isFinite(startMs) ? ` (${offsetClock(at - startMs)})` : "");
+  const seen = [...images.map((i) => `[img:${i.id}]${when(i.at)} screenshot: ${i.caption ?? ""}`),
+    // A screenshot the user removed can't be opened, so its tag goes.
+    ...(visual?.facts ?? []).map((f) => f.replace(/^\[S\d+\]\s*/i, "")
+      .replace(/\[img:(\d+)\]\s*/gi, (t, id) => (images.some((i) => i.id === Number(id)) ? t : "")))];
+  const added = (await repo.meetingAdditions(cid).catch(() => []))
+    .map((a) => (a.question ? `- (${a.question}) ${a.content}` : `- ${a.content}`)).join("\n").slice(0, 12000);
+  const user = `# Notes\n${notes}\n\n` + (added ? `# Added to this meeting by the user\n${added}\n\n` : "") +
+    (seen.length ? `# On screen during the meeting (from screenshots)\n${seen.map((s) => `- ${s}`).join("\n")}\n\n` : "") + `# Transcript\n${transcriptText(d.turns, 60000, startMs)}\n\n` +
     (prior ? `# Earlier questions\n${prior}\n\n` : "") + `# Question\n${question}`;
-  const out = await provider.chat(ASK_MEETING_SCHEMA, ASK_MEETING_SYSTEM, user);
+  // A meeting in a project with linked code folders: the agent may read them too (read-only).
+  const scope = await repo.askScopeForConversation(cid).catch(() => null);
+  const out = await provider.chat(ASK_MEETING_SCHEMA, ASK_MEETING_SYSTEM, user, scope);
   return String(out?.answer ?? "").trim() || "I couldn't find that in this meeting.";
 }
 
@@ -83,7 +107,8 @@ const task = (a: { text: string; owner?: string | null; status?: string }) =>
   `- [${a.status === "done" ? "x" : " "}] ${a.owner ? `**${a.owner}:** ` : ""}${a.text}`;
 
 /** PURE: render a meeting's notes (either style) as Markdown for copy / export. */
-export function notesToMarkdown(d: Pick<Detail, "conversation" | "memory" | "actions"> & { turns?: any[] }, style: NoteStyle, detailed?: DetailedNotes | null, withTranscript = false): string {
+export function notesToMarkdown(d: Pick<Detail, "conversation" | "memory" | "actions"> & { turns?: any[] }, style: NoteStyle, detailed?: DetailedNotes | null, withTranscript = false,
+  additions: { content: string; question?: string | null }[] = []): string {
   const m: any = d.memory ?? {};
   const c: any = d.conversation ?? {};
   const title = m.title || c.title || "Meeting";
@@ -107,6 +132,44 @@ export function notesToMarkdown(d: Pick<Detail, "conversation" | "memory" | "act
     if (actions.length) out.push("## Action items", actions.map(task).join("\n"));
     if (m.open_questions?.length) out.push("## Open questions", bullet(m.open_questions));
   }
+  if (additions.length) {
+    out.push("## Added to this meeting", additions.map((a) => (a.question ? `### ${a.question}\n\n${a.content.trim()}` : a.content.trim())).join("\n\n"));
+  }
   if (withTranscript && d.turns?.length) out.push("## Transcript", d.turns.map((t) => `**${speakerName(t)}:** ${t.text}`).join("\n\n"));
   return out.join("\n\n") + "\n";
 }
+
+/** One turn of a meeting's chat: the question and the answer (or the error) are saved with the meeting,
+ *  and the last few exchanges are the context for the next question. */
+export async function chatMeeting(cid: number, question: string, provider: Provider): Promise<{ question: repo.ChatMessage; answer: repo.ChatMessage }> {
+  question = question.trim();
+  if (!question) throw new Error("Ask a question first.");
+  const earlier = await repo.listMeetingChat(cid);
+  const history: { q: string; a: string }[] = [];
+  for (let i = 0; i < earlier.length - 1; i++) {
+    const a = earlier[i], b = earlier[i + 1];
+    if (a.role === "user" && b.role === "assistant" && !b.error) history.push({ q: a.content, a: b.content });
+  }
+  const q = await repo.addMeetingChat(cid, { role: "user", content: question });
+  try {
+    const text = await askMeeting(cid, question, provider, history);
+    return { question: q, answer: await repo.addMeetingChat(cid, { role: "assistant", content: text, question }) };
+  } catch (e: any) {
+    return { question: q, answer: await repo.addMeetingChat(cid, { role: "assistant", content: String(e?.message ?? e), question, error: true }) };
+  }
+}
+
+/** Markdown → Slack's mrkdwn: headings and **bold** become *bold*, *italic* _italic_, bullets •, links <url|text>. */
+export function toSlack(md: string): string {
+  return md.split("\n").map((line) => {
+    const h = /^#{1,6}\s+(.*)$/.exec(line);
+    if (h) return `*${h[1].replace(/\*\*/g, "")}*`;
+    return line
+      .replace(/^(\s*)[-*]\s+\[[ x]\]\s+/i, "$1• ")
+      .replace(/^(\s*)[-*]\s+/, "$1• ")
+      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, "<$2|$1>")
+      .replace(/(?<![*\w])\*(?!\s)([^*\n]+?)\*(?![*\w])/g, "_$1_")
+      .replace(/\*\*([^*]+)\*\*/g, "*$1*");
+  }).join("\n");
+}
+

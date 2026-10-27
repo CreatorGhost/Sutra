@@ -38,6 +38,7 @@ const run = (cmd: string, args: string[], timeout = 2500) =>
 const MAC_BROWSERS: [string, string][] = [
   ["Google Chrome", "/Google Chrome.app/"], ["Arc", "/Arc.app/"], ["Microsoft Edge", "/Microsoft Edge.app/"],
   ["Brave Browser", "/Brave Browser.app/"], ["Chromium", "/Chromium.app/"], ["Vivaldi", "/Vivaldi.app/"], ["Safari", "/Safari.app/"],
+  ["Comet", "/Comet.app/"], ["Helium", "/Helium.app/"], ["Dia", "/Dia.app/"], ["ego lite", "/ego lite.app/"],
 ];
 /** Browsers whose Automation permission was denied — never ask again this run. */
 const deniedBrowsers = new Set<string>();

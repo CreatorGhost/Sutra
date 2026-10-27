@@ -1,17 +1,39 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Check, ChevronDown, Copy, Loader2, RotateCcw, Share, Sparkles, Tag as TagIcon, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowUp, AudioLines, Bell, CalendarPlus, Camera, Check, ChevronDown, CircleHelp, Copy, FileText, Flag, Footprints, Hash, ListChecks, Loader2, MessageSquare, RotateCcw, Share, Sparkles, Tag as TagIcon, Trash2, Users, Wand2, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { api } from "../local/sutra";
-import { NOTE_STYLES, type DetailedNotes, type NoteStyle } from "../local/notes";
+import { minutesToMarkdown } from "../local/minutes";
+import { NOTE_STYLES, toSlack, type DetailedNotes, type NoteStyle } from "../local/notes";
+import { desktop } from "../desktop/bridge";
 import { isMe, speakerName } from "../local/speakers";
 import { notifyDataChanged, useDataVersion } from "./events";
-import { duration, longDate, offsetLabel } from "./format";
+import { duration, longDate, offsetLabel, parseTs } from "./format";
 import { AppIcon, Popover, friendlyError, useAppIcon, useToast } from "./ui";
+import { MinutesNotes } from "./meeting/Minutes";
+import { ProjectChip, useProjects } from "./meeting/ProjectChip";
+import { projectColor, projectName } from "./projects/model";
+import { MeetingTile } from "./meetingTile";
+import { EnginePicker } from "./EnginePicker";
+import { Additions, ChatThread, pathOpener, useMeetingChat } from "./meeting/MeetingChat";
+import { OnScreen, RecordingBanner, ShotViewer, shotOffset, shotTime, useMeetingVisual } from "./meeting/MeetingMedia";
+import { CiteContext, type Cites } from "./Markdown";
+import type { MeetingImage } from "../local/repo";
+import "./features.css";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof api.conversation>>>;
 
+/** Notes styles: the two note styles plus formal Minutes of Meeting. */
+type ViewStyle = NoteStyle | "minutes";
+const STYLES: Record<ViewStyle, { label: string; hint: string }> = {
+  brief: { label: NOTE_STYLES.brief, hint: "Summary & actions" },
+  detailed: { label: NOTE_STYLES.detailed, hint: "Topic by topic" },
+  minutes: { label: "Minutes", hint: "Formal minutes" },
+};
 const STYLE_KEY = "sutra_note_style";
-const readStyle = (): NoteStyle => { try { return localStorage.getItem(STYLE_KEY) === "detailed" ? "detailed" : "brief"; } catch { return "brief"; } };
+const readStyle = (): ViewStyle => {
+  try { const v = localStorage.getItem(STYLE_KEY); return v === "detailed" || v === "minutes" ? v : "brief"; } catch { return "brief"; }
+};
 
 const PALETTE = ["#7aa2ff", "#f5a97f", "#8bd5ca", "#c6a0f6", "#eed49f", "#f0a6ca", "#91d7e3", "#a6da95"];
 function speakerColor(key: string): string {
@@ -27,16 +49,28 @@ export function MeetingView() {
   const version = useDataVersion();
   const [detail, setDetail] = useState<Detail | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"notes" | "transcript">("notes");
-  const [style, setStyle] = useState<NoteStyle>(readStyle);
+  const [tab, setTab] = useState<"notes" | "transcript" | "chat">("notes");
+  const [style, setStyle] = useState<ViewStyle>(readStyle);
   const [toast, showToast] = useToast();
+  // Citations: the screenshot open full size, and the transcript moment to scroll to ({ n } re-fires the same time).
+  const [shot, setShot] = useState<MeetingImage | null>(null);
+  const [focus, setFocus] = useState<{ sec: number; n: number } | null>(null);
+  const projects = useProjects(version);
+  const chat = useMeetingChat(cid);
+  const visual = useMeetingVisual(cid, version);
+  const projectId: number | null = (detail as any)?.conversation?.project_id ?? null;
+  const [folders, setFolders] = useState<string[]>([]);
+  useEffect(() => {
+    if (projectId == null) { setFolders([]); return; }
+    void api.getProject(projectId).then((p: any) => setFolders(p?.code_access === false ? [] : p?.folders ?? [])).catch(() => setFolders([]));
+  }, [projectId, version]);
 
   const load = useCallback(async () => {
     try { setDetail(await api.conversation(cid)); setError(null); }
     catch (e) { setError(friendlyError(e)); setDetail(null); }
   }, [cid]);
 
-  useEffect(() => { setDetail(undefined); setTab("notes"); }, [cid]);
+  useEffect(() => { setDetail(undefined); setTab("notes"); setShot(null); setFocus(null); }, [cid]);
   useEffect(() => { void load(); }, [load, version]);
 
   // While notes are still being written, poll quietly until they land.
@@ -47,7 +81,7 @@ export function MeetingView() {
     return () => clearInterval(t);
   }, [pending, load]);
 
-  const chooseStyle = (s: NoteStyle) => {
+  const chooseStyle = (s: ViewStyle) => {
     setStyle(s);
     try { localStorage.setItem(STYLE_KEY, s); } catch { /* ignore */ }
   };
@@ -67,16 +101,32 @@ export function MeetingView() {
 
   const c: any = detail.conversation;
   const m: any = detail.memory;
+  const questions = chat.messages.filter((x) => x.role === "user").length;
+  const openPath = pathOpener(folders, showToast);
   const title = m?.title || c.title || (pending ? "Writing notes…" : "Untitled meeting");
 
+  // Copy / export follow the chosen style; Minutes fall back to Brief notes until they exist.
+  const minutesMd = style === "minutes" ? minutesToMarkdown(title, detail.minutes as any) : "";
   const copy = async () => {
-    const md = await api.notesMarkdown(cid, style);
-    showToast((await api.copyText(md)) ? "Notes copied" : "Couldn't copy");
+    const md = minutesMd || (await api.notesMarkdown(cid, style === "minutes" ? "brief" : style));
+    showToast((await api.copyText(md)) ? (minutesMd ? "Minutes copied" : "Notes copied") : "Couldn't copy");
+  };
+  const copySlack = async () => {
+    const md = minutesMd || (await api.notesMarkdown(cid, style === "minutes" ? "brief" : style));
+    showToast((await api.copyText(toSlack(md))) ? "Copied for Slack" : "Couldn't copy");
   };
   const exportMd = async () => {
-    const md = await api.notesMarkdown(cid, style, true);
+    const md = minutesMd || (await api.notesMarkdown(cid, style === "minutes" ? "brief" : style, true));
     const safe = String(title).replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "meeting";
     await api.exportText(`${safe}.md`, md);
+  };
+  const images = visual.v?.images ?? [];
+  const startedAt: string | null = c.started_at ?? null;
+  const openTime = (sec: number) => { setShot(null); setTab("transcript"); setFocus((f) => ({ sec, n: (f?.n ?? 0) + 1 })); };
+  const cites: Cites = {
+    image: (id) => { const img = images.find((i) => i.id === id); return img ? { time: shotTime(img, startedAt), caption: img.caption } : null; },
+    openImage: (id) => setShot(images.find((i) => i.id === id) ?? null),
+    openTime,
   };
   const remove = async () => {
     if (!window.confirm(`Delete “${title}”? This removes its notes and transcript.`)) return;
@@ -89,38 +139,74 @@ export function MeetingView() {
     <>
       <div className="pane-top drag">
         <button className="icon-btn ghost sm back-btn" onClick={() => nav("/")} aria-label="Back"><ArrowLeft size={18} /></button>
+        <span className="crumb">{projects.find((p) => p.id === c.project_id)?.name || "Meetings"}<span className="faint"> / </span><span className="crumb-cur">{title}</span></span>
         <div className="spacer" />
+        <div className="top-actions">
+          <button className="icon-btn ghost sm" onClick={() => void copy()} aria-label="Copy notes" title="Copy notes"><Copy size={15} /></button>
+          <button className="icon-btn ghost sm" onClick={() => void copySlack()} aria-label="Copy for Slack" title="Copy for Slack"><Hash size={15} /></button>
+          <button className="icon-btn ghost sm" onClick={() => void exportMd()} aria-label="Export" title="Export as Markdown"><Share size={15} /></button>
+          <button className="icon-btn ghost sm danger" onClick={() => void remove()} aria-label="Delete meeting" title="Delete"><Trash2 size={15} /></button>
+        </div>
       </div>
       <div className="scroll">
         <article className="doc">
-          <EditableTitle key={cid} value={title} disabled={!m} onSave={async (t) => { await api.setTitle(cid, t); notifyDataChanged(); }} />
+          <div className="m-hero">
+            <MeetingTile size="lg" writing={pending} m={{ id: cid, title: m?.title ?? c.title, summary: m?.summary, subtitle: m?.subtitle, tags: c.tags, status: c.status }}
+              projectColor={c.project_id != null ? projectColor(projects.find((p) => p.id === c.project_id)) : null} />
+            <div className="grow">
+              <div className="m-when">
+                {[longDate(c.started_at ?? c.created_at), duration(c.started_at, c.ended_at)].filter(Boolean).join(" · ")}
+                {c.source_app && <> · <SourceApp name={c.source_app} /></>}
+                {c.is_meeting && <span title="Sutra detected a meeting"> · <Users size={12} style={{ verticalAlign: -1 }} /> Meeting</span>}
+              </div>
+              <EditableTitle key={cid} value={title} disabled={!m} onSave={async (t) => { await api.setTitle(cid, t); notifyDataChanged(); }} />
+            </div>
+          </div>
           {(m?.subtitle || m?.summary) && <p className="m-sub">{m.subtitle || firstSentence(m.summary)}</p>}
 
           <div className="meta">
-            <StylePicker style={style} onChange={chooseStyle} />
+            <ProjectChip cid={cid} conversation={c} projects={projects} onError={showToast} />
             <TagEditor cid={cid} tags={c.tags ?? []} />
-            <span className="faint when">
-              {[longDate(c.started_at ?? c.created_at), duration(c.started_at, c.ended_at)].filter(Boolean).join(" · ")}
-              {c.source_app && <> · <SourceApp name={c.source_app} /></>}
-            </span>
           </div>
 
-          <div className="seg" role="tablist">
-            <button role="tab" aria-selected={tab === "notes"} onClick={() => setTab("notes")}>Notes</button>
-            <button role="tab" aria-selected={tab === "transcript"} onClick={() => setTab("transcript")}>Transcript</button>
+          {!pending && <RecordingBanner cid={cid} v={visual.v} startedAt={c.started_at ?? null} onChanged={() => { void visual.reload(); void load(); }} toast={showToast} />}
+
+          <div className="tabs-row">
+            <div className="seg" role="tablist">
+              <button role="tab" aria-selected={tab === "notes"} onClick={() => setTab("notes")}><FileText size={15} /> Notes</button>
+              <button role="tab" aria-selected={tab === "transcript"} onClick={() => setTab("transcript")}><AudioLines size={15} /> Transcript</button>
+              <button role="tab" aria-selected={tab === "chat"} onClick={() => setTab("chat")}>
+                <MessageSquare size={15} /> Chat{questions > 0 && <span className="seg-count">{questions}</span>}
+              </button>
+            </div>
+            {tab === "notes" && <StylePicker style={style} onChange={chooseStyle} />}
           </div>
 
-          {tab === "notes" ? (
-            pending ? <Writing />
-              : c.status === "failed" && !m ? <Failed cid={cid} onDone={load} />
-              : style === "detailed" ? <DetailedNotesView cid={cid} actions={detail.actions as any[]} />
-              : <BriefNotes memory={m} actions={detail.actions as any[]} />
+          <CiteContext.Provider value={cites}>
+          {tab === "chat" ? (
+            <ChatThread chat={chat} onPath={openPath} toast={showToast} />
+          ) : tab === "notes" ? (
+            <>
+              {pending ? <Writing />
+                : c.status === "failed" && !m ? <Failed cid={cid} onDone={load} />
+                : style === "minutes" ? <MinutesNotes cid={cid} minutes={detail.minutes as any} meetingTitle={title} isMeeting={!!c.is_meeting} toast={showToast} />
+                : style === "detailed" ? <DetailedNotesView cid={cid} actions={detail.actions as any[]} />
+                : <BriefNotes memory={m} actions={detail.actions as any[]} />}
+              {!pending && <SendToApps actions={detail.actions as any[]} events={(detail as any).events ?? []} toast={showToast} />}
+              {!pending && <OnScreen cid={cid} images={images} startedAt={startedAt} onChanged={() => void visual.reload()} onOpen={setShot} />}
+              {!pending && <Additions chat={chat} onPath={openPath} onOpenChat={() => setTab("chat")} />}
+            </>
           ) : (
-            <Transcript turns={detail.turns as any[]} startedAt={c.started_at} cid={cid} />
+            <>
+              <TranscriptTools cid={cid} conversation={c} glossaryFrom={projects.find((p) => p.id === c.project_id && p.context_enabled !== false && p.terms?.length)} toast={showToast} />
+              <Transcript turns={detail.turns as any[]} startedAt={c.started_at} cid={cid} images={images} focus={focus} onShot={setShot} />
+            </>
           )}
+          </CiteContext.Provider>
         </article>
       </div>
-      <AskBar cid={cid} onCopy={copy} onExport={exportMd} onDelete={remove} />
+      <AskBar cid={cid} busy={!!chat.pending} onAsk={(question) => { setTab("chat"); void chat.ask(question); }} />
+      {shot && <ShotViewer cid={cid} img={shot} startedAt={startedAt} onClose={() => setShot(null)} onTranscript={openTime} />}
       {toast}
     </>
   );
@@ -177,21 +263,21 @@ function EditableTitle({ value, onSave, disabled }: { value: string; onSave: (v:
   );
 }
 
-function StylePicker({ style, onChange }: { style: NoteStyle; onChange: (s: NoteStyle) => void }) {
+function StylePicker({ style, onChange }: { style: ViewStyle; onChange: (s: ViewStyle) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
       <span className="k">Style</span>
       <Popover open={open} onOpenChange={setOpen} trigger={
         <button className="chip-btn" onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open}>
-          {NOTE_STYLES[style]} <ChevronDown size={14} />
+          {STYLES[style].label} <ChevronDown size={14} />
         </button>
       }>
-        {(Object.keys(NOTE_STYLES) as NoteStyle[]).map((s) => (
+        {(Object.keys(STYLES) as ViewStyle[]).map((s) => (
           <button key={s} role="menuitemradio" aria-checked={s === style} onClick={() => { onChange(s); setOpen(false); }}>
             <span style={{ width: 16 }}>{s === style ? <Check size={14} /> : null}</span>
-            {NOTE_STYLES[s]}
-            <span className="hint">{s === "brief" ? "Summary & actions" : "Topic by topic"}</span>
+            {STYLES[s].label}
+            <span className="hint">{STYLES[s].hint}</span>
           </button>
         ))}
       </Popover>
@@ -251,16 +337,46 @@ function Failed({ cid, onDone }: { cid: number; onDone: () => void }) {
     <div className="notice err">
       <div className="grow">
         <div style={{ fontWeight: 600 }}>Couldn't write notes for this meeting</div>
-        <div className="muted">{err ?? "The transcript is safe. Try again when you're online."}</div>
+        <div className="muted">{err ?? "The transcript is safe. Check your AI engine in Settings → Intelligence, then retry."}</div>
       </div>
       <button className="btn" onClick={retry} disabled={busy}>{busy ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />} Retry</button>
     </div>
   );
 }
 
-function Bullets({ items, empty }: { items: string[]; empty?: string }) {
-  if (!items?.length) return empty ? <ul className="bullets"><li className="none">{empty}</li></ul> : null;
+// The model sometimes writes "none" as an item; that's an empty list.
+const realItems = (xs?: string[]) => (xs ?? []).filter((x) => !/^\s*(none|n\/a|nil|-+)\.?\s*$/i.test(String(x)));
+
+function Bullets({ items: raw, empty }: { items: string[]; empty?: string }) {
+  const items = realItems(raw);
+  if (!items.length) return empty ? <ul className="bullets"><li className="none">{empty}</li></ul> : null;
   return <ul className="bullets">{items.map((x, i) => <li key={i}>{x}</li>)}</ul>;
+}
+
+/** Open action items → Reminders, dated events → Calendar (desktop on macOS). */
+function SendToApps({ actions, events, toast }: { actions: any[]; events: any[]; toast: (m: string) => void }) {
+  const [busy, setBusy] = useState<null | "reminders" | "calendar">(null);
+  const apple = desktop?.platform === "darwin" ? desktop.apple : undefined;
+  const open = actions.filter((a) => a.status !== "done");
+  const dated = events.filter((e) => e.start_ts);
+  if (!apple || (!open.length && !dated.length)) return null;
+  const send = async (kind: "reminders" | "calendar") => {
+    setBusy(kind);
+    try {
+      const items = kind === "reminders"
+        ? open.map((a) => ({ title: a.text, notes: a.owner ? `Owner: ${a.owner}` : "", at: a.due ?? null }))
+        : dated.map((e) => ({ title: e.title, notes: e.when_text ?? "", at: e.start_ts }));
+      const n = await apple.add(kind, items);
+      toast(kind === "reminders" ? `Added ${n} to Reminders` : `Added ${n} to Calendar`);
+    } catch (e) { toast(friendlyError(e)); }
+    finally { setBusy(null); }
+  };
+  return (
+    <div className="send-apps">
+      {open.length > 0 && <button className="btn sm" disabled={!!busy} onClick={() => void send("reminders")}>{busy === "reminders" ? <Loader2 size={13} className="spin" /> : <Bell size={13} />} Add {open.length} to Reminders</button>}
+      {dated.length > 0 && <button className="btn sm" disabled={!!busy} onClick={() => void send("calendar")}>{busy === "calendar" ? <Loader2 size={13} className="spin" /> : <CalendarPlus size={13} />} Add {dated.length} to Calendar</button>}
+    </div>
+  );
 }
 
 function ActionList({ actions }: { actions: { id?: number; text: string; owner?: string | null; status?: string }[] }) {
@@ -272,8 +388,9 @@ function ActionList({ actions }: { actions: { id?: number; text: string; owner?:
     setLocal((xs) => xs.map((x) => (x.id === a.id ? { ...x, status } : x)));
     await api.updateAction(a.id, status);
   };
+  const left = local.filter((a) => a.status !== "done").length;
   return (
-    <div>
+    <div className="todos" aria-label={`${left} of ${local.length} open`}>
       {local.map((a, i) => (
         <div key={a.id ?? i} className={`todo${a.status === "done" ? " done" : ""}`}>
           <button className={`check${a.status === "done" ? " on" : ""}`} onClick={() => void toggle(a)} disabled={a.id == null}
@@ -287,14 +404,24 @@ function ActionList({ actions }: { actions: { id?: number; text: string; owner?:
   );
 }
 
+/** A section heading with its small accent icon tile. */
+function H({ icon: Icon, children, aside }: { icon?: LucideIcon; children: ReactNode; aside?: ReactNode }) {
+  return <h2>{Icon && <span className="sec-ic"><Icon size={15} /></span>}{children}{aside}</h2>;
+}
+
+function Progress({ actions }: { actions: { status?: string }[] }) {
+  const done = actions.filter((a) => a.status === "done").length;
+  return <span className="sec-progress">{done}/{actions.length} done</span>;
+}
+
 function BriefNotes({ memory, actions }: { memory: any; actions: any[] }) {
   if (!memory) return null;
   return (
     <>
-      <section className="sec"><h2>Summary</h2><p>{memory.summary}</p></section>
-      <section className="sec"><h2>Decisions</h2><Bullets items={memory.decisions} empty="none" /></section>
-      {actions.length > 0 && <section className="sec"><h2>Action items</h2><ActionList actions={actions} /></section>}
-      {memory.open_questions?.length > 0 && <section className="sec"><h2>Open questions</h2><Bullets items={memory.open_questions} /></section>}
+      <section className="sec lead-card"><h2>Summary</h2><p>{memory.summary}</p></section>
+      {realItems(memory.decisions).length > 0 && <section className="sec"><H icon={Flag}>Decisions</H><Bullets items={memory.decisions} /></section>}
+      {actions.length > 0 && <section className="sec"><H icon={ListChecks} aside={<Progress actions={actions} />}>Action items</H><ActionList actions={actions} /></section>}
+      {realItems(memory.open_questions).length > 0 && <section className="sec"><H icon={CircleHelp}>Open questions</H><Bullets items={memory.open_questions} /></section>}
     </>
   );
 }
@@ -329,19 +456,109 @@ function DetailedNotesView({ cid, actions }: { cid: number; actions: any[] }) {
   }
   return (
     <>
-      {notes.overview && <section className="sec"><h2>Overview</h2><p>{notes.overview}</p></section>}
+      {notes.overview && <section className="sec lead-card"><h2>Overview</h2><p>{notes.overview}</p></section>}
       {notes.topics.map((t, i) => <section key={i} className="sec"><h2>{t.heading}</h2><Bullets items={t.points} /></section>)}
-      <section className="sec"><h2>Decisions</h2><Bullets items={notes.decisions} empty="none" /></section>
-      {actions.length > 0 && <section className="sec"><h2>Action items</h2><ActionList actions={actions} /></section>}
-      {notes.open_questions.length > 0 && <section className="sec"><h2>Open questions</h2><Bullets items={notes.open_questions} /></section>}
-      {notes.next_steps.length > 0 && <section className="sec"><h2>Next steps</h2><Bullets items={notes.next_steps} /></section>}
+      <section className="sec"><H icon={Flag}>Decisions</H><Bullets items={notes.decisions} empty="none" /></section>
+      {actions.length > 0 && <section className="sec"><H icon={ListChecks} aside={<Progress actions={actions} />}>Action items</H><ActionList actions={actions} /></section>}
+      {notes.open_questions.length > 0 && <section className="sec"><H icon={CircleHelp}>Open questions</H><Bullets items={notes.open_questions} /></section>}
+      {notes.next_steps.length > 0 && <section className="sec"><H icon={Footprints}>Next steps</H><Bullets items={notes.next_steps} /></section>}
       <button className="btn" onClick={() => void run(true)} disabled={busy}>{busy ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />} Regenerate</button>
     </>
   );
 }
 
-function Transcript({ turns, startedAt, cid }: { turns: any[]; startedAt?: string | null; cid: number }) {
+/** Raw / Cleaned switch and "Clean up transcript". Cleaning keeps the raw text, uses the project's
+ *  glossary (refinement service) and rebuilds the notes, so the whole view refreshes afterwards. */
+/** Clean-ups in flight, by meeting: they outlive the tab (switching to Notes and back still shows
+ *  "Cleaning…", and a second click joins the running one instead of starting another). */
+const cleaning = new Map<number, Promise<{ ok: boolean; reason?: string }>>();
+
+function TranscriptTools({ cid, conversation: c, glossaryFrom, toast }: { cid: number; conversation: any; glossaryFrom?: any; toast: (m: string) => void }) {
+  const [busy, setBusy] = useState<null | "clean" | "raw" | "cleaned">(cleaning.has(cid) ? "clean" : null);
+  const [err, setErr] = useState<string | null>(null);
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    const running = cleaning.get(cid);
+    if (running) { setBusy("clean"); void running.finally(() => { if (live.current) setBusy(null); }); }
+    return () => { live.current = false; };
+  }, [cid]);
+  const clean = async () => {
+    setBusy("clean"); setErr(null);
+    let run = cleaning.get(cid);
+    if (!run) {
+      run = api.cleanConversation(cid).then((r) => { if (r.ok) { toast("Transcript cleaned · notes updated"); notifyDataChanged(); } return r; })
+        .finally(() => cleaning.delete(cid));
+      cleaning.set(cid, run);
+    }
+    try {
+      const r = await run;
+      if (!r.ok && live.current) setErr(r.reason === "cloud-only" ? "Clean-up needs an AI engine — connect one in Settings → Intelligence."
+        : r.reason === "empty" ? "There's no transcript to clean yet." : "Couldn't clean the transcript — try again.");
+    } catch (e) { if (live.current) setErr(friendlyError(e)); }
+    finally { if (live.current) setBusy(null); }
+  };
+  // Switching re-derives the notes from the chosen text; the flag flips first, so a failed refresh
+  // (offline) still shows the text the user picked.
+  const show = async (cleaned: boolean) => {
+    if (cleaned === !!c.refined) return;
+    setBusy(cleaned ? "cleaned" : "raw"); setErr(null);
+    try { await api.setConversationRefined(cid, cleaned); }
+    catch { toast("Switched — notes will refresh once your AI engine is available"); }
+    finally { setBusy(null); notifyDataChanged(); }
+  };
+  return (
+    <>
+      <div className="tx-tools">
+        {c.hasClean && (
+          <span className="mini-seg" role="group" aria-label="Transcript text">
+            <button aria-pressed={!c.refined} onClick={() => void show(false)} disabled={!!busy}>{busy === "raw" ? <Loader2 size={12} className="spin" /> : null} Raw</button>
+            <button aria-pressed={!!c.refined} onClick={() => void show(true)} disabled={!!busy}>{busy === "cleaned" ? <Loader2 size={12} className="spin" /> : null} Cleaned</button>
+          </span>
+        )}
+        <button className="btn" onClick={() => void clean()} disabled={!!busy}>
+          {busy === "clean" ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />}
+          {busy === "clean" ? "Cleaning…" : c.hasClean ? "Clean again" : "Clean up transcript"}
+        </button>
+        <span className="faint grow">
+          {busy === "clean" ? "Fixing mishearings and filler, then rewriting the notes — this can take a minute."
+            : glossaryFrom ? `Uses the ${projectName(glossaryFrom)} glossary.` : c.hasClean ? "" : "Fixes mishearings and filler. The original is kept."}
+        </span>
+      </div>
+      {err && <div className="notice err"><div className="grow">{err}</div></div>}
+    </>
+  );
+}
+
+function Transcript({ turns, startedAt, cid, images, focus, onShot }: {
+  turns: any[]; startedAt?: string | null; cid: number; images: MeetingImage[]; focus: { sec: number; n: number } | null; onShot: (img: MeetingImage) => void;
+}) {
   const [renamed, setRenamed] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const t0 = parseTs(startedAt)?.getTime() ?? NaN;
+  const offsets = turns.map((t) => { const a = parseTs(t.abs_start)?.getTime(); return a != null && Number.isFinite(t0) ? Math.max(0, a - t0) : null; });
+  // The turn a time falls in: the last one starting at or before it; one second of slack for rounding
+  // only when none does (a time just before the first turn).
+  const turnAt = (ms: number) => {
+    let hit = -1, near = -1;
+    offsets.forEach((o, i) => { if (o != null && o <= ms) hit = i; else if (o != null && near < 0 && o <= ms + 1000) near = i; });
+    return hit >= 0 ? hit : near;
+  };
+  const shotsByTurn = new Map<number, MeetingImage[]>();
+  for (const img of images) {
+    const o = shotOffset(img, startedAt ?? null);
+    const i = o == null ? -1 : Math.max(0, turnAt(o));
+    if (o != null && turns.length) shotsByTurn.set(i, [...(shotsByTurn.get(i) ?? []), img]);
+  }
+  useEffect(() => {
+    if (!focus) return;
+    // A cited time is whole seconds (the transcript the AI read is): the first turn in that second, else the one running then.
+    const inSecond = offsets.findIndex((o) => o != null && Math.floor(o / 1000) === focus.sec);
+    const el = ref.current?.querySelector<HTMLElement>(`[data-turn="${inSecond >= 0 ? inSecond : Math.max(0, turnAt(focus.sec * 1000))}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.classList.remove("turn-hit"); void el.offsetWidth; el.classList.add("turn-hit");
+  }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!turns.length) return <p className="muted">No transcript for this meeting.</p>;
   return (
     <>
@@ -351,12 +568,17 @@ function Transcript({ turns, startedAt, cid }: { turns: any[]; startedAt?: strin
           <RefreshNotes cid={cid} onDone={() => setRenamed(false)} />
         </div>
       )}
-      <div className="transcript">
-        {turns.map((t) => (
-          <div key={t.id}>
+      <div className="transcript" ref={ref}>
+        {turns.map((t, i) => (
+          <div key={t.id} data-turn={i}>
             <div className="turn-head">
               <SpeakerButton turn={t} onRenamed={() => setRenamed(true)} />
               <span className="turn-time">{offsetLabel(startedAt, t.abs_start)}</span>
+              {(shotsByTurn.get(i) ?? []).map((img) => (
+                <button key={img.id} type="button" className="cite" onClick={() => onShot(img)} title={`Screenshot${img.caption ? `: ${img.caption}` : ""}`}>
+                  <Camera size={11} />{shotTime(img, startedAt ?? null)}
+                </button>
+              ))}
             </div>
             <div className="turn-text">{t.text}</div>
           </div>
@@ -405,49 +627,22 @@ function SpeakerButton({ turn, onRenamed }: { turn: any; onRenamed: () => void }
   );
 }
 
-function AskBar({ cid, onCopy, onExport, onDelete }: { cid: number; onCopy: () => void; onExport: () => void; onDelete: () => void }) {
+/** The bar at the bottom: ask about this meeting (answers go to the Chat tab). */
+function AskBar({ cid, busy, onAsk }: { cid: number; busy: boolean; onAsk: (q: string) => void }) {
   const [q, setQ] = useState("");
-  const [qa, setQa] = useState<{ q: string; a: string | null }[]>([]);
-  const endRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => { setQa([]); setQ(""); }, [cid]);
-  useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [qa]);
-
-  const ask = async () => {
-    const question = q.trim();
-    if (!question) return;
-    setQ("");
-    const history = qa.filter((x) => x.a).map((x) => ({ q: x.q, a: x.a! }));
-    setQa((xs) => [...xs, { q: question, a: null }]);
-    let a: string;
-    try { a = await api.askMeeting(cid, question, history); } catch (e) { a = friendlyError(e); }
-    setQa((xs) => xs.map((x, i) => (i === xs.length - 1 && x.q === question && x.a === null ? { ...x, a } : x)));
-  };
+  useEffect(() => { setQ(""); }, [cid]);
+  const ask = () => { const question = q.trim(); if (!question || busy) return; setQ(""); onAsk(question); };
 
   return (
     <>
-      {qa.length > 0 && (
-        <div className="answers" role="log" aria-live="polite">
-          <div className="answers-head"><span>About this meeting</span><button className="icon-btn ghost sm" onClick={() => setQa([])} aria-label="Close answers"><X size={14} /></button></div>
-          {qa.map((x, i) => (
-            <div key={i} className="qa">
-              <div className="q">{x.q}</div>
-              <div className="a">{x.a ?? <span className="muted"><Loader2 size={13} className="spin" /> Thinking…</span>}</div>
-            </div>
-          ))}
-          <div ref={endRef} />
-        </div>
-      )}
       <div className="pane-fade" />
       <div className="askbar">
-        <form className="ask-input" onSubmit={(e) => { e.preventDefault(); void ask(); }}>
-          <Sparkles size={17} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask about this meeting…" aria-label="Ask about this meeting" />
+        <form className="ask-input" onSubmit={(e) => { e.preventDefault(); ask(); }}>
+          {busy ? <Loader2 size={17} className="spin" /> : <Sparkles size={17} />}
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={busy ? "Thinking…" : "Ask about this meeting…"} aria-label="Ask about this meeting" />
+          <EnginePicker />
+          <button className="ask-send" aria-label="Ask" disabled={!q.trim() || busy}><ArrowUp size={16} strokeWidth={2.4} /></button>
         </form>
-        <div className="ask-actions">
-          <button className="icon-btn" onClick={onCopy} aria-label="Copy notes" title="Copy notes"><Copy size={17} /></button>
-          <button className="icon-btn" onClick={onExport} aria-label="Export" title="Export as Markdown"><Share size={17} /></button>
-          <button className="icon-btn danger" onClick={onDelete} aria-label="Delete meeting" title="Delete"><Trash2 size={17} /></button>
-        </div>
       </div>
     </>
   );

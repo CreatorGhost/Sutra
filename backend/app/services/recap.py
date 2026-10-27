@@ -66,7 +66,7 @@ async def build_rollup(day: dt.date) -> dict:
     await pool.execute(
         """INSERT INTO daily_rollups(day, summary, highlights, open_actions)
            VALUES($1,$2,$3,$4)
-           ON CONFLICT (day) DO UPDATE SET summary=EXCLUDED.summary,
+           ON CONFLICT (user_id, day) DO UPDATE SET summary=EXCLUDED.summary,
                highlights=EXCLUDED.highlights, open_actions=EXCLUDED.open_actions""",
         day, summary, highlights, open_actions,
     )

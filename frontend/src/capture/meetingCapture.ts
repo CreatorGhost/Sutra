@@ -11,10 +11,11 @@
 //
 // AUDIO NEVER PERSISTED: PCM becomes a WAV Blob only for the in-flight api.ingestWindow() call.
 
+import { MeetingMedia, type MediaSink } from "./meetingMedia";
 import type { CaptureProvider, CaptureWindow, CaptureStartOptions } from "./CaptureProvider";
 import type { AudioOutputKind } from "./stereoCore";
 import { windowToWavBlob } from "./wav";
-import { MIN_VOICED_SECONDS, STT_SAMPLE_RATE, deinterleave, downsample, voicedSeconds } from "./channels";
+import { MIN_VOICED_SECONDS, STT_SAMPLE_RATE, deinterleave, downsample, gateEcho, voicedSeconds } from "./channels";
 import type { IngestChannelOpts } from "../local/ingest";
 
 /** The slice of `api` this controller needs — injected so tests can mock it without the DB. */
@@ -29,7 +30,7 @@ export interface MeetingApi {
     channelOpts?: boolean | IngestChannelOpts,
   ): Promise<{ turns?: any[] } | undefined>;
   closeSession(sid: number): Promise<unknown>;
-  processSession(sid: number): Promise<any>;
+  processSession(sid: number, projectId?: number | null): Promise<any>;
 }
 
 /** Reactive surface the controller reports through. */
@@ -47,6 +48,9 @@ export interface MeetingCallbacks {
   onLevel?: (me: number, them: number) => void;
   /** The session finished processing (result of api.processSession, plus the session id). */
   onProcessed?: (result: any, sessionId: number) => void | Promise<void>;
+  /** Asked once capture has stopped, before the notes are written: the project this meeting is for
+   *  (null = none, undefined = let Sutra decide). */
+  chooseProject?: () => Promise<number | null | undefined>;
 }
 
 export type MeetingPhase = "idle" | "capturing" | "processing" | "ended";
@@ -55,6 +59,8 @@ export type ChannelMode = "split" | "stereo";
 export interface MeetingControllerOptions extends MeetingCallbacks {
   provider: CaptureProvider;
   api: MeetingApi;
+  /** Desktop, "Take screenshots during meetings": where screenshots + audio go until confirmed. */
+  media?: MediaSink | null;
   /** Selected mic deviceId (undefined → system default). */
   micDeviceId?: string;
   /** Output kind (headphones/speakers) → echo policy. */
@@ -68,6 +74,8 @@ export interface MeetingControllerOptions extends MeetingCallbacks {
 /** The re-share prompt message for the missed "share audio" checkbox (re-exported for the UI/tests). */
 export { NO_AUDIO_TRACK_MESSAGE } from "./stereoCore";
 export const STREAM_ENDED_MESSAGE = "Capture stream ended.";
+/** Call-audio level that counts as someone talking, and the pause before it that makes it a new turn. */
+const VOICE_LEVEL = 0.015, VOICE_GAP_MS = 1500; // raw RMS, like channels.voicedSeconds's 0.012
 
 /**
  * Drives one meeting-capture lifecycle. Construct, call start(); each completed CaptureWindow is
@@ -88,6 +96,7 @@ export class MeetingController {
   private stopping = false;
   /** Wall-clock start of the capture and the running audio offset, so each window's turns get the
    *  real time they were SPOKEN (not the time the window finished). */
+  private media: MeetingMedia | null = null;
   private startedAt = 0;
   private offsetMs = 0;
 
@@ -113,12 +122,21 @@ export class MeetingController {
       const s = await this.api.createSession(this.provider.kind, "meeting", this.opts.sourceApp ?? null);
       this.sid = s.id;
       this.startedAt = Date.now();
+      const sink = this.opts.media;
       const startOpts: CaptureStartOptions = {
         micDeviceId: this.opts.micDeviceId,
         output: this.opts.output,
         onWindow: (w) => this.handleWindow(w),
         onError: (err) => this.handleCaptureError(err),
-        onLevel: this.cb.onLevel,
+        onLevel: (me: number, them: number) => { this.cb.onLevel?.(me, them); this.watchVoice(them); },
+        ...(sink ? {
+          keepVideo: true,
+          onStreams: (mic: MediaStream, sys: MediaStream, video: MediaStreamTrack | null) => {
+            if (this.sid == null) return;
+            this.media = new MeetingMedia(this.sid, sink, (m) => this.cb.onError?.(m));
+            void this.media.start(video, [mic, sys]);
+          },
+        } : {}),
       };
       await this.provider.start(startOpts);
       if (this.sid == null) return; // a synchronous onError during start already unwound us
@@ -144,8 +162,10 @@ export class MeetingController {
       this.send(windowToWavBlob(w.pcm, w.sampleRate, w.channels), w.index, `window-${w.index}.wav`, windowStartMs, true);
       return;
     }
+    const call = deinterleave(w.pcm, 1);
     for (const channel of [0, 1] as const) {
-      const mono = deinterleave(w.pcm, channel);
+      // Your mic: minus the call it heard through the speakers (see gateEcho).
+      const mono = channel === 0 ? gateEcho(deinterleave(w.pcm, 0), call, w.sampleRate) : call;
       if (voicedSeconds(mono, w.sampleRate) < MIN_VOICED_SECONDS) continue; // silence on this side
       const pcm16k = downsample(mono, w.sampleRate, STT_SAMPLE_RATE);
       const name = `window-${w.index}-${channel === 0 ? "me" : "them"}.wav`;
@@ -185,6 +205,22 @@ export class MeetingController {
     }
   }
 
+  /** The call's audio coming back after a pause = someone (else) started talking: a screenshot then
+   *  catches the call app highlighting who. Levels arrive ~10×/s. */
+  private quietSince = 0;
+  private watchVoice(them: number): void {
+    const now = Date.now();
+    if (them < VOICE_LEVEL) { if (!this.quietSince) this.quietSince = now; return; }
+    if (this.quietSince && now - this.quietSince >= VOICE_GAP_MS) this.media?.voiceStarted();
+    this.quietSince = 0;
+  }
+
+  /** Screenshots from another screen (a fresh screen track); ignored when screenshots are off. */
+  async useScreen(track: MediaStreamTrack): Promise<void> {
+    if (this.media) await this.media.useScreen(track);
+    else track.stop();
+  }
+
   /** User stop: stop the provider, drain all in-flight uploads, close + process, return to idle. */
   async stop(): Promise<void> {
     await this.finishSession("idle");
@@ -195,8 +231,11 @@ export class MeetingController {
     if (this.stopping) return;
     this.stopping = true;
     this.capturing = false;
+    // Ask right away, while the last audio is still being transcribed (that can take a minute).
+    const project = this.sid != null ? this.cb.chooseProject?.().catch(() => undefined) : undefined;
     try {
       await this.provider.stop(); // flushes the tail window through handleWindow
+      await this.media?.stop();   // every screenshot + audio chunk saved before the notes pass reads them
     } catch {
       /* ignore — still drain + process below */
     }
@@ -210,7 +249,8 @@ export class MeetingController {
     try {
       await Promise.allSettled(this.uploads);
       await this.api.closeSession(sid);
-      const r: any = await this.api.processSession(sid);
+      const projectId = await project;
+      const r: any = await (projectId === undefined ? this.api.processSession(sid) : this.api.processSession(sid, projectId));
       if (r?.failed > 0) {
         this.cb.onError?.(`Processed with issues — ${r.failed} part(s) failed${r.lastError ? ": " + r.lastError : ""}.`);
       }
@@ -220,6 +260,7 @@ export class MeetingController {
     } finally {
       this.uploads = [];
       this.sid = null;
+      this.media = null;
       this.cb.onPhase?.(finalPhase);
       this.stopping = false;
     }
@@ -229,6 +270,7 @@ export class MeetingController {
   private async discardSession(): Promise<void> {
     const sid = this.sid;
     this.sid = null;
+    if (this.media) { await this.media.stop().catch(() => {}); this.media = null; }
     if (sid != null) {
       try {
         await this.api.closeSession(sid);
@@ -243,6 +285,7 @@ export class MeetingController {
   teardown(): void {
     if (this.stopping) return;
     void this.provider.stop().catch(() => {});
+    void this.media?.stop().catch(() => {});
     this.capturing = false;
   }
 

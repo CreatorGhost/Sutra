@@ -68,7 +68,19 @@ async def chat(message: str, history: list[dict] | None = None) -> dict:
     hist = "\n".join(f"{h.get('role')}: {h.get('content')}" for h in (history or [])[-6:])
     prefix = f"Conversation so far:\n{hist}\n\n" if hist else ""
     user = f"{prefix}Context:\n{context}\n\nUser question: {message}"
-    data = await provider.extract(_ANSWER_SCHEMA, SYSTEM, user)
+    try:
+        data = await provider.extract(_ANSWER_SCHEMA, SYSTEM, user)
+    except Exception as e:
+        log.warning("chat answer generation failed, degrading gracefully: %s", e)
+        return {
+            "answer": "I couldn't generate an answer right now.",
+            "supported": False,
+            "citations": [],
+            "retrieved": [
+                {"conversation_id": m["conversation_id"], "title": m["title"], "score": m["score"]}
+                for m in memories
+            ],
+        }
 
     cited = set(data.get("citation_conversation_ids", []) or [])
     citations = [

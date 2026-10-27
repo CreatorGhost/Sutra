@@ -2,13 +2,16 @@ import type { Provider } from "./provider";
 import { CloudProvider } from "./cloudProvider";
 import { OnDeviceProvider } from "./ondeviceProvider";
 import { AgentProvider } from "./agentProvider";
-import { ComposedProvider, LocalWhisperProvider } from "./localSttProvider";
+import { ComposedProvider, LocalSpeechProvider } from "./localSttProvider";
+import { PairedMacProvider } from "./pairedMacProvider";
+import { macConnection } from "../pairing/connection";
+import { pairedAiChoice, pairingActive } from "../pairing/model";
 import { desktop } from "../desktop/bridge";
-import { DEFAULT_WHISPER_MODEL } from "../shared/localModels";
-import { safeModel, type AgentId } from "../shared/agentProtocol";
+import { DEFAULT_SPEECH_MODEL } from "../shared/speechModels";
+import { AGENT_IDS, isAgentId, safeModel, type AgentId } from "../shared/agentProtocol";
 
-const PROXY_BASE =
-  (import.meta as any).env?.VITE_PROXY_URL || "http://localhost:8787";
+export const PROXY_BASE =
+  import.meta.env.VITE_PROXY_URL || "http://localhost:8787";
 
 export type Mode = "hybrid" | "ondevice";
 
@@ -21,14 +24,16 @@ export const MODE_COPY: Record<Mode, { label: string; audio: string }> = {
 export type Lang = "english" | "hinglish" | "devanagari" | "verbatim";
 
 /** Transcription language modes — user picks one in onboarding (switchable in Settings).
- *  `prompt` primes transcription; `translate` runs a second English-translation pass. */
+ *  `prompt` primes transcription; `translate: true` triggers a real second pass that runs the
+ *  transcript through Provider.translate (text→English) before it's stored. */
 export const LANGS: Record<Lang, { label: string; desc: string; example: string; prompt: string; translate: boolean }> = {
   english: {
     label: "English",
     desc: "Everything in clean English — Hindi is auto-translated for you.",
     example: "“chalo kal kaam karte hain” → “let's work tomorrow”",
-    // English mode is the ONLY mode that translates. (Previously this prompt only romanized, so the
-    // translate flag did nothing — fixed so the choice is honest.)
+    // English mode is the ONLY mode that translates. The prompt biases the ASR toward English, but the
+    // actual guarantee comes from the translate flag: ingest runs the transcript through
+    // Provider.translate (text→English), so Hindi can no longer leak through — the choice is honest.
     prompt: "This is a Hindi-English (Hinglish) conversation. Output EVERYTHING in clear, natural English — translate any Hindi/Hinglish speech to English (e.g. 'chalo kal kaam karte hain' -> 'let's work tomorrow'). Keep proper nouns and names as spoken; do NOT output Devanagari or romanized Hindi.",
     translate: true,
   },
@@ -66,34 +71,55 @@ export function getProvider(mode: Mode = "hybrid"): Provider {
 }
 
 /** Where each job runs, from Settings:
- *    stt_engine: "cloud" (Sutra service) | "local" (whisper.cpp on this computer, desktop only)
- *    ai_engine:  "cloud" | "claude" | "codex" | "cursor" (local agent CLIs, desktop only)
- *  Outside the desktop app both fall back to the cloud. */
+ *    stt: always "local" in the desktop app (on-device transcription + speaker separation; the old
+ *         stt_engine setting is ignored there), "cloud" everywhere else
+ *    ai_engine:  one of the agent CLIs (claude, codex, cursor, gemini, grok, droid, commandcode);
+ *                ai_model_<id> picks its model.
+ *  On desktop ALL AI (notes, minutes, clean-up, translation, Q&A, Ask Sutra) runs through the user's own
+ *  agent CLI — never the Sutra cloud. No explicit choice ("auto") = the first installed, signed-in engine.
+ *  Outside the desktop app (web/Android) there are no agent CLIs, so both fall back to the cloud —
+ *  unless the phone is paired with a Mac, which then does both (resolveProvider → macProvider). */
 export type SttEngine = "cloud" | "local";
-export type AiEngine = "cloud" | AgentId;
+export type AiEngine = "cloud" | "auto" | AgentId;
 
 export function engineChoice(s: Record<string, unknown>): { stt: SttEngine; ai: AiEngine; sttModel: string; aiModel: string | null } {
-  const stt: SttEngine = desktop && s["stt_engine"] === "local" ? "local" : "cloud";
-  const aiRaw = String(s["ai_engine"] ?? "cloud");
-  const ai: AiEngine = desktop && (aiRaw === "claude" || aiRaw === "codex" || aiRaw === "cursor") ? aiRaw : "cloud";
+  const stt: SttEngine = desktop ? "local" : "cloud";
+  const aiRaw = s["ai_engine"];
+  const ai: AiEngine = !desktop ? "cloud" : isAgentId(aiRaw) ? aiRaw : "auto";
   return {
     stt, ai,
-    sttModel: String(s["stt_model"] || DEFAULT_WHISPER_MODEL),
-    aiModel: ai === "cloud" ? null : safeModel(s[`ai_model_${ai}`]),
+    sttModel: String(s["stt_model"] || DEFAULT_SPEECH_MODEL),
+    aiModel: ai === "cloud" || ai === "auto" ? null : safeModel(s[`ai_model_${ai}`]),
   };
 }
 
+/** Engines that write full notes (the cloud, or an agent CLI) — unlike the on-device stub. Gates the
+ *  extra passes (auto minutes, transcript clean-up, Your Context) that used to be cloud-only. */
+export const isFullTextEngine = (p: Pick<Provider, "id">) => p.id === "cloud" || p.id === "mac" || p.id.startsWith("agent:");
+
 const composed = new Map<string, Provider>();
 
+/** A phone paired with a Mac: transcription and every AI job run there (see pairing/). */
+export function macProvider(s: Record<string, unknown>): Provider {
+  const choice = pairedAiChoice(s);
+  const key = `mac|${choice.engine}|${choice.model}`;
+  let p = composed.get(key);
+  if (!p) { p = new PairedMacProvider(macConnection, choice); composed.set(key, p); }
+  return p;
+}
+
 export function resolveProvider(s: Record<string, unknown>): Provider {
-  if (s["mode"] === "ondevice") return getProvider("ondevice");
+  if (!desktop && pairingActive(s)) return macProvider(s);
+  if (!desktop && s["mode"] === "ondevice") return getProvider("ondevice");
   const c = engineChoice(s);
   if (c.stt === "cloud" && c.ai === "cloud") return getProvider("hybrid");
-  const key = `${c.stt}:${c.sttModel}|${c.ai}:${c.aiModel ?? ""}`;
+  // Every engine's chosen model, so "auto" uses the right one for whichever engine it lands on.
+  const models = Object.fromEntries(AGENT_IDS.map((id) => [id, safeModel(s[`ai_model_${id}`])])) as Record<AgentId, string | null>;
+  const key = `${c.stt}:${c.sttModel}|${c.ai}|${JSON.stringify(models)}`;
   let p = composed.get(key);
   if (!p) {
-    const text = c.ai === "cloud" ? getProvider("hybrid") : new AgentProvider(c.ai, c.aiModel);
-    const stt = c.stt === "local" ? new LocalWhisperProvider(c.sttModel) : getProvider("hybrid");
+    const text = c.ai === "cloud" ? getProvider("hybrid") : new AgentProvider(c.ai === "auto" ? null : c.ai, (id) => models[id] ?? null);
+    const stt = c.stt === "local" ? new LocalSpeechProvider(c.sttModel) : getProvider("hybrid");
     p = new ComposedProvider(stt, text);
     composed.set(key, p);
   }

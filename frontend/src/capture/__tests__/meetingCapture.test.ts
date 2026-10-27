@@ -180,6 +180,32 @@ describe("MeetingController — stop mirrors Capture.tsx", () => {
     expect(close).toBeLessThan(proc);
   });
 
+  it("asks which project before writing the notes, and passes the answer on", async () => {
+    const p = makeProvider();
+    const api = makeApi();
+    const ctrl = new MeetingController({ provider: p.provider, api, chooseProject: async () => 7 });
+    await ctrl.start();
+    await ctrl.stop();
+    expect(api.processSession).toHaveBeenCalledWith(42, 7);
+  });
+
+  it("asks before the last audio has finished transcribing", async () => {
+    const p = makeProvider();
+    const api = makeApi();
+    let release!: () => void;
+    (api.ingestWindow as any).mockImplementation(() => new Promise((r) => { release = () => r({ turns: [] }); }));
+    const asked = vi.fn(async () => null);
+    const ctrl = new MeetingController({ provider: p.provider, api, chooseProject: asked });
+    await ctrl.start();
+    p.emitWindow(voicedWindow(0, [0]));
+    const stopping = ctrl.stop();
+    await vi.waitFor(() => expect(asked).toHaveBeenCalled());
+    expect(api.processSession).not.toHaveBeenCalled();
+    release();
+    await stopping;
+    expect(api.processSession).toHaveBeenCalledWith(42, null);
+  });
+
   it("teardown() on unmount tears down a live capture without processing", async () => {
     const p = makeProvider();
     const api = makeApi();

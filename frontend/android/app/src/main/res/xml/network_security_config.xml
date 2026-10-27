@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A phone paired with a Mac reaches it over ws:// on the local network (192.168.x.x, 10.x.x.x, …).
+     domain-config can't express private IP ranges, so cleartext is permitted app-wide. This is
+     acceptable ONLY because every frame on that link is end-to-end encrypted (AES-GCM session keys
+     derived from the pairing; see src/shared/pairing/crypto.ts) — the transport carries nothing
+     readable. All other traffic (the Sutra service, the user's relay) is https/wss. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

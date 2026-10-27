@@ -43,6 +43,10 @@ export interface CaptureStartOptions {
   output?: AudioOutputKind;
   /** Optional input levels in [0,1] for the mic and the system channel, emitted ~10×/s. */
   onLevel?: (me: number, them: number) => void;
+  /** Desktop: keep the display stream's video track (for screenshots) instead of dropping it. */
+  keepVideo?: boolean;
+  /** Desktop: the live streams once capture starts — the screen track only when `keepVideo`. */
+  onStreams?: (mic: MediaStream, system: MediaStream, video: MediaStreamTrack | null) => void;
 }
 
 /** The single capture contract. Both ElectronCapture and BrowserCapture implement it. */
@@ -217,6 +221,7 @@ function micConstraints(options?: CaptureStartOptions): MediaStreamConstraints {
 export class ElectronCapture implements CaptureProvider {
   readonly kind = "electron" as const;
   private core: StereoCaptureCore | null = null;
+  private video: MediaStreamTrack[] = [];
 
   async start(options?: CaptureStartOptions): Promise<void> {
     const acquired: MediaStreamTrack[] = [];
@@ -243,13 +248,17 @@ export class ElectronCapture implements CaptureProvider {
         if (options?.onError) return void options.onError(err);
         throw err;
       }
-      for (const v of sysStream.getVideoTracks()) v.stop(); // audio only
+      // The video track is dropped (audio only) unless screenshots are on.
+      if (options?.keepVideo) this.video = sysStream.getVideoTracks();
+      else for (const v of sysStream.getVideoTracks()) v.stop();
+      options?.onStreams?.(micStream, sysStream, this.video[0] ?? null);
 
       this.core = new StereoCaptureCore();
       await this.core.run(micStream, sysStream, options?.onWindow, (err) => options?.onError?.(err), options?.onLevel);
     } catch (err) {
       stopAll(acquired);
       this.core = null;
+      this.video = [];
       const e = err instanceof Error ? err : new Error(String(err));
       if (options?.onError && e.message !== NO_AUDIO_TRACK_MESSAGE) {
         return void options.onError(e);
@@ -261,6 +270,8 @@ export class ElectronCapture implements CaptureProvider {
   async stop(): Promise<void> {
     const core = this.core;
     this.core = null;
+    for (const v of this.video) v.stop();
+    this.video = [];
     await core?.stop();
   }
 }

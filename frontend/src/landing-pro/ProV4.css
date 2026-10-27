@@ -1,0 +1,152 @@
+/* ProV4 "Liquid" — warm, airy, editorial light variant. Scoped under .pv4.
+   Bespoke IA: hero · scenario essay · pull-quote rows · warm privacy · close.
+   Voice is serif, human, generous. No icon cards, no mono/HUD, no 3-step trio. */
+
+/* serif display for warmth — pg-hero-title & pg-h2 already use var(--pg-display) */
+.pv4 {
+  --pg-display: "Fraunces", Georgia, serif;
+}
+
+/* relax serif headings: softer tracking + optical sizing */
+.pv4 .pg-hero-title,
+.pv4 .pg-h2 {
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  font-optical-sizing: auto;
+}
+.pv4 .pg-hero-title { line-height: 1.02; }
+.pv4 .pv4-em { font-style: italic; }
+
+/* deepen the eyebrow so it reads on cream; soften to lowercase-ish warmth */
+.pv4 .pg-eyebrow { color: var(--pg-accent); letter-spacing: 0.16em; }
+
+/* ---- hero ---------------------------------------------------------------- */
+.pv4 .pv4-hero { padding-top: 9vh; min-height: 108vh; }
+.pv4 .pv4-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--pg-accent); box-shadow: 0 0 12px var(--pg-glow); display: inline-block;
+}
+.pv4 .pv4-title { margin-top: 24px; max-width: 14ch; }
+.pv4 .pv4-lead { margin-top: 28px; max-width: 46ch; }
+.pv4 .pv4-hero .pg-cta-row { margin-top: 38px; }
+
+/* ---- generous, airy sections --------------------------------------------- */
+.pv4 .pg-section { padding-block: clamp(120px, 22vh, 280px); }
+
+/* ============================================================================
+   SCENARIO — a flowing editorial essay. Big serif prose, NOT cards.
+   Tall section so the 3D blob has room to split & scatter behind it.
+   ============================================================================ */
+.pv4 .pv4-scene { min-height: 118vh; display: flex; align-items: center; }
+.pv4 .pv4-scene-lead {
+  font-family: var(--pg-mono);
+  font-size: 0.82rem; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--pg-ink-3); margin: 0 0 30px;
+}
+.pv4 .pv4-prose {
+  font-family: var(--pg-display);
+  font-weight: 400;
+  font-size: clamp(1.9rem, 4.2vw, 3.3rem);
+  line-height: 1.32;
+  letter-spacing: -0.012em;
+  color: var(--pg-ink);
+  max-width: 22ch;
+}
+/* each remembered moment fades up just behind the one before — a soft cascade */
+.pv4 .pv4-moment {
+  color: var(--pg-ink);
+}
+.pv4 .pv4-moment:last-child {
+  font-style: italic;
+  color: var(--pg-ink-2);
+}
+.pv4 .pv4-scene-turn {
+  margin: clamp(48px, 8vh, 96px) 0 0;
+  font-family: var(--pg-display);
+  font-weight: 500;
+  font-size: clamp(1.7rem, 3.4vw, 2.7rem);
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  color: var(--pg-ink);
+  max-width: 18ch;
+}
+
+/* ============================================================================
+   WHAT STAYS WITH YOU — features as warm pull-quote sentences, soft dividers.
+   One per row. NO icons, NO grid, NO cards.
+   ============================================================================ */
+.pv4 .pv4-stays { min-height: 130vh; }
+.pv4 .pv4-stays-head { margin-top: 16px; max-width: 16ch; }
+.pv4 .pv4-rows { margin-top: clamp(40px, 7vh, 80px); }
+.pv4 .pv4-row {
+  padding-block: clamp(30px, 5vh, 54px);
+  border-top: 1px solid var(--pg-line);
+}
+.pv4 .pv4-row:last-child { border-bottom: 1px solid var(--pg-line); }
+.pv4 .pv4-row-line {
+  margin: 0;
+  font-family: var(--pg-display);
+  font-weight: 500;
+  font-size: clamp(1.5rem, 3vw, 2.4rem);
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  color: var(--pg-ink);
+  max-width: 22ch;
+  transition: color 0.4s ease;
+}
+.pv4 .pv4-row-note {
+  margin: 14px 0 0;
+  font-size: clamp(1rem, 1.5vw, 1.12rem);
+  line-height: 1.6;
+  color: var(--pg-ink-2);
+  max-width: 56ch;
+}
+/* hover gives each row a quiet warm lift, like turning a page */
+.pv4 .pv4-row:hover .pv4-row-line {
+  color: var(--pg-accent);
+}
+
+/* ============================================================================
+   PRIVACY — two warm human sentences (NOT a spec block).
+   ============================================================================ */
+.pv4 .pv4-privacy { padding-block: clamp(150px, 26vh, 320px); }
+.pv4 .pv4-privacy-line {
+  margin: 0;
+  font-family: var(--pg-display);
+  font-weight: 400;
+  font-size: clamp(1.7rem, 3.6vw, 2.9rem);
+  line-height: 1.28;
+  letter-spacing: -0.015em;
+  color: var(--pg-ink);
+  max-width: 20ch;
+}
+.pv4 .pv4-privacy-line em { font-style: italic; color: var(--pg-accent); }
+.pv4 .pv4-privacy-sub {
+  margin: 28px 0 0;
+  font-size: clamp(1.02rem, 1.6vw, 1.2rem);
+  line-height: 1.62;
+  color: var(--pg-ink-2);
+  max-width: 52ch;
+}
+
+/* ============================================================================
+   CLOSE — warm invitation; the orbs reunite into one calm blob behind it.
+   ============================================================================ */
+.pv4 .pv4-cta { padding-bottom: clamp(150px, 26vh, 320px); }
+.pv4 .pv4-cta-head { max-width: 18ch; margin: 0 auto 26px; line-height: 1.1; }
+.pv4 .pv4-cta-foot {
+  margin: 28px auto 0;
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 0.95rem; color: var(--pg-ink-3);
+  font-style: italic; font-family: var(--pg-display);
+}
+
+/* ---- mobile: keep prose readable + sections from over-stretching --------- */
+@media (max-width: 640px) {
+  .pv4 .pv4-prose { max-width: none; }
+  .pv4 .pv4-scene-turn,
+  .pv4 .pv4-privacy-line,
+  .pv4 .pv4-row-line { max-width: none; }
+  .pv4 .pv4-scene { min-height: 110vh; }
+  .pv4 .pv4-stays { min-height: auto; }
+}

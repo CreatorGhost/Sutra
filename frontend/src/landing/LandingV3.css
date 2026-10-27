@@ -1,0 +1,562 @@
+/* ============================================================================
+   Sutra — Landing V3 · "Field Notes"
+   A warm, light, editorial journal spread. Cream paper, ink, amber.
+   Fraunces for the set headlines; Inter for body; JetBrains Mono for marginalia.
+   Every rule scoped under .lv3. The root carries .landing-root.lv3 to override
+   the shared dark surface with two-class specificity.
+   ============================================================================ */
+
+/* ---- palette + type tokens (local, owned) ---- */
+.lv3 {
+  --paper: #f5efe2;
+  --paper-deep: #efe7d6;
+  --paper-edge: #e7ddc8;
+  --ink: #211d17;
+  --ink-soft: #4a4339;
+  --ink-faint: #635a4c;          /* 5.9:1 on paper — comfortable AA for small mono */
+  --amber: #c87f1e;              /* display / decorative only (large text ≥3:1) */
+  --amber-deep: #a8650f;         /* large display accent — dropcap, em, headings */
+  --amber-ink: #8c540c;          /* 5.4:1 on paper — AA-safe amber for SMALL text */
+  --amber-wash: #ead7b6;
+  --indigo: #6f5cf0;
+  --rule: #d8cdb6;
+  --rule-soft: #e3dac6;
+
+  --serif: "Fraunces", Georgia, "Times New Roman", serif;
+  --sans: "Inter", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* ---- root: break the dark theme completely ---- */
+.landing-root.lv3 {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  background-image:
+    radial-gradient(120% 90% at 78% -8%, rgba(200, 127, 30, 0.10), transparent 55%),
+    radial-gradient(130% 100% at 8% 108%, rgba(111, 92, 240, 0.05), transparent 60%);
+}
+
+/* very subtle paper grain + warm vignette, sits above the bg, below content */
+.lv3 .grain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+}
+.lv3 .vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 120% at 50% 38%, transparent 58%, rgba(33, 29, 23, 0.07) 100%);
+}
+
+.lv3 ::selection { background: var(--amber-wash); color: var(--ink); }
+
+.lv3 .wrap {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 1180px;
+  margin-inline: auto;
+  padding-inline: clamp(22px, 6vw, 76px);
+}
+
+/* ============================ MASTHEAD ============================ */
+.lv3 .masthead {
+  position: relative;
+  z-index: 5;
+  border-bottom: 1px solid var(--rule);
+}
+.lv3 .masthead-inner {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  padding-block: 20px 16px;
+}
+.lv3 .mast-left { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.lv3 .wordmark {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(1.5rem, 2.1vw, 1.95rem);
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  line-height: 1;
+  text-decoration: none;
+}
+.lv3 .wordmark .devnag {
+  font-weight: 500;
+  color: var(--amber-deep);
+  margin-left: 0.42em;
+  font-size: 0.84em;
+}
+.lv3 .mast-meaning {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.lv3 .mast-nav { display: flex; align-items: baseline; gap: 26px; }
+.lv3 .mast-nav a {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  text-decoration: none;
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.lv3 .mast-nav a:hover { color: var(--ink); border-color: var(--amber); }
+.lv3 .mast-issue { color: var(--ink-faint) !important; border: none !important; }
+@media (max-width: 720px) { .lv3 .mast-issue { display: none; } }
+
+/* ============================== HERO ============================== */
+.lv3 .hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.32fr 0.92fr;
+  gap: clamp(28px, 5vw, 72px);
+  align-items: center;
+  padding-block: clamp(54px, 9vh, 116px) clamp(40px, 7vh, 88px);
+  /* NEUTRALIZE the GLOBAL app `.hero` (index.css) this class name collides with — it would
+     otherwise paint a dark indigo gradient + accent border + glow over the cream page. */
+  background: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+  padding-inline: 0;
+}
+.lv3 .hero::before { content: none; }
+.lv3 .hero-foliop {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--amber-ink);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 26px;
+}
+.lv3 .hero-foliop::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+  max-width: 220px;
+}
+
+.lv3 h1.headline {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(2.7rem, 6.1vw, 5rem);
+  line-height: 1.02;
+  letter-spacing: -0.012em;
+  margin: 0;
+  color: var(--ink);
+  font-optical-sizing: auto;
+  max-width: 14ch;
+}
+.lv3 h1.headline em {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--amber-deep);
+}
+
+/* drop cap on the lead paragraph */
+.lv3 .hero-lead {
+  font-size: clamp(1.06rem, 1.55vw, 1.28rem);
+  line-height: 1.62;
+  color: var(--ink-soft);
+  max-width: 46ch;
+  margin: 30px 0 0;
+}
+.lv3 .hero-lead .dropcap {
+  float: left;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 3.55em;
+  line-height: 0.72;
+  padding: 0.06em 0.12em 0 0;
+  margin-right: 0.02em;
+  color: var(--amber-deep);
+  font-style: italic;
+}
+
+.lv3 .hero-langs {
+  margin: 22px 0 0;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+.lv3 .hero-langs b { color: var(--ink-soft); font-weight: 500; }
+
+/* gutter marginalia — a glossed definition, set like a hand note in the margin */
+.lv3 .hero-margin-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.96rem;
+  line-height: 1.4;
+  color: var(--ink-faint);
+}
+.lv3 .hero-margin-note em { color: var(--amber-ink); font-style: italic; }
+.lv3 .hmn-rule { width: 26px; height: 1px; background: var(--rule); flex: none; }
+
+.lv3 .hero-cta {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+  margin-top: 38px;
+}
+
+/* CTA buttons — set, letterpressed, not glassy pills */
+.lv3 .btn-ink {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 0.98rem;
+  letter-spacing: 0.01em;
+  color: var(--paper);
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  padding: 14px 26px;
+  border-radius: 2px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  box-shadow: 0 1px 0 rgba(33, 29, 23, 0.18);
+}
+.lv3 .btn-ink:hover { background: var(--amber-ink); border-color: var(--amber-ink); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(140, 84, 12, 0.28); }
+.lv3 .btn-ink svg { transition: transform 0.2s ease; }
+.lv3 .btn-ink:hover svg { transform: translateX(3px); }
+
+.lv3 .btn-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 6px 0;
+  border-bottom: 1.5px solid var(--amber);
+  border-radius: 0;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.lv3 .btn-text:hover { color: var(--amber-ink); border-color: var(--amber-ink); }
+
+/* ---- hero 3D margin column ---- */
+.lv3 .hero-art {
+  position: relative;
+  align-self: stretch;
+  min-height: 360px;
+}
+.lv3 .canvas-frame {
+  position: absolute;
+  inset: -6% -2% -6% -2%;
+  z-index: 0;
+}
+.lv3 .canvas-frame canvas { display: block; }
+.lv3 .art-caption {
+  position: absolute;
+  right: 4px;
+  bottom: -6px;
+  z-index: 2;
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  max-width: 18ch;
+  text-align: right;
+  line-height: 1.5;
+}
+.lv3 .art-caption b { color: var(--ink-soft); font-weight: 500; }
+
+/* hairline that closes the hero spread */
+.lv3 .hero-rule {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 0;
+}
+
+/* ============================ PILLARS (numbered list, hairline rules) ===== */
+.lv3 .ledger { padding-block: clamp(56px, 9vh, 116px); }
+.lv3 .section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: clamp(28px, 4vh, 54px);
+}
+.lv3 .section-kicker {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--amber-ink);
+  margin: 0 0 12px;
+}
+.lv3 h2.section-title {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(1.85rem, 3.4vw, 2.95rem);
+  line-height: 1.06;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--ink);
+  max-width: 18ch;
+}
+.lv3 .section-aside {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  max-width: 24ch;
+  line-height: 1.6;
+  text-align: right;
+}
+@media (max-width: 760px) { .lv3 .section-aside { display: none; } }
+
+.lv3 .pillar {
+  display: grid;
+  grid-template-columns: 4.2rem 1fr auto;
+  align-items: baseline;
+  gap: clamp(16px, 3vw, 44px);
+  padding: clamp(22px, 3.4vh, 34px) 0;
+  border-top: 1px solid var(--rule);
+}
+.lv3 .pillar:last-child { border-bottom: 1px solid var(--rule); }
+.lv3 .pillar-no {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(1.5rem, 2.6vw, 2.2rem);
+  color: var(--amber-deep);
+  line-height: 1;
+}
+.lv3 .pillar-body { max-width: 60ch; }
+.lv3 .pillar-title {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(1.3rem, 2.1vw, 1.72rem);
+  line-height: 1.12;
+  color: var(--ink);
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.lv3 .pillar-title svg { color: var(--amber-ink); flex: none; }
+.lv3 .pillar-desc {
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  margin: 0;
+}
+.lv3 .pillar-tag {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  padding-top: 4px;
+}
+@media (max-width: 720px) {
+  .lv3 .pillar { grid-template-columns: 2.4rem 1fr; }
+  .lv3 .pillar-tag { display: none; }
+}
+
+/* ============================ PULL-QUOTE ============================ */
+.lv3 .pullquote {
+  padding-block: clamp(48px, 8vh, 104px);
+  position: relative;
+}
+.lv3 .pullquote-grid {
+  display: grid;
+  grid-template-columns: 1fr 2.3fr;
+  gap: clamp(20px, 4vw, 56px);
+  align-items: start;
+}
+.lv3 .pullquote-margin {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--amber-ink);
+  line-height: 1.7;
+  padding-top: 0.7em;
+  border-top: 2px solid var(--ink);
+  align-self: start;
+}
+.lv3 blockquote.pull {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-style: italic;
+  font-size: clamp(1.6rem, 3.6vw, 2.9rem);
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.lv3 blockquote.pull span { color: var(--amber-deep); }
+.lv3 .pull-attr {
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-top: 22px;
+  display: block;
+}
+@media (max-width: 760px) {
+  .lv3 .pullquote-grid { grid-template-columns: 1fr; gap: 18px; }
+  .lv3 .pullquote-margin { display: inline-block; }
+}
+
+/* ============================ HOW IT WORKS ============================ */
+.lv3 .method { padding-block: clamp(48px, 8vh, 104px); border-top: 1px solid var(--rule); }
+.lv3 .method-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(22px, 4vw, 56px);
+  margin-top: clamp(28px, 4vh, 52px);
+}
+.lv3 .step { position: relative; }
+.lv3 .step-mark {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--amber-ink);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+.lv3 .step-mark::before {
+  content: "";
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 4px var(--amber-wash);
+}
+.lv3 .step-name {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(1.4rem, 2.3vw, 1.9rem);
+  color: var(--ink);
+  margin: 0 0 10px;
+  line-height: 1.1;
+}
+.lv3 .step-desc { font-size: 0.98rem; line-height: 1.6; color: var(--ink-soft); margin: 0; max-width: 34ch; }
+@media (max-width: 760px) { .lv3 .method-steps { grid-template-columns: 1fr; gap: 30px; } }
+
+/* ============================ CLOSING CTA ============================ */
+.lv3 .closing {
+  padding-block: clamp(64px, 11vh, 138px);
+  text-align: center;
+  border-top: 1px solid var(--rule);
+}
+.lv3 .closing-mark {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 2.2rem;
+  color: var(--amber-deep);
+  line-height: 1;
+  margin: 0 0 22px;
+}
+.lv3 .closing h2 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(2rem, 5vw, 3.8rem);
+  line-height: 1.06;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  margin: 0 auto;
+  max-width: 16ch;
+}
+.lv3 .closing h2 em { font-style: italic; font-weight: 400; color: var(--amber-deep); }
+.lv3 .closing-sub {
+  font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+  line-height: 1.6;
+  color: var(--ink-soft);
+  max-width: 42ch;
+  margin: 22px auto 0;
+}
+.lv3 .closing .hero-cta { justify-content: center; margin-top: 34px; }
+
+/* ============================ FOOTER ============================ */
+.lv3 .colophon {
+  border-top: 2px solid var(--ink);
+  padding-block: clamp(36px, 6vh, 64px) 40px;
+}
+.lv3 .colophon-inner {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+.lv3 .colophon-mark { display: flex; flex-direction: column; gap: 8px; }
+.lv3 .colophon-word {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.6rem;
+  color: var(--ink);
+  line-height: 1;
+}
+.lv3 .colophon-tag { font-size: 0.92rem; color: var(--ink-soft); max-width: 40ch; line-height: 1.55; margin: 0; }
+.lv3 .colophon-privacy {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--amber-ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: right;
+}
+.lv3 .colophon-privacy svg { flex: none; }
+
+/* ============================ RESPONSIVE ============================ */
+@media (max-width: 900px) {
+  .lv3 .hero { grid-template-columns: 1fr; }
+  .lv3 .hero-art { min-height: 300px; order: -1; }
+  .lv3 .canvas-frame { inset: 0; }
+  .lv3 .art-caption { position: static; text-align: left; margin-top: 8px; max-width: none; }
+}
+@media (max-width: 720px) {
+  .lv3 .masthead-inner { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .lv3 .mast-nav { gap: 18px; }
+  .lv3 .pullquote-grid { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lv3 .btn-ink, .lv3 .btn-ink:hover { transform: none; }
+}

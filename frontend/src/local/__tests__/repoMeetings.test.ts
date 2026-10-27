@@ -71,7 +71,7 @@ describe("repo — meetings", () => {
 describe("schema self-heal", () => {
   it("adds missing columns/tables even when user_version is AHEAD of SCHEMA_VERSION", () => {
     const db = new Database(":memory:");
-    db.exec("CREATE TABLE conversations(id INTEGER PRIMARY KEY, title TEXT); CREATE TABLE memories(id INTEGER PRIMARY KEY); CREATE TABLE sessions(id INTEGER PRIMARY KEY); CREATE TABLE turns(id INTEGER PRIMARY KEY); PRAGMA user_version=9;");
+    db.exec("CREATE TABLE conversations(id INTEGER PRIMARY KEY, title TEXT); CREATE TABLE memories(id INTEGER PRIMARY KEY); CREATE TABLE sessions(id INTEGER PRIMARY KEY); CREATE TABLE turns(id INTEGER PRIMARY KEY); PRAGMA user_version=12;");
     runMigrations({
       exec: (sql) => db.exec(sql),
       getUserVersion: () => Number(db.pragma("user_version", { simple: true })),
@@ -82,6 +82,6 @@ describe("schema self-heal", () => {
     expect(cols("conversations")).toEqual(expect.arrayContaining(["tags", "source_app", "is_meeting", "project_id", "status"]));
     expect(cols("memories")).toEqual(expect.arrayContaining(["subtitle", "open_questions"]));
     expect(cols("notes")).toEqual(expect.arrayContaining(["conversation_id", "style", "data"]));
-    expect(Number(db.pragma("user_version", { simple: true }))).toBe(9); // never rolled back
+    expect(Number(db.pragma("user_version", { simple: true }))).toBe(12); // never rolled back
   });
 });

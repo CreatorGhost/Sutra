@@ -27,9 +27,3 @@ def cosine(a, b) -> float:
     if na == 0 or nb == 0:
         return 0.0
     return float(a @ b / (na * nb))
-
-
-def to_pgvector(vec) -> str:
-    """asyncpg+pgvector accepts python lists once register_vector ran; but for explicit casts
-    we sometimes pass a literal string."""
-    return "[" + ",".join(f"{float(x):.6f}" for x in vec) + "]"

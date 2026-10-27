@@ -10,14 +10,17 @@ export async function buildRollup(day: string, provider: Provider) {
   const actions = (await q(
     `SELECT ai.text, ai.owner, ai.due FROM action_items ai JOIN conversations c ON c.id=ai.source_conversation
      WHERE ai.status='open' AND substr(c.started_at,1,10)=?`, [day])) as any[];
-  const highlights = mems.slice(0, 5).map((m) => `${m.title}: ${m.summary}`);
+  const highlights = mems.slice(0, 5).map((m) => m.title ? `${m.title}: ${m.summary}` : m.summary);
   const openActions = actions.map((a) => ({ text: a.text, owner: a.owner, due: a.due }));
 
   let summary: string;
   if (mems.length) {
-    const joined = mems.map((m) => `- ${m.title}: ${m.summary}`).join("\n");
+    const joined = mems.map((m) => m.title ? `- ${m.title}: ${m.summary}` : `- ${m.summary}`).join("\n");
     const schema = { name: "day_summary", strict: true, schema: { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false } };
-    try { summary = (await provider.chat(schema, "Summarize the day's conversations in 3-4 sentences for a personal recap.", joined)).summary; }
+    try {
+      const r = await provider.chat(schema, "Summarize the day's conversations in 3-4 sentences for a personal recap.", joined);
+      summary = (typeof r?.summary === "string" && r.summary.trim()) ? r.summary : `${mems.length} conversation(s) today.`;
+    }
     catch { summary = `${mems.length} conversation(s) today.`; }
   } else summary = "No conversations recorded today.";
 

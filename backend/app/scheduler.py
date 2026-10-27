@@ -20,7 +20,9 @@ def start_scheduler() -> None:
         log.info("recap disabled; scheduler not started")
         return
     try:
-        tz = ZoneInfo(settings.recap_timezone)
+        # Use app_timezone (the tz build_rollup/run_daily_recap filter the day
+        # window on) so the schedule fires at the right day boundary.
+        tz = ZoneInfo(settings.app_timezone)
     except Exception:
         tz = ZoneInfo("UTC")
     try:

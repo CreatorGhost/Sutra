@@ -5,7 +5,16 @@ import { q, run, persist } from "./db";
 import { getSettings, putSettings } from "./repo";
 
 export const CONSENT_VERSION = "dpdp-v1";
-const b64 = (u8: Uint8Array) => btoa(String.fromCharCode(...u8));
+// Chunked base64 encode — mirrors util.ts vecToBlob's per-byte String.fromCharCode loop, but
+// batches in 8KB slices so multi-MB audio buffers don't blow the call stack (spreading a huge
+// Uint8Array into btoa(String.fromCharCode(...u8)) overflows on large inputs).
+const b64 = (u8: Uint8Array) => {
+  let bin = "";
+  for (let i = 0; i < u8.length; i += 0x8000) {
+    bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000) as unknown as number[]);
+  }
+  return btoa(bin);
+};
 
 export async function isTextOptIn() { return !!(await getSettings())["training_optin"]; }
 export async function isAudioOptIn() { return !!(await getSettings())["training_audio_optin"]; }
@@ -56,10 +65,17 @@ export async function exportJSONL(kind: "extraction" | "asr"): Promise<string> {
     ] })).join("\n");
   }
   const rows = (await q(`SELECT s.lang, a.asr_raw, a.asr_corrected, au.mime, au.audio FROM training_samples s JOIN training_asr a ON a.sample_id=s.id JOIN training_audio au ON au.sample_id=s.id`)) as any[];
-  return rows.map((r) => JSON.stringify({
-    audio_base64: b64(r.audio instanceof Uint8Array ? r.audio : new Uint8Array(r.audio)),
-    mime: r.mime, text: r.asr_corrected ?? r.asr_raw, lang: r.lang,
-  })).join("\n");
+  return rows.map((r) => {
+    // Native @capacitor-community/sqlite returns BLOB columns as base64 strings, not Uint8Array;
+    // new Uint8Array("...") would silently produce a zero-length array (empty/corrupt audio).
+    const u8 = r.audio instanceof Uint8Array
+      ? r.audio
+      : (typeof r.audio === "string" ? Uint8Array.from(atob(r.audio), (c) => c.charCodeAt(0)) : (r.audio ? new Uint8Array(r.audio) : new Uint8Array(0)));
+    return JSON.stringify({
+      audio_base64: b64(u8),
+      mime: r.mime, text: r.asr_corrected ?? r.asr_raw, lang: r.lang,
+    });
+  }).join("\n");
 }
 
 export async function wipe() {

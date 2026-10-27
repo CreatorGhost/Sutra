@@ -56,3 +56,33 @@ export function voicedSeconds(mono: Int16Array, sampleRate: number, threshold = 
 
 /** Minimum voiced speech (seconds) before a channel is worth a transcription call. */
 export const MIN_VOICED_SECONDS = 0.6;
+
+/** The call heard by your mic (speakers, or loud headphones): silence the mic wherever it's no louder
+ *  than that echo would be, so only your own voice gets transcribed — even while you're muted in the
+ *  call (Sutra records the Mac's mic, not the call's). Per 50 ms frame: where the call is playing, the
+ *  echo's level is the call's level × the room's coupling, measured as a low percentile of mic/call
+ *  over the window (most of the time the call talks, you don't). A frame is kept only when the mic is
+ *  clearly louder than that (`margin`) — you talking, or over someone. Where the call is quiet the mic
+ *  is untouched. ponytail: level gating, not real echo cancellation (which would need an adaptive
+ *  filter like WebRTC AEC3 using the call channel as reference) — misses quiet double-talk. */
+export function gateEcho(mic: Int16Array, call: Int16Array, sampleRate: number, margin = 2): Int16Array {
+  const frame = Math.max(1, Math.round(sampleRate * 0.05));
+  const n = Math.floor(Math.min(mic.length, call.length) / frame);
+  const m: number[] = [], c: number[] = [];
+  for (let i = 0; i < n; i++) { m.push(rms(mic, i * frame, (i + 1) * frame)); c.push(rms(call, i * frame, (i + 1) * frame)); }
+  // The call's level per frame allowing for the speaker→mic delay: the loudest of the frame and its neighbours.
+  const callAt = (i: number) => Math.max(c[i], c[i - 1] ?? 0, c[i + 1] ?? 0);
+  const CALL_ON = 0.01;
+  const ratios: number[] = [];
+  for (let i = 0; i < n; i++) if (callAt(i) >= CALL_ON) ratios.push(m[i] / callAt(i));
+  if (ratios.length < 100) return mic; // under ~5 s of call audio: too little to tell echo from you
+  ratios.sort((a, b) => a - b);
+  const coupling = ratios[Math.floor(ratios.length * 0.3)];
+  if (coupling < 0.05) return mic; // headphones: the call barely reaches the mic
+  const out = mic.slice();
+  for (let i = 0; i < n; i++) {
+    if (callAt(i) < CALL_ON || m[i] > margin * coupling * callAt(i)) continue;
+    out.fill(0, i * frame, (i + 1) * frame);
+  }
+  return out;
+}

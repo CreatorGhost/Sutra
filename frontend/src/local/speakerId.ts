@@ -14,10 +14,22 @@
 // function below cleanly no-ops and turns keep the cloud diarizer's labels.
 import * as repo from "./repo";
 import { cosine, meanVector } from "./util";
+import { OWNER_LABEL } from "./channelAttribution";
 
 // --- thresholds (see evals/voiceprint_check.py; v1, calibrated on a real 3-speaker Hinglish clip) ---
 export const SEED_MIN_SECONDS = 1.2;  // only turns this long are trusted to define a speaker (short = noisy)
 export const CLUSTER_MERGE = 0.45;    // agglomerative stop: keep merging the closest two clusters while >= this
+// TODO(speaker-count): one device clip (conv3) merged 3 real speakers into 2 — two sub-centroids sat
+// 0.527 cosine apart, just above this 0.45 floor. Do NOT just raise the threshold: the calibration clip
+// documents a same-speaker cosine floor of ~0.50 (turns of ONE speaker can be only ~0.50 apart), and
+// the closest different-speaker pair there is in the 0.40–0.50 band. Any value high enough to split
+// conv3's 0.527 pair (>0.527) crosses that same-speaker floor and would over-SPLIT a real speaker on
+// other clips. One boundary clip is not enough evidence to move a calibrated threshold. Deferring until
+// we have cross-clip data. Eval plan: (1) collect >=5–10 clips with a KNOWN human-participant count
+// (label each); (2) run each through evals/voiceprint_check.py to dump per-turn voiceprints; (3) sweep
+// CLUSTER_MERGE over ~0.40–0.60 and pick the value with the best speaker-COUNT accuracy across the set
+// (count |clusters| vs labeled count), not per-turn purity; (4) only then change this constant, with the
+// sweep result cited here. Until then, hold 0.45 — it is correct on the 3-speaker calibration clip.
 export const MIN_CLUSTER_TURNS = 2;   // drop singleton clusters (ECAPA noise on one odd turn) when a real one exists
 export const ENROLL_ACCEPT = 0.50;    // a cluster matches an enrolled person if best cos >= this ...
 export const ENROLL_MARGIN = 0.10;    // ... AND beats the 2nd-best enrolled person by at least this much
@@ -70,8 +82,10 @@ export async function clusterSession(sessionId: number): Promise<Cluster[]> {
   let kept = groups.map((g, i) => ({ g, c: cents[i] }));
   const real = kept.filter((x) => x.g.length >= MIN_CLUSTER_TURNS);
   if (real.length) kept = real;
-  kept.sort((a, b) => b.g.length - a.g.length); // largest speaker = "1"
-  const clusters: Cluster[] = kept.map((x, i) => ({ label: String(i + 1), centroid: x.c, n: x.g.length }));
+  kept.sort((a, b) => b.g.length - a.g.length); // largest speaker = "c1"
+  // Namespace cluster ids ("c1".."cN") so they can't collide with a pass-through cloud diarizer
+  // label (proxy emits 'A','B' today, but a numeric upstream label '1' would alias cluster "1").
+  const clusters: Cluster[] = kept.map((x, i) => ({ label: `c${i + 1}`, centroid: x.c, n: x.g.length }));
   if (!clusters.length) return [];
   const centroids = clusters.map((c) => c.centroid);
 
@@ -82,20 +96,31 @@ export async function clusterSession(sessionId: number): Promise<Cluster[]> {
 
   // 5) Short / no-embedding / empty turns inherit a neighbour's cluster, but ONLY within the same
   //    cloud-diarizer speaker segment — never bleed a label across a speaker boundary.
+  //    The owner's mic turns sit between the remotes' in time order; they're skipped, not a boundary
+  //    (else a lone short "Hello." between two of the owner's lines keeps its raw label — a 2nd "speaker").
+  const remoteRows = rows.filter((r) => r.cloud !== OWNER_LABEL);
   let carry: string | null = null, prevCloud: string | null = null;
-  for (const r of rows) {
+  for (const r of remoteRows) {
     if (r.cloud !== prevCloud) { carry = null; prevCloud = r.cloud; }
     const lbl = labelOf.get(r.id);
     if (lbl !== undefined) carry = lbl;
     else if (carry) labelOf.set(r.id, carry);
   }
   let back: string | null = null, nextCloud: string | null = null;
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const r = rows[i];
+  for (let i = remoteRows.length - 1; i >= 0; i--) {
+    const r = remoteRows[i];
     if (r.cloud !== nextCloud) { back = null; nextCloud = r.cloud; }
     const lbl = labelOf.get(r.id);
     if (lbl !== undefined) back = lbl;
     else if (back) labelOf.set(r.id, back);
+  }
+
+  //    Still unlabelled (no labelled neighbour at all): the cluster its diarizer label went to, if only one.
+  const clustersOf = new Map<string, Set<string>>();
+  for (const r of remoteRows) { const l = labelOf.get(r.id); if (l) clustersOf.set(r.cloud, (clustersOf.get(r.cloud) ?? new Set()).add(l)); }
+  for (const r of remoteRows) {
+    const only = clustersOf.get(r.cloud);
+    if (!labelOf.has(r.id) && only?.size === 1) labelOf.set(r.id, [...only][0]);
   }
 
   // 6) Persist the new labels, grouped per cluster.
@@ -112,7 +137,10 @@ export async function matchEnrolledPeople(sessionId: number, clusters: Cluster[]
   const people = (await repo.peopleWithVoiceprints()).map((p: any) => ({ id: p.id, vec: Array.from(p.vec) as number[] }))
     .filter((p) => p.vec.length);
   if (!people.length) return 0;
-  let matched = 0;
+  // Score every cluster against its best+runner-up enrolled person first, then assign greedily by
+  // descending similarity with a per-person claim set — so two clusters that both best-match the SAME
+  // person can't BOTH be relabelled to it (which would collapse two real speakers into one identity).
+  const candidates: { label: string; id: number; sim: number; second: number }[] = [];
   for (const c of clusters) {
     let best = { id: -1, sim: -1 }, second = -1;
     for (const p of people) {
@@ -123,9 +151,17 @@ export async function matchEnrolledPeople(sessionId: number, clusters: Cluster[]
     // Accept on a confident hit that also beats the runner-up by a margin. With a single enrolled
     // person there's no runner-up, so the margin check is vacuous (made explicit, not via second=-1).
     if (best.id !== -1 && best.sim >= ENROLL_ACCEPT && (people.length === 1 || best.sim - second >= ENROLL_MARGIN)) {
-      await repo.relabelSpeaker(sessionId, c.label, best.id); // tag all turns of this cluster with the person
-      matched++;
+      candidates.push({ label: c.label, id: best.id, sim: best.sim, second });
     }
+  }
+  candidates.sort((a, b) => b.sim - a.sim);
+  let matched = 0;
+  const claimed = new Set<number>();
+  for (const cand of candidates) {
+    if (claimed.has(cand.id)) continue; // this person already taken by a stronger-matching cluster
+    await repo.relabelSpeaker(sessionId, cand.label, cand.id); // tag all turns of this cluster with the person
+    claimed.add(cand.id);
+    matched++;
   }
   return matched;
 }

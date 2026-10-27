@@ -1,9 +1,9 @@
-// Local (on-device) speech-to-text: the model catalog and whisper.cpp output parsing. PURE — shared by
-// the Electron main process (download + run) and the renderer (model picker).
+// whisper.cpp (`whisper-cli`) — the OPTIONAL local engine: its ggml model list, CLI arguments and output
+// parsing. PURE. The default on-device engine is sherpa-onnx (speechModels.ts folds these models into
+// its catalog and only lists them when whisper-cli is installed).
 //
-// Engine: whisper.cpp's `whisper-cli` (Metal on Apple Silicon, CUDA/Vulkan/CPU elsewhere). Models are
-// the official ggml conversions hosted at huggingface.co/ggerganov/whisper.cpp. Audio is written to a
-// private temp file only for the duration of one call, then deleted (whisper-cli reads files).
+// Models are the official ggml conversions hosted at huggingface.co/ggerganov/whisper.cpp. Audio is
+// written to a private temp file only for the duration of one call, then deleted (whisper-cli reads files).
 
 export interface WhisperModel {
   id: string;

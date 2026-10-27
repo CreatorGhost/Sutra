@@ -13,21 +13,24 @@
     "node_modules/file-uri-to-path/**/*"
   ],
   "asarUnpack": [
-    "**/node_modules/better-sqlite3-multiple-ciphers/**/*.node"
+    "**/node_modules/better-sqlite3-multiple-ciphers/**/*.node",
+    "**/node_modules/sherpa-onnx-{darwin,win,linux}-*/**/*"
   ],
   "win": {
     "target": "nsis"
   },
+  "afterPack": "scripts/adhoc-sign.cjs",
   "mac": {
     "target": "dmg",
     "category": "public.app-category.productivity",
+    "identity": null,
     "hardenedRuntime": true,
-    "entitlements": "build/entitlements.mac.plist",
-    "entitlementsInherit": "build/entitlements.mac.plist",
+    "entitlements": "build/entitlements.adhoc.plist",
+    "entitlementsInherit": "build/entitlements.adhoc.plist",
     "extendInfo": {
       "NSMicrophoneUsageDescription": "Sutra records your side of the meeting so it can write your notes. Audio is never stored.",
       "NSAudioCaptureUsageDescription": "Sutra captures the meeting's audio so it can transcribe the other participants. Audio is never stored.",
-      "NSAppleEventsUsageDescription": "Sutra checks your browser's open tabs for a meeting (Google Meet, Zoom, Teams) so it can offer to record. It only reads tab addresses.",
+      "NSAppleEventsUsageDescription": "Sutra checks your browser's open tabs for a meeting (Google Meet, Zoom, Teams) so it can offer to record, and adds action items and events to Reminders and Calendar when you ask. It only reads tab addresses.",
       "LSUIElement": false
     }
   },
@@ -47,6 +50,13 @@
       "filter": [
         "micwatch",
         "micwatch.swift"
+      ]
+    },
+    {
+      "from": "../mcp-server/dist",
+      "to": "mcp-server",
+      "filter": [
+        "sutra-mcp.cjs"
       ]
     }
   ]

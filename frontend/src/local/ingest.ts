@@ -22,10 +22,11 @@ export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: n
   // translation); only "english" translates. Default to "english" when unset (legacy behavior).
   const transcriptLang = (((await repo.getSettings())?.transcript_lang as Lang) || "english");
   const langCfg = LANGS[transcriptLang] ?? LANGS.english;
-  // Speaker-ID is a HYBRID feature: only the cloud provider has the proxy voiceprint endpoint. In
-  // on-device mode (provider.id !== "cloud") we don't request voiceprints — speaker-ID is "coming soon".
+  // Per-turn voiceprints come from the cloud proxy (hybrid) or from the desktop's local speech engine,
+  // which diarizes and embeds on this computer. The phone's on-device mode has neither.
   const sttCloud = (provider.sttId ?? provider.id) === "cloud";
-  const wantVoiceprints = sttCloud;
+  const sttLocal = (provider.sttId ?? provider.id) === "local";
+  const wantVoiceprints = sttCloud || sttLocal;
   // Use the caller-derived filename (correct extension for the actual codec — low-bitrate Opus in
   // an ogg container, or webm/mp4 where ogg isn't supported). Fall back only if none was provided;
   // match the fallback to the blob's own type so the extension stays consistent with the content.
@@ -41,10 +42,12 @@ export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: n
   if (opts.channel != null) for (const s of tr.segments as any[]) { s.channel = opts.channel; s.is_me = opts.channel === 0; }
   const started: string | null = sess.started_at ?? null;
   // English mode (degrade-safe): when the user picked "english" we translate segment texts to English
-  // in ONE batched call (cloud only — on-device has no translate endpoint). On ANY failure we keep the
-  // original text so ingest never blocks. Non-English modes (hinglish/devanagari/verbatim) skip this.
-  // (Local whisper translates itself with -tr, so this pass is cloud-STT only.)
-  if (langCfg.translate && sttCloud && tr.segments.length) {
+  // in ONE batched call (via the text engine — on-device mode has no translate endpoint). On ANY failure
+  // we keep the original text so ingest never blocks. Non-English modes (hinglish/devanagari/verbatim)
+  // skip this. Local Whisper models translate while transcribing and report `translated: true`; other
+  // local models (Qwen3-ASR, …) keep the spoken language and report `translated: false`.
+  const localUntranslated = sttLocal && (tr as { translated?: boolean }).translated === false;
+  if (langCfg.translate && (sttCloud || localUntranslated) && tr.segments.length) {
     try {
       const en = await provider.translate(tr.segments.map((s: any) => s.text));
       if (Array.isArray(en) && en.length === tr.segments.length) {
@@ -72,7 +75,7 @@ export async function ingestWindow(sessionId: number, blob: Blob, windowIndex: n
     const id = await repo.insertTurn({
       session_id: sessionId, window_index: windowIndex, session_speaker_label: a.session_speaker_label,
       person_id: a.person_id, text: s.text, lang, start_ts: s.start, end_ts: s.end, abs_start: absStart,
-      voiceprint: a.voiceprint, // per-turn ECAPA vector (hybrid only); null when short/on-device/owner
+      voiceprint: a.voiceprint, // per-turn voiceprint (cloud ECAPA or local embedding); null when short/owner/phone
     });
     turns.push({ id, window_index: windowIndex, session_speaker_label: a.session_speaker_label, person_id: a.person_id, person_name: null, text: s.text, lang, start_ts: s.start, end_ts: s.end, abs_start: absStart });
   }

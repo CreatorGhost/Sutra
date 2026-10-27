@@ -28,7 +28,7 @@ Grouped for landing-page sections. Status: **Live** = shipping today · **Partia
 - **Pause / resume / end** — full control of a live session. *(Live)*
 - **Upload existing recordings** — bring in audio files you already have. *(Live)*
 - **Stays awake while it works** — the screen won't sleep and kill a recording mid-conversation. *(Live)*
-- **Keeps listening with the screen off (Android)** — via a native background service. *(Partial — Android native; browser capture is foreground-only)*
+- **Keeps listening with the screen off (Android)** — a hardened native background service keeps capture running reliably even when the screen is off. *(Partial — Android native; browser capture is foreground-only)*
 
 ### Understand who & what was said
 - **Accurate transcription with speaker separation** — see exactly who said what, turn by turn. *(Live)*
@@ -61,29 +61,29 @@ Grouped for landing-page sections. Status: **Live** = shipping today · **Partia
 ### Stay on top of things
 - **Daily recap** — a short daily digest of conversations, highlights and open actions. *(Live)*
 - **Daily notification** at a time you pick (native). *(Live)*
-- **One-tap email draft** from any action item. *(Live — generates the draft; you send it)*
+- **Email draft from an action item** — turn a task into a ready-to-send email draft. *(Later — draft generation is built; the in-app button is not wired yet)*
 - **Emailed recap** — optional. *(Partial — needs email setup)*
 
 ### Yours, and private
-- **Raw audio is never stored** — processed in the moment, then gone. *(Live — guaranteed at the data-model level)*
-- **Encrypted on-device memory** — your memory is stored encrypted on your phone, with the key in hardware-backed secure storage. *(Live)*
+- **Raw audio is never stored** — by default it's processed in the moment, then gone; it's never uploaded anywhere to be kept. *(Live — never-persisted is the default and is enforced at the data-model level)*
+- **Encrypted on-device memory** — your memory is stored encrypted on your device. On Android the encryption key is held in hardware-backed secure storage (the device keystore); on desktop it's sealed in the OS keychain. *(Live)*
 - **Export or wipe anytime** — your data, your call; nothing is auto-uploaded. *(Live)*
 - **Works offline for everything already remembered** — search, browse, graph, recaps, people. *(Live)*
-- **Self-healing** — a conversation interrupted mid-processing is automatically finished next time you open the app. *(Live)*
+- **Self-healing** — a conversation interrupted mid-processing is automatically recovered and finished next time you open the app, and you can also retry it manually. *(Live)*
 - **Guided onboarding** + fully configurable settings. *(Live)*
 
 ---
 
 ## 3. What makes Sutra different (boast-worthy, benefit-framed)
 
-1. **Your raw audio simply never exists at rest.** Most "AI memory" products store your recordings in their cloud. Sutra processes audio in the moment and discards it — there isn't even a place in the system to keep it. The most sensitive thing about a conversation never gets saved.
+1. **Your raw audio is never kept.** Most "AI memory" products store your recordings in their cloud. Sutra processes audio in the moment and discards it by default — nothing is ever uploaded to be stored. The most sensitive thing about a conversation simply isn't saved.
 2. **Your memory lives on *your* device, encrypted.** Not on someone's servers. Hardware-backed encryption, on your phone. It's genuinely yours.
 3. **You own it and can leave anytime.** Export everything or wipe it instantly. No lock-in, no silent harvesting.
 4. **It works offline.** Everything you've already captured is searchable and usable with no connection.
 5. **Built for how India actually talks.** Hinglish and code-switching are first-class across transcription, memory, search and chat — with four honest ways to write it down. No clumsy translation artifacts.
 6. **It learns the people in your life.** Voiceprint recognition answers "who said that?" — and gets smarter about your circle the more you use it.
 7. **It's honest.** Answers cite their sources and admit when they don't know. The app is clear about what's available now vs. later. You can trust both what it tells you and what it claims about itself.
-8. **No subscription wall to start.** Works out of the box; advanced control available for power users.
+8. **Free to start.** No paid subscription needed for the core app; advanced control available for power users. *(A free account is required to use the app.)*
 
 ---
 
