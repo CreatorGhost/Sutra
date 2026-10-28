@@ -148,6 +148,7 @@ function harden(win: BrowserWindow): void {
 // ---- main window ---------------------------------------------------------------------------------
 
 const TRAFFIC_LIGHTS = { x: 18, y: 20 };
+let screenPaneShown = false;
 
 function createMainWindow(): void {
   // The app's theme before the window exists: switching it later makes macOS re-lay the title bar and
@@ -199,7 +200,8 @@ function createMainWindow(): void {
         // it) and open that settings pane — otherwise the request can wait forever on "Starting…".
         const access = isMac ? systemPreferences.getMediaAccessStatus("screen") : "granted";
         if (access === "denied" || access === "restricted") {
-          void shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+          // Sutra falls back to the mic; show where to turn it on, once per launch.
+          if (!screenPaneShown) { screenPaneShown = true; void shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"); }
           return callback({});
         }
         // Screenshots come from this video, so use the screen the call is on (not always the main one).

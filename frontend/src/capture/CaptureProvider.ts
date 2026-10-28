@@ -281,7 +281,7 @@ export class ElectronCapture implements CaptureProvider {
 
 /** Shown when macOS won't let Sutra hear the call (Screen & System Audio Recording is off). */
 export const SYSTEM_AUDIO_DENIED_MESSAGE =
-  "Sutra isn't allowed to hear the call. Turn Sutra on in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen Sutra.";
+  "Sutra isn't allowed to hear the call. Turn Sutra on in System Settings → Privacy & Security → Screen & System Audio Recording.";
 
 /**
  * Web shell (Chrome/Edge PWA): mic via getUserMedia + system/tab audio via getDisplayMedia, merged

@@ -8,6 +8,7 @@ import {
   createCaptureProvider,
   ElectronCapture,
   BrowserCapture,
+  SYSTEM_AUDIO_DENIED_MESSAGE,
 } from "../CaptureProvider";
 import { NO_AUDIO_TRACK_MESSAGE } from "../stereoCore";
 
@@ -194,6 +195,13 @@ describe("ElectronCapture lifecycle (mocked Web Audio)", () => {
     expect(cap.kind).toBe("electron");
     await expect(cap.start({ onWindow: () => {} })).resolves.toBeUndefined();
     await cap.stop();
+  });
+
+  it("screen & system audio refused: a clear message (the recorder falls back to the mic), mic released", async () => {
+    const { getDisplayMedia, micTracks } = installAudioMocks({ displayHasAudio: true });
+    getDisplayMedia.mockRejectedValueOnce(Object.assign(new Error("Permission denied"), { name: "NotAllowedError" }));
+    await expect(new ElectronCapture().start({})).rejects.toThrow(SYSTEM_AUDIO_DENIED_MESSAGE);
+    for (const t of micTracks) expect(t.stop).toHaveBeenCalled();
   });
 
   it("no-audio-track guard also applies to the desktop path", async () => {

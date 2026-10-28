@@ -7,7 +7,7 @@
 // and window.__sutraRecorder lets the main process start/stop with a user gesture (see electron/main.ts).
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { detectCaptureCapability } from "../local/captureCapability";
-import { createCaptureProvider } from "../capture/CaptureProvider";
+import { createCaptureProvider, SYSTEM_AUDIO_DENIED_MESSAGE } from "../capture/CaptureProvider";
 import { MeetingController } from "../capture/meetingCapture";
 import { CaptureController, pickMime } from "../lib/capture";
 import { useWakeLock } from "../lib/useWakeLock";
@@ -64,6 +64,8 @@ const INITIAL: RecorderState = {
   error: null, notice: null, sessionId: null, lastConversationId: null, askProject: false,
 };
 
+export const MIC_ONLY =
+  "Recording your mic only, without the call audio or screenshots: Sutra isn't allowed to record the screen. Turn Sutra on in System Settings → Privacy & Security → Screen & System Audio Recording to capture everyone.";
 export const SAVED_FOR_MAC = "Saved on your phone — it'll be transcribed when your Mac is reachable.";
 const PART_FAILED = "Part of this recording couldn't be transcribed. It's kept on your phone — retry it in Settings → Your Mac.";
 
@@ -134,6 +136,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     const cap = detectCaptureCapability();
     // Once stopped, this recording saves in the background and must not touch the next one's live state.
     let live = true;
+    let denied = false; // macOS refused screen & call audio: start() falls back to the mic
     const mine: ActiveSession = { stop: () => ctrl.stop(), teardown: () => ctrl.teardown(), useScreen: (t) => ctrl.useScreen(t) };
     const ctrl: MeetingController = new MeetingController({
       provider: createCaptureProvider(cap),
@@ -142,7 +145,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
       output: settings["audio_output"] === "speakers" ? "speakers" : "headphones",
       sourceApp: app,
       media: screenshots ? desktop?.media ?? null : null,
-      onError: (m) => { if (m) patch({ error: friendlyError(m) }); },
+      onError: (m) => { if (m === SYSTEM_AUDIO_DENIED_MESSAGE) denied = true; else if (m) patch({ error: friendlyError(m) }); },
       onInflight: (n) => { if (live) patch({ inflight: n }); },
       onTurns: (t) => { if (live) patch((s) => ({ turns: [...s.turns, ...t] })); },
       onLevel: (me, them) => { if (live) level.current = Math.max(me, them); },
@@ -159,6 +162,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     });
     session.current = mine;
     await ctrl.start();
+    return !denied;
   }, [patch, finished, chooseProject]);
 
   const startMic = useCallback(async () => {
@@ -256,8 +260,12 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
       if (notReady) throw new Error(notReady);
       // "Take screenshots during meetings" (Settings → General): screenshots + audio until confirmed.
       const screenshots = meeting && !!(await desktop?.prefs.get().catch(() => null))?.captureScreen;
-      if (meeting) await startMeeting(app, screenshots);
-      else await startMic();
+      if (!meeting) await startMic();
+      else if (!(await startMeeting(app, screenshots))) {
+        // Screen & System Audio Recording refused: record the mic anyway and say what's missing.
+        await startMic();
+        patch({ mode: "mic", notice: MIC_ONLY });
+      }
     } catch (e) {
       session.current = null;
       patch({ capture: "idle", error: friendlyError(e) });
