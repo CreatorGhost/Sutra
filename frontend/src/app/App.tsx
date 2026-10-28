@@ -6,6 +6,7 @@ import { api } from "../local/sutra";
 import { AUTH_EXPIRED_EVENT } from "../providers/cloudProvider";
 import { desktop } from "../desktop/bridge";
 import { pairingActive } from "../pairing/model";
+import { syncNativeChrome } from "../lib/nativeChrome";
 import { startPairingRuntime } from "../pairing/runtime";
 import { AskAll } from "./AskAll";
 import { DownloadChip } from "./DownloadChip";
@@ -89,6 +90,8 @@ function Shell() {
     });
     return () => { void h.then((x) => x.remove()); };
   }, [rec.status, stop, nav]);
+
+  useEffect(() => { void syncNativeChrome(detail); }, [detail]);
 
   // ⌘/Ctrl+, opens settings; ⌘/Ctrl+K focuses search.
   useEffect(() => {

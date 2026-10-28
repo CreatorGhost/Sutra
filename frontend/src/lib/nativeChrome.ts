@@ -7,7 +7,11 @@ function isLightTheme(): boolean {
   return document.documentElement.getAttribute("data-theme") === "light";
 }
 
-export async function syncNativeChrome(): Promise<void> {
+let onPage = false;
+
+/** `page`: a full-screen page is showing on the phone (white panel), not the meeting list (sidebar). */
+export async function syncNativeChrome(page: boolean = onPage): Promise<void> {
+  onPage = page;
   if (!Capacitor.isNativePlatform()) return;
   const platform = Capacitor.getPlatform();
   const light = isLightTheme();
@@ -16,7 +20,9 @@ export async function syncNativeChrome(): Promise<void> {
     await StatusBar.setStyle({ style: light ? Style.Light : Style.Dark });
     if (platform === "android") {
       await StatusBar.setOverlaysWebView({ overlay: false });
-      await StatusBar.setBackgroundColor({ color: light ? "#f5f4fb" : "#0a0912" });
+      // The bar takes the colour of what's under it: the meeting list (sidebar) or a page (panel).
+      const color = getComputedStyle(document.documentElement).getPropertyValue(page ? "--panel" : "--sidebar").trim() || (light ? "#ffffff" : "#111113");
+      await StatusBar.setBackgroundColor({ color });
     }
   } catch {
     /* Native chrome support is best-effort per platform/plugin version. */

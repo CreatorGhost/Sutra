@@ -17,4 +17,6 @@ export function applyTheme(choice: ThemeChoice = readTheme(), persist = false): 
   try { (window as any).sutraDesktop?.theme?.(choice); } catch { /* not the desktop app */ }
   if (choice === "light") root.setAttribute("data-theme", "light");
   else root.removeAttribute("data-theme");
+  // Phone: status bar colour and icons follow the theme.
+  void import("../lib/nativeChrome").then((m) => m.syncNativeChrome()).catch(() => {});
 }
