@@ -6,6 +6,7 @@
 // voiceprint. ingest/channelAttribution store them exactly like cloud segments (remote channel →
 // "r<speaker>" + voiceprint, owner mic → "me"), so the cross-window clustering and enrolled-person
 // matching in speakerId.ts work unchanged.
+import { pcm16ToWav } from "../capture/wav";
 import type { Provider, TranscribeOpts, Transcription, AskScope, ExtractOpts } from "./provider";
 import { desktop } from "../desktop/bridge";
 
@@ -20,10 +21,9 @@ export class LocalSpeechProvider implements Provider {
    *  text engine's translate pass must run. */
   async transcribeDiarize(audio: Blob, _filename: string, opts?: TranscribeOpts): Promise<Transcription & { translated?: boolean }> {
     if (!desktop) throw new Error("Local transcription needs the desktop app.");
-    if (audio.type && !/wav/i.test(audio.type)) throw new Error("Local transcription expects WAV audio.");
     // ingest asks for no voiceprints on the owner's own mic channel: it is always "Me", so skip the
     // diarizer and embeddings there too.
-    const r = await desktop.stt.transcribe(await audio.arrayBuffer(), { model: this.model, language: opts?.language ?? null, speakers: opts?.voiceprints !== false });
+    const r = await desktop.stt.transcribe(await toWav(audio), { model: this.model, language: opts?.language ?? null, speakers: opts?.voiceprints !== false });
     return {
       text: r.text, duration: r.duration, translated: r.translated,
       segments: r.segments.map((s) => ({ speaker: s.speaker, start: s.start, end: s.end, text: s.text, embedding: s.embedding })),
@@ -55,4 +55,25 @@ export class ComposedProvider implements Provider {
   refine(t: string[], o?: any) { return this.text.refine(t, o); }
   embed(t: string[]) { return this.text.embed(t); }
   rerank(q: string, d: string[]) { return this.text.rerank(q, d); }
+}
+
+/** The local engine reads WAV only. Mic-only recordings are Opus (webm/ogg) from MediaRecorder: decode
+ *  them here (each window is a complete file) to 16 kHz mono WAV instead of rejecting them — a rejected
+ *  window is lost audio, since Sutra never keeps it. */
+export async function toWav(audio: Blob): Promise<ArrayBuffer> {
+  if (!audio.type || /wav/i.test(audio.type)) return audio.arrayBuffer();
+  const ctx = new AudioContext({ sampleRate: 16000 });
+  try {
+    const buf = await ctx.decodeAudioData(await audio.arrayBuffer());
+    const pcm = new Int16Array(buf.length);
+    for (let i = 0; i < buf.length; i++) {
+      let v = 0;
+      for (let c = 0; c < buf.numberOfChannels; c++) v += buf.getChannelData(c)[i];
+      v = Math.max(-1, Math.min(1, v / buf.numberOfChannels));
+      pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+    }
+    return pcm16ToWav(pcm, buf.sampleRate, 1);
+  } finally {
+    void ctx.close();
+  }
 }
