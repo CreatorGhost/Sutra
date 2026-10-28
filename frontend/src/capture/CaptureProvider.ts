@@ -239,6 +239,9 @@ export class ElectronCapture implements CaptureProvider {
       const sysStream = await md.getDisplayMedia({
         video: true,
         audio: { suppressLocalAudioPlayback: policy.suppressLocalAudioPlayback } as MediaTrackConstraints,
+      }).catch((e) => {
+        if (e?.name === "NotAllowedError" || e?.name === "AbortError" || e?.name === "NotFoundError") throw new Error(SYSTEM_AUDIO_DENIED_MESSAGE);
+        throw e;
       });
       acquired.push(...sysStream.getTracks());
 
@@ -275,6 +278,10 @@ export class ElectronCapture implements CaptureProvider {
     await core?.stop();
   }
 }
+
+/** Shown when macOS won't let Sutra hear the call (Screen & System Audio Recording is off). */
+export const SYSTEM_AUDIO_DENIED_MESSAGE =
+  "Sutra isn't allowed to hear the call. Turn Sutra on in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen Sutra.";
 
 /**
  * Web shell (Chrome/Edge PWA): mic via getUserMedia + system/tab audio via getDisplayMedia, merged

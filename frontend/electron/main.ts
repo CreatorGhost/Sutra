@@ -195,6 +195,13 @@ function createMainWindow(): void {
   if (typeof ses.setDisplayMediaRequestHandler === "function") {
     ses.setDisplayMediaRequestHandler(
       (request, callback) => {
+        // Screen & System Audio Recording turned off for Sutra: refuse at once (the renderer says how to fix
+        // it) and open that settings pane — otherwise the request can wait forever on "Starting…".
+        const access = isMac ? systemPreferences.getMediaAccessStatus("screen") : "granted";
+        if (access === "denied" || access === "restricted") {
+          void shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+          return callback({});
+        }
         // Screenshots come from this video, so use the screen the call is on (not always the main one).
         // The screen the user picked for this recording wins; otherwise the one the call is on.
         Promise.all([desktopCapturer.getSources({ types: ["screen"] }), chosenScreen ?? callScreenId()])
