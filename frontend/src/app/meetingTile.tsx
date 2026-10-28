@@ -41,9 +41,6 @@ const TOPICS: [RegExp, string][] = [
   [/\b(podcast|voice memo|memo|dictation)/, "🎙️"],
 ];
 
-/** Soft, distinct hues for meetings outside a project (in theme order, never the alarm red). */
-const HUES = ["#5b6cff", "#8b5cf6", "#0ea5e9", "#14b8a6", "#f59e0b", "#ec4899", "#10b981", "#f97316"];
-
 export function meetingEmoji(m: TileMeeting): string {
   if (m.status === "failed" && !m.title) return "⚠️";
   const hay = `${m.title ?? ""} ${(m.tags ?? []).join(" ")} ${m.subtitle ?? ""} ${m.summary ?? ""}`.toLowerCase();
@@ -51,10 +48,9 @@ export function meetingEmoji(m: TileMeeting): string {
   return "💬";
 }
 
-export function meetingHue(m: TileMeeting, projectColor?: string | null): string {
-  if (projectColor) return projectColor;
-  const n = Number(m.id ?? 0);
-  return HUES[((n % HUES.length) + HUES.length) % HUES.length];
+export function meetingHue(_m: TileMeeting, projectColor?: string | null): string {
+  // Colour means "this project"; a meeting outside one stays neutral grey.
+  return projectColor || "var(--text-3)";
 }
 
 /** The tile itself. `writing` shows a spinner while the notes are still being written. */

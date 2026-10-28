@@ -252,7 +252,7 @@
 .chat-q { display: flex; justify-content: flex-end; }
 .chat-q .bubble {
   max-width: 80%; padding: 10px 15px; border-radius: 18px 18px 6px 18px; background: var(--thread);
-  color: #fff; white-space: pre-wrap; font-size: 14.5px; line-height: 1.5; box-shadow: var(--thread-glow);
+  color: var(--on-invert); white-space: pre-wrap; font-size: 14.5px; line-height: 1.5; box-shadow: var(--thread-glow);
 }
 .chat-a { padding: 14px 16px; font-size: 15px; border-radius: 6px 18px 18px 18px; background: var(--surface); border: 1px solid var(--line); max-width: 94%; }
 .chat-a.err p { color: var(--rec); margin: 0; }
@@ -338,8 +338,7 @@
 .pfolder-more { border: 0; background: none; padding: 6px 12px; font-size: 13px; color: var(--accent); font-weight: 600; }
 
 /* ── Home ─────────────────────────────────────────────────────────────── */
-/* An aurora behind the greeting: two soft indigo/violet light sources, faded into the paper. */
-.home-glow {
+.home-glow { display: none;
   position: absolute; inset: 0 0 auto 0; height: 360px; pointer-events: none;
   background:
     radial-gradient(520px 220px at 30% -40px, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
@@ -358,7 +357,7 @@
   transition: border-color 0.15s, box-shadow 0.2s;
 }
 .home-ask:focus-within { border-color: color-mix(in srgb, var(--accent) 50%, transparent); box-shadow: var(--shadow-card), 0 0 0 4px var(--accent-soft); }
-.home-ask .spark { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--thread); color: #fff; box-shadow: var(--thread-glow); flex: none; }
+.home-ask .spark { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--thread); color: var(--on-invert); box-shadow: var(--thread-glow); flex: none; }
 .home-ask input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 15px; color: var(--text); }
 .home-ask input::placeholder, .home-name input::placeholder { color: var(--text-3); }
 .home-ask .send {
@@ -430,8 +429,8 @@
 .ask-suggest .btn:hover { color: var(--text); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 
 /* Ask Sutra: the same conversation look as a meeting's Chat, with the meetings an answer came from. */
-.tile.thread-tile { background: var(--thread); color: #fff; box-shadow: var(--thread-glow); }
-.tile.thread-tile svg { color: #fff; }
+.tile.thread-tile { background: var(--thread); color: var(--on-invert); box-shadow: var(--thread-glow); }
+.tile.thread-tile svg { color: var(--on-invert); }
 .ask-chat { margin-top: 8px; }
 .chat-a .thinking { display: flex; align-items: center; gap: 8px; margin: 0; }
 .sources { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }

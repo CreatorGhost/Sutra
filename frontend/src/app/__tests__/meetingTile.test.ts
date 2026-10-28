@@ -18,7 +18,6 @@ describe("meeting tile", () => {
   });
   it("tints by project colour, else a stable colour per meeting", () => {
     expect(meetingHue({ id: 3 }, "#ff0000")).toBe("#ff0000");
-    expect(meetingHue({ id: 3 })).toBe(meetingHue({ id: 3 }));
-    expect(meetingHue({ id: 3 })).not.toBe(meetingHue({ id: 4 }));
+    expect(meetingHue({ id: 3 })).toBe("var(--text-3)");
   });
 });

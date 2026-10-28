@@ -160,7 +160,7 @@
 .theme-mini em { display: block; height: 6px; border-radius: 3px; }
 .theme-mini em:first-child { width: 60%; height: 8px; }
 .theme-mini em:nth-child(2) { width: 90%; }
-.theme-mini em:last-child { width: 40%; background: linear-gradient(120deg, #4255ff, #7c5cf0) !important; }
+.theme-mini em:last-child { width: 40%; background: var(--text) !important; }
 .theme-card.dark .theme-mini { background: #0a0b10; }
 .theme-card.dark .theme-mini i { background: #161824; }
 .theme-card.dark .theme-mini b { background: #12131b; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }

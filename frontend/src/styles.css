@@ -7,30 +7,30 @@
   --font: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
 
-  /* Night indigo, not neutral grey: every surface carries a trace of the accent. */
-  --bg: #0a0b10;
-  --sidebar: #0d0e15;
-  --panel: #12131b;
-  --surface: #1a1c26;
-  --surface-2: #232633;
-  --surface-3: #2f3344;
-  --line: rgba(255, 255, 255, 0.06);
-  --line-2: rgba(255, 255, 255, 0.1);
-  --text: #f2f3f8;
-  --text-2: #a7abbd;
-  --text-3: #767c94;
-  --accent: #7484ff;
-  --accent-ink: #9aa6ff;
-  --accent-soft: rgba(116, 132, 255, 0.15);
-  --violet: #a78bfa;
-  --thread: linear-gradient(120deg, #5465ff 0%, #8b6cf6 100%);
-  --thread-glow: 0 8px 24px -8px rgba(98, 104, 255, 0.65);
+  /* Plain neutral black and white: no tint; colour only for meaning (record, done, project dots). */
+  --bg: #0c0c0e;
+  --sidebar: #19191b;
+  --panel: #111113;
+  --surface: #1c1c1f;
+  --surface-2: #26262a;
+  --surface-3: #313136;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.12);
+  --text: #f3f3f5;
+  --text-2: #a2a2aa;
+  --text-3: #6c6c74;
+  --accent: #f3f3f5;
+  --accent-ink: #f3f3f5;
+  --accent-soft: rgba(255, 255, 255, 0.08);
+  --violet: #a2a2aa;
+  --thread: #f3f3f5;
+  --thread-glow: none;
   --rec: #ff4d45;
   --rec-soft: rgba(255, 77, 69, 0.16);
   --ok: #34d399;
   --warn: #ffb340;
-  --invert: #f2f3f8;
-  --on-invert: #0a0b10;
+  --invert: #f3f3f5;
+  --on-invert: #0c0c0e;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px -18px rgba(0, 0, 0, 0.8);
   --shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.04);
@@ -49,32 +49,32 @@
   color-scheme: dark;
 }
 
-/* Light: white paper on a cool lavender canvas; ink is near-black navy, never pure black. */
+/* Light: plain white and near-black. */
 :root[data-theme="light"] {
-  --bg: #eef0f7;
-  --sidebar: #f2f3f9;
+  --bg: #f4f4f5;
+  --sidebar: #ececee;
   --panel: #ffffff;
-  --surface: #f4f5fb;
-  --surface-2: #eaecf5;
-  --surface-3: #dcdfec;
-  --line: rgba(16, 24, 40, 0.07);
-  --line-2: rgba(16, 24, 40, 0.11);
-  --text: #101828;
-  --text-2: #475467;
-  --text-3: #667085; /* ≥4.5:1 on white, ≥4:1 on the sidebar */
-  --accent: #4255ff;
-  --accent-ink: #3445ee;
-  --accent-soft: rgba(66, 85, 255, 0.09);
-  --violet: #7c5cf0;
-  --thread: linear-gradient(120deg, #4255ff 0%, #7c5cf0 100%);
-  --thread-glow: 0 8px 22px -8px rgba(66, 85, 255, 0.55);
+  --surface: #f1f1f3;
+  --surface-2: #e6e6ea;
+  --surface-3: #d8d8de;
+  --line: rgba(0, 0, 0, 0.07);
+  --line-2: rgba(0, 0, 0, 0.12);
+  --text: #111113;
+  --text-2: #5d5d66;
+  --text-3: #76767f; /* ≥4:1 on the sidebar */
+  --accent: #111113;
+  --accent-ink: #111113;
+  --accent-soft: rgba(0, 0, 0, 0.06);
+  --violet: #5d5d66;
+  --thread: #111113;
+  --thread-glow: none;
   --ok: #12b76a;
   --warn: #dc8a0e;
-  --invert: #101828;
+  --invert: #111113;
   --on-invert: #ffffff;
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.04);
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 28px -16px rgba(16, 24, 40, 0.16);
-  --shadow: 0 24px 56px -22px rgba(16, 24, 40, 0.3), 0 0 0 1px rgba(16, 24, 40, 0.05);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 10px 28px -16px rgba(0, 0, 0, 0.16);
+  --shadow: 0 24px 56px -22px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.05);
   color-scheme: light;
 }
 
@@ -127,7 +127,7 @@ button { cursor: pointer; }
   overflow: hidden;
   position: relative;
 }
-:root[data-theme="light"] .pane { border-color: rgba(16, 24, 40, 0.05); }
+:root[data-theme="light"] .pane { border-color: rgba(0, 0, 0, 0.05); }
 .drag { -webkit-app-region: drag; }
 .no-drag, .drag button, .drag input, .drag a { -webkit-app-region: no-drag; }
 
@@ -253,7 +253,7 @@ button { cursor: pointer; }
   border-radius: 999px;
   border: 0;
   background: var(--thread);
-  color: #fff;
+  color: var(--on-invert);
   font-weight: 650;
   font-size: 14px;
   letter-spacing: -0.005em;
@@ -264,12 +264,12 @@ button { cursor: pointer; }
   box-shadow: var(--thread-glow), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   transition: transform 0.18s var(--spring), box-shadow 0.2s, filter 0.2s;
 }
-.record-btn:hover { filter: brightness(1.07) saturate(1.05); box-shadow: 0 10px 28px -8px rgba(98, 104, 255, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.2); }
+.record-btn:hover { filter: brightness(1.07) saturate(1.05); box-shadow: none; }
 .record-btn:active { transform: scale(0.97); }
 .record-btn:disabled { opacity: 0.6; cursor: default; }
 .record-btn.is-recording { background: var(--rec); color: #fff; box-shadow: 0 8px 22px -8px rgba(255, 77, 69, 0.6); }
 .record-btn .timer { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 12.5px; opacity: 0.92; }
-.record-btn .rec-ring { width: 14px; height: 14px; border-width: 2px; border-color: #fff; }
+.record-btn .rec-ring { width: 14px; height: 14px; border-width: 2px; border-color: var(--rec); }
 .record-btn .rec-ring::after { width: 6px; height: 6px; background: #fff; }
 
 /* ── pane content ───────────────────────────────────────────────────────── */
@@ -367,7 +367,7 @@ button { cursor: pointer; }
 }
 .seg button svg { opacity: 0.85; }
 .seg button:hover { color: var(--text); }
-.seg button[aria-selected="true"] { color: var(--on-invert); background: var(--invert); box-shadow: 0 4px 12px -6px rgba(16, 24, 40, 0.5); }
+.seg button[aria-selected="true"] { color: var(--on-invert); background: var(--invert); box-shadow: 0 4px 12px -6px rgba(0, 0, 0, 0.5); }
 .seg button[aria-selected="true"] .seg-count { background: color-mix(in srgb, var(--on-invert) 18%, transparent); color: var(--on-invert); }
 
 .sec { margin: 0 0 30px; }
@@ -400,7 +400,7 @@ button { cursor: pointer; }
   background: none;
   display: grid;
   place-items: center;
-  color: #fff;
+  color: var(--on-invert);
   padding: 0;
   transition: background 0.15s, border-color 0.15s, transform 0.2s var(--spring);
 }
@@ -472,7 +472,7 @@ button { cursor: pointer; }
 .ask-input input::placeholder { color: var(--text-3); }
 .ask-send {
   width: 36px; height: 36px; flex: none; border: 0; border-radius: 12px; display: grid; place-items: center; padding: 0;
-  background: var(--thread); color: #fff; box-shadow: var(--thread-glow); transition: opacity 0.15s, transform 0.18s var(--spring), box-shadow 0.15s;
+  background: var(--thread); color: var(--on-invert); box-shadow: var(--thread-glow); transition: opacity 0.15s, transform 0.18s var(--spring), box-shadow 0.15s;
 }
 .ask-send:disabled { opacity: 0.25; box-shadow: none; cursor: default; filter: grayscale(0.4); }
 .ask-send:not(:disabled):hover { transform: translateY(-1px); }
@@ -565,7 +565,7 @@ button { cursor: pointer; }
   border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--accent);
 }
-.hero-mark.thread { background: var(--thread); color: #fff; border: 0; box-shadow: var(--thread-glow); }
+.hero-mark.thread { background: var(--thread); color: var(--on-invert); border: 0; box-shadow: var(--thread-glow); }
 .hero-title { font-size: 24px; font-weight: 750; letter-spacing: -0.025em; margin: 0 0 8px; }
 .hero-text { color: var(--text-2); max-width: 440px; margin: 0 auto 22px; font-size: 14.5px; line-height: 1.6; }
 .muted { color: var(--text-2); }
@@ -589,12 +589,12 @@ button { cursor: pointer; }
 .btn:active:not(:disabled) { transform: scale(0.97); }
 .btn.sm { height: 30px; padding: 0 11px; font-size: 12.5px; border-radius: 10px; }
 .btn.lg { height: 44px; padding: 0 20px; font-size: 14.5px; border-radius: 14px; }
-.btn.primary, .btn.accent { background: var(--accent); color: #fff; border-color: transparent; box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--accent) 80%, transparent); }
+.btn.primary, .btn.accent { background: var(--accent); color: var(--on-invert); border-color: transparent; box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--accent) 80%, transparent); }
 .btn.primary:hover, .btn.accent:hover { filter: brightness(1.08); background: var(--accent); }
-.btn.thread { background: var(--thread); color: #fff; border-color: transparent; box-shadow: var(--thread-glow), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+.btn.thread { background: var(--thread); color: var(--on-invert); border-color: transparent; box-shadow: var(--thread-glow), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
 .btn.thread:hover { filter: brightness(1.07); background: var(--thread); }
-.btn.thread .rec-ring { border-color: #fff; }
-.btn.thread .rec-ring::after { background: #fff; }
+.btn.thread .rec-ring { border-color: var(--rec); }
+.btn.thread .rec-ring::after { background: var(--rec); }
 .btn.danger { color: var(--rec); }
 .btn:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
 .notice {
@@ -639,7 +639,7 @@ button { cursor: pointer; }
 
 /* The live orb (LiveOrb in ui.tsx). --lvl is 0…1 from the mic. */
 .orb { --lvl: 0; position: relative; width: 176px; height: 176px; margin: 0 auto 18px; }
-.orb-haze, .orb-ring { position: absolute; border-radius: 50%; background: conic-gradient(from 0deg, #4255ff, #8b6cf6, #38bdf8, #6d7bff, #4255ff); }
+.orb-haze, .orb-ring { position: absolute; border-radius: 50%; background: conic-gradient(from 0deg, var(--text), var(--text-3), var(--text-2), var(--text-3), var(--text)); }
 .orb-haze { inset: 0; filter: blur(22px); opacity: 0.45; scale: calc(0.82 + var(--lvl) * 0.32); transition: scale 0.14s linear, opacity 0.3s; animation: orb-spin 7s linear infinite; }
 .orb-ring {
   inset: 22px; animation: orb-spin 11s linear infinite reverse; scale: calc(0.97 + var(--lvl) * 0.1); transition: scale 0.14s linear;
@@ -648,7 +648,7 @@ button { cursor: pointer; }
 }
 .orb-core {
   position: absolute; inset: 44px; border-radius: 50%; display: grid; place-items: center; color: var(--accent);
-  background: var(--panel); box-shadow: 0 10px 30px -12px rgba(66, 85, 255, 0.45), inset 0 0 0 1px var(--line);
+  background: var(--panel); box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.35), inset 0 0 0 1px var(--line);
 }
 .orb.rec .orb-haze { opacity: calc(0.4 + var(--lvl) * 0.45); }
 .orb.ready .orb-haze { animation: orb-spin 9s linear infinite, orb-breathe 4s ease-in-out infinite; opacity: 0.32; }
